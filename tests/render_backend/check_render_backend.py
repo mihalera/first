@@ -26,6 +26,37 @@ sokol_native = cmake.find("J37_NATIVE_SOKOL=1", sokol_branch)
 require(sokol_branch >= 0 and sokol_native > sokol_branch
         and (android_guard < 0 or android_guard > sokol_native),
         "Sokol must be selectable on Android without an Android-specific fatal guard")
+=======
+# Sokol's shaders are desktop GLSL 410; its Android backend selects GLES3, so a
+# Sokol APK cannot create a pipeline. That is a second, independent Android bug
+# from the launcher crash fixed by MainActivity.java, but it is still real: the
+# platform now defaults to OpenGL and an explicit Sokol request is a configure
+# error rather than a bad APK.
+android_default = re.search(
+    r'if\(CMAKE_SYSTEM_NAME STREQUAL "Android"\)\s*'
+    r'set\(J37_DEFAULT_RENDER_BACKEND "OPENGL"\)\s*'
+    r'else\(\)\s*'
+    r'set\(J37_DEFAULT_RENDER_BACKEND "SOKOL"\)', cmake)
+require(android_default is not None,
+        "Android must default to OpenGL and every other platform to Sokol")
+require('set(J37_RENDER_BACKEND "${J37_DEFAULT_RENDER_BACKEND}" CACHE STRING' in cmake,
+        "J37_RENDER_BACKEND must take the platform default")
+sokol_branch = cmake.find('elseif(J37_RENDER_BACKEND STREQUAL "SOKOL")')
+android_guard = cmake.find('if(CMAKE_SYSTEM_NAME STREQUAL "Android")', sokol_branch)
+sokol_native = cmake.find("J37_NATIVE_SOKOL=1", sokol_branch)
+require(sokol_branch >= 0 and sokol_branch < android_guard < sokol_native
+        and "message(FATAL_ERROR" in cmake[android_guard:sokol_native],
+        "an explicit Sokol build on Android must fail at configure time, not ship a broken APK")
+=======
+# Sokol is the default on every platform and its shader sources match GLES.
+require('set(J37_RENDER_BACKEND "SOKOL" CACHE STRING' in cmake,
+        "Sokol must be the default renderer on every platform")
+sokol_branch = cmake.find('elseif(J37_RENDER_BACKEND STREQUAL "SOKOL")')
+android_guard = cmake.find('if(CMAKE_SYSTEM_NAME STREQUAL "Android")', sokol_branch)
+sokol_native = cmake.find("J37_NATIVE_SOKOL=1", sokol_branch)
+require(sokol_branch >= 0 and sokol_native > sokol_branch
+        and (android_guard < 0 or android_guard > sokol_native),
+        "Sokol must be selectable on Android without an Android-specific fatal guard")
 
 # The native implementation gate follows the backend's build macro.
 require("constexpr bool hasNativeImplementation(Backend backend) noexcept {" in backend,

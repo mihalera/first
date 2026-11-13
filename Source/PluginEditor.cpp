@@ -195,6 +195,10 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
     // onStateChange wiring could not reach - the toggles sent no click because
     // nothing listened, and the TextButtons sent no state change at all.
     const std::array<juce::Button*, 15> utilityButtons { { &uiSoundsButton, &antiPhaseGuardButton,
+=======
+    const std::array<juce::Button*, 14> utilityButtons { { &uiSoundsButton, &antiPhaseGuardButton,
+=======
+    const std::array<juce::Button*, 15> utilityButtons { { &uiSoundsButton, &antiPhaseGuardButton,
                           &parameterSheetButton, &userThemeButton,
                           &inputEqHpButton, &inputEqLpButton,
                           &outputEqHpButton, &outputEqLpButton,
@@ -342,11 +346,11 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
     // invalidated with the page (see the repaint at the foot of this function).
     const auto previousTab = currentTab;
     currentTab = juce::jlimit (0, numTabs - 1, newTab);
-
     // Opening another page THAWS the one being left. A frozen page you can no
     // longer see is a trap: the next visit would find a page that ignores every
     // knob and no visible reason why.
     frozenTab = -1;
+=======
     phonePageBox.setSelectedId (currentTab + 1, juce::dontSendNotification);
     // The section caption: the active page's own one-line subject, from the same
     // index the page itself came from, so the two can never name different pages.
@@ -1017,6 +1021,7 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
         j37diag::note ("editor dtor: begin");
     }
 
+=======
     // The host destroys this editor when its window is closed and rebuilds it at
     // the layout's preferred size, so the user's last drag has to be written down
     // here or it is lost. See rememberedEditorSize() in EditorPreferences.h.
@@ -1196,6 +1201,14 @@ FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayo
         // Phones trade the desktop meter bank for a compact deck and a touch-sized
         // control workspace; the helper stacks them in portrait and places them
         // side by side in landscape.
+=======
+    if (j37panel::usesPhoneLayout (getWidth()))
+=======
+    if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
+    {
+        // Phones trade the desktop meter bank for a compact deck and a touch-sized
+        // control workspace; the helper stacks them in portrait and places them
+        // side by side in landscape.
         const auto phone = j37panel::computePhoneEditorLayout (getWidth(), getHeight());
         EditorLayout layout;
         layout.header = { phone.header.x, phone.header.y,
@@ -1318,8 +1331,17 @@ void FirstAudioProcessorEditor::resized()
     // drag of the window's edge, and it keeps the texture from ever being
     // stretched over a size it was not built for.
     rebuildPanelTextureLayers();
+    // The panels and the texture they carry are one cached surface; build it
+    // after the texture, at the size every partial repaint will blit from.
+    rebuildPanelBackground();
 
     const auto phoneLayout = j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight());
+    const auto phoneLayoutChanged = phoneLayout != phoneLayoutActive;
+    phoneLayoutActive = phoneLayout;
+=======
+    const auto phoneLayout = j37panel::usesPhoneLayout (getWidth());
+=======
+    const auto phoneLayout = j37panel::usesPhoneLayout (getWidth(), getHeight());
     const auto phoneLayoutChanged = phoneLayout != phoneLayoutActive;
     phoneLayoutActive = phoneLayout;
     const auto parameterSheetWasOpen = parameterSheet != nullptr && parameterSheet->isOpen();
@@ -1379,6 +1401,10 @@ void FirstAudioProcessorEditor::resized()
 void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
 {
     if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
+=======
+    if (j37panel::usesPhoneLayout (getWidth()))
+=======
+    if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
     {
         const auto rowOneY = header.getY() + 5;
         const auto titleWidth = juce::jmin (82, juce::jmax (0, header.getWidth() / 4));
@@ -1407,7 +1433,6 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
                                utilityWidth, 25);
         oscButton.setVisible (true);
         themeButton.setVisible (true);
-
         // The machine-state readout is a header citizen on the phone as well.
         // It used to be left with whatever rectangle the desktop grid gave it,
         // which on a 400 px phone is a grid edge that no longer exists - the
@@ -1421,6 +1446,7 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
         statusLabel.setFont (statusLabel.getFont().withHeight (uiFontSize (8.5f)));
         statusLabel.setBorderSize (juce::BorderSize<int> (0));
         statusLabel.setVisible (true);
+=======
         return;
     }
 
@@ -1575,6 +1601,25 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         //  PhoneLayout.h), and the ring below is what fills the rest.
         const auto buttonY = deck.getY() + (landscape ? 5 : 3);
         const auto buttonHeight = landscape ? 36 : 30;
+=======
+    if (j37panel::usesPhoneLayout (getWidth()))
+=======
+    if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
+    {
+        presetArtworkBadge.setVisible (false);
+        const auto landscape = j37panel::isPhoneLandscape (getWidth(), getHeight());
+        const auto ringBounds = j37panel::computePhoneOscRingBounds (
+            { deck.getX(), deck.getY(), deck.getWidth(), deck.getHeight() }, landscape);
+        oscRing.setBounds (ringBounds.x, ringBounds.y, ringBounds.width, ringBounds.height);
+        oscRing.setVisible (ringBounds.width > 0 && ringBounds.height > 0);
+
+        const auto buttonGap = 4;
+        const auto buttonLeft = deck.getX() + 6;
+        const auto contentRight = landscape ? deck.getRight() - 6 : ringBounds.x - 8;
+        const auto contentWidth = juce::jmax (0, contentRight - buttonLeft);
+        const auto buttonWidth = juce::jmax (1, (contentWidth - 3 * buttonGap) / 4);
+        const auto buttonY = deck.getY() + 3;
+        const auto buttonHeight = 30;
         const std::array<juce::Component*, 4> transportButtons {
             &transportStopButton, &transportPlayButton, &transportStartButton, &spindownButton
         };
@@ -1592,6 +1637,12 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         const auto captionY = deck.getY() + (landscape ? 46 : 37);
         const auto selectorY = deck.getY() + (landscape ? 58 : 49);
         const auto selectorHeight = landscape ? 34 : 30;
+=======
+        const auto selectorWidth = juce::jmax (1, (deck.getWidth() - 12 - 2 * selectorGap) / 3);
+=======
+        const auto captionY = deck.getY() + 37;
+        const auto selectorY = deck.getY() + 49;
+        const auto selectorHeight = 30;
         const auto placeSelector = [&] (juce::Label& label, juce::Component& selector,
                                         int column)
         {
@@ -1612,6 +1663,14 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
                                  workflowY, workflowWidth, selectorHeight);
         phoneActionsButton.setBounds (selectorLeft + 2 * (workflowWidth + selectorGap),
                                       workflowY, workflowWidth, selectorHeight);
+=======
+        const auto workflowY = deck.getY() + 83;
+        const auto workflowWidth = juce::jmax (1, (contentWidth - 2 * selectorGap) / 3);
+        presetBox.setBounds (selectorLeft, workflowY, workflowWidth, 30);
+        userPresetBox.setBounds (selectorLeft + workflowWidth + selectorGap,
+                                 workflowY, workflowWidth, 30);
+        phoneActionsButton.setBounds (selectorLeft + 2 * (workflowWidth + selectorGap),
+                                      workflowY, workflowWidth, 30);
         presetBox.setVisible (true);
         userPresetBox.setVisible (true);
         phoneActionsButton.setVisible (true);
@@ -2174,6 +2233,10 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
 void FirstAudioProcessorEditor::placeControls (const EditorLayout& layout)
 {
     if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
+=======
+    if (j37panel::usesPhoneLayout (getWidth()))
+=======
+    if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
     {
         controlsHeadingLabel.setBounds (layout.controls.getX() + 12,
                                         layout.controls.getY() + 7,
@@ -2185,6 +2248,8 @@ void FirstAudioProcessorEditor::placeControls (const EditorLayout& layout)
             sectionCaptionLabel.setVisible (false);
             return;
         }
+=======
+=======
         sectionCaptionLabel.setBounds (layout.controls.getX() + 12,
                                        layout.controls.getY() + 72,
                                        layout.controls.getWidth() - 24, 14);
@@ -2217,6 +2282,13 @@ void FirstAudioProcessorEditor::placeTabBar (const juce::Rectangle<int>& control
 {
     if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight())
         && ! j37panel::isPhoneLandscape (getWidth(), getHeight()))
+=======
+    if (j37panel::usesPhoneLayout (getWidth()))
+=======
+    if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
+=======
+    if (j37panel::usesPhoneLayout (getWidth(), getHeight())
+        && ! j37panel::isPhoneLandscape (getWidth(), getHeight()))
     {
         for (auto& button : tabButtons)
         {
@@ -2226,6 +2298,7 @@ void FirstAudioProcessorEditor::placeTabBar (const juce::Rectangle<int>& control
         tabFamilyTapeButton.setVisible (false);
         tabFamilyFxButton.setVisible (false);
         tabFamilyRackButton.setVisible (false);
+=======
         tabFamilySetupButton.setVisible (false);
         phonePageBox.setBounds (controlsPanel.getX() + 12,
                                 controlsPanel.getY() + 33,
@@ -2280,6 +2353,16 @@ void FirstAudioProcessorEditor::placeTabBar (const juce::Rectangle<int>& control
         familyButtons[static_cast<std::size_t> (family)]
             ->setBounds (familyRow.getX() + family * (familyButtonWidth + 6),
                          familyRow.getY(), familyButtonWidth, familyRow.getHeight());
+=======
+    const auto familyButtonWidth = (familyRow.getWidth() - 2 * 6) / tabFamilyCount;
+    tabFamilyTapeButton.setBounds (familyRow.getX(), familyRow.getY(),
+                                   familyButtonWidth, familyRow.getHeight());
+    tabFamilyFxButton.setBounds (familyRow.getX() + familyButtonWidth + 6,
+                                 familyRow.getY(), familyButtonWidth,
+                                 familyRow.getHeight());
+    tabFamilySetupButton.setBounds (familyRow.getX() + 2 * (familyButtonWidth + 6),
+                                    familyRow.getY(), familyButtonWidth,
+                                    familyRow.getHeight());
 
     const auto tabBarTop = tabStrip.pages.y;
     constexpr int tabBarHeight = 22;

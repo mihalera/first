@@ -1292,6 +1292,11 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
 
     // The 60 Hz timer invalidates desktop animation every second tick and Android
     // animation every tick. See repaintAnimatedSurfaces().
+=======
+    // Desktop animation invalidations run every second timer tick; Android runs
+    // them on every 30 Hz tick so the phone UI is not capped at 15 fps. See
+    // repaintAnimatedSurfaces().
+=======
     int animationPaintTick = 0;
     int lastShownPreset = -2;
     int lastShownSlot = -1;
@@ -1568,6 +1573,12 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     /** The static layers (grain + wear) as one image, rebuilt on resize. */
     juce::Image panelTextureImage;
 
+    /** The finished chassis and section panels, texture included. Built once per
+        resize or theme change so a partial repaint - a knob animating at 60 Hz -
+        only has to blit the clip instead of rebuilding five blurred panels and
+        the whole texture over the top of them. */
+    juce::Image panelBackgroundImage;
+
     /** Sets the three texture doses for BOTH renderers; called from the
         timer with the live drive and gain reduction. */
     void configureTextureWeights(float drive, float gainReduction);
@@ -1575,6 +1586,10 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     /** Rebuilds the static texture image (grain + wear) from the current
         size and palette; called from resized() and after a theme change. */
     void rebuildPanelTextureLayers();
+
+    /** Composes the static chassis, panels and texture into one image. Called
+        from the same two places as rebuildPanelTextureLayers(), after it. */
+    void rebuildPanelBackground();
 
     // The deck's 3D transport. A child component with its OWN context, because a
     // JUCE context is either a component painter or a custom renderer and never

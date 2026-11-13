@@ -32,6 +32,21 @@ using j37panel::principleColour;
 using j37panel::principleOf;
 using j37panel::shrinkingFont;
 
+namespace
+{
+    // The phone layout is software-painted: its OpenGL context is detached and
+    // the compact panel redraws on the message thread. A Gaussian shadow per
+    // knob per frame is affordable on a desktop GPU-backed surface and is not
+    // affordable there, so the phone gets the same drawing with the cheap ring
+    // and ellipse shadows already used when melatonin_blur is unavailable.
+    bool usesPhonePaint (const juce::Component& component) noexcept
+    {
+        const auto* top = component.getTopLevelComponent();
+        return top != nullptr
+               && j37panel::usesPhoneLayout (top->getWidth(), top->getHeight());
+    }
+}
+
 //==============================================================================
 void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
                                        int x, int y, int width, int height,
@@ -41,6 +56,7 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
                                        juce::Slider& slider)
 {
     const auto& palette = paletteForTheme (theme);
+    [[maybe_unused]] const auto phonePaint = usesPhonePaint (slider);
     const auto bounds = juce::Rectangle<float> (static_cast<float> (x),
                                                  static_cast<float> (y),
                                                  static_cast<float> (width),
@@ -148,30 +164,36 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
         // melatonin_blur draws the halo as one real blurred shadow rather than a
         // stack of stroked rings. The API renders a Path, and the shadow is cached
         // against that path, so the glow costs one blur the first time the radius
-        // changes and is reused on every frame after that.
-        melatonin::DropShadow glow;
-        glow.setColor (accent.withAlpha (haloAlpha));
-        // The blur radius is what decides how far this light reaches past the
-        // cap, so it is solved from the room left to the ceiling rather than
-        // fixed: the halo is as big as its cell allows and no bigger.
-        const auto glowRadius = 6.0f + (hovered ? 3.0f : 0.0f) + activity * 6.0f * breath;
-        glow.setRadius (juce::jmax (2.0f, juce::jmin (glowRadius, paintCeiling - radius)));
-
-        juce::Path haloPath;
-        haloPath.addEllipse (centre.x - radius, centre.y - radius,
-                             radius * 2.0f, radius * 2.0f);
-        glow.render (g, haloPath);
-#else
-        for (int ring = 3; ring >= 1; --ring)
+        // changes and is reused on every frame after that. Phones take the ring
+        // path below, where the software surface cannot afford the blur.
+        if (! phonePaint)
         {
-            const auto haloRadius = juce::jmin (outerRadius + static_cast<float> (ring) * 5.0f
-                                                    + activity * 4.0f * breath,
-                                                paintCeiling);
-            g.setColour (accent.withAlpha (haloAlpha / static_cast<float> (ring)));
-            g.drawEllipse (centre.x - haloRadius, centre.y - haloRadius,
-                           haloRadius * 2.0f, haloRadius * 2.0f, 1.6f);
+            melatonin::DropShadow glow;
+            glow.setColor (accent.withAlpha (haloAlpha));
+            // The blur radius is what decides how far this light reaches past the
+            // cap, so it is solved from the room left to the ceiling rather than
+            // fixed: the halo is as big as its cell allows and no bigger.
+            const auto glowRadius = 6.0f + (hovered ? 3.0f : 0.0f) + activity * 6.0f * breath;
+            glow.setRadius (juce::jmax (2.0f, juce::jmin (glowRadius, paintCeiling - radius)));
+
+            juce::Path haloPath;
+            haloPath.addEllipse (centre.x - radius, centre.y - radius,
+                                 radius * 2.0f, radius * 2.0f);
+            glow.render (g, haloPath);
         }
+        else
 #endif
+        {
+            for (int ring = 3; ring >= 1; --ring)
+            {
+                const auto haloRadius = juce::jmin (outerRadius + static_cast<float> (ring) * 5.0f
+                                                        + activity * 4.0f * breath,
+                                                    paintCeiling);
+                g.setColour (accent.withAlpha (haloAlpha / static_cast<float> (ring)));
+                g.drawEllipse (centre.x - haloRadius, centre.y - haloRadius,
+                               haloRadius * 2.0f, haloRadius * 2.0f, 1.6f);
+            }
+        }
     }
 
     // The knob is let INTO the panel rather than sitting on it, so the plate
@@ -318,6 +340,7 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     // and left (as everywhere else on this panel), so the shadow falls down and
     // to the right - a shadow that fell the other way read as a glow.
 #if J37_HAS_MELATONIN_BLUR
+    if (! phonePaint)
     {
         melatonin::DropShadow capShadow;
         capShadow.setColor (juce::Colours::black.withAlpha (0.34f));
@@ -328,16 +351,18 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
                             collarRadius * 2.0f, collarRadius * 2.0f);
         capShadow.render (g, capPath);
     }
-#else
-    for (int layer = 3; layer >= 1; --layer)
-    {
-        const auto spread = static_cast<float> (layer) * 1.1f;
-        g.setColour (juce::Colours::black.withAlpha (0.040f));
-        g.fillEllipse (centre.x - collarRadius + spread * 0.5f,
-                       centre.y - collarRadius + spread,
-                       collarRadius * 2.0f, collarRadius * 2.0f);
-    }
+    else
 #endif
+    {
+        for (int layer = 3; layer >= 1; --layer)
+        {
+            const auto spread = static_cast<float> (layer) * 1.1f;
+            g.setColour (juce::Colours::black.withAlpha (0.040f));
+            g.fillEllipse (centre.x - collarRadius + spread * 0.5f,
+                           centre.y - collarRadius + spread,
+                           collarRadius * 2.0f, collarRadius * 2.0f);
+        }
+    }
 
     // The knob's own THICKNESS. Seen from above and a little to the front, a
     // real cap shows a sliver of its side wall below the top face, and that
@@ -1074,6 +1099,9 @@ void J37LookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button
                          juce::roundToInt (iconBounds.getY()),
                          juce::roundToInt (iconBounds.getWidth()),
                          juce::roundToInt (iconBounds.getHeight()),
+=======
+            g.drawImage (icons, iconBounds.getX(), iconBounds.getY(),
+                         iconBounds.getWidth(), iconBounds.getHeight(),
                          (iconIndex % atlasColumns) * tileSize,
                          (iconIndex / atlasColumns) * tileSize,
                          tileSize, tileSize, true);
@@ -1092,6 +1120,8 @@ void J37LookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button
                                                                 bounds.getWidth())
                            : 12.0f;
     g.setFont (shrinkingFont (text, asked, juce::Font::bold, bounds.getWidth()));
+=======
+    g.setFont (shrinkingFont (text, 12.0f, juce::Font::bold, bounds.getWidth()));
     g.drawText (text, bounds, juce::Justification::centred, true);
 
     if (button.hasKeyboardFocus (false))

@@ -757,6 +757,26 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
         // semitone in chromatic mode. Keep that mapping separate from frame state.
         const auto targetHz = autoTuneTargetFrequency (detected, tonic, mode);
 
+=======
+        if (mode != 0)
+        {
+            auto best = std::numeric_limits<int>::max();
+
+            for (int candidate = nearest - 12; candidate <= nearest + 12; ++candidate)
+            {
+                const auto pitchClass = ((candidate - tonic) % 12 + 12) % 12;
+
+                if (std::find (offsets.begin(), offsets.end(), pitchClass) != offsets.end()
+                    && std::abs (candidate - nearest) < best)
+                {
+                    target = candidate;
+                    best = std::abs (candidate - nearest);
+                }
+            }
+        }
+
+        const auto targetHz = 440.0f * std::pow (2.0f, (static_cast<float> (target) - 69.0f) / 12.0f);
+
         // The pull itself, with the rules that make it a corrector rather than a
         // quantiser: a reading within TOLERANCE of the target is left ALONE (the
         // dead zone - a voice is never exactly on the grid, and the part of the
@@ -1337,6 +1357,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // close, because isActive() reads this target as off-centre.
     fxTargets.speed = fxSpeedParam != nullptr ? fxSpeedParam->load() : 0.5f;
     fxRack.setTargets (fxTargets);
+=======
     const auto autoTuneAmount = autoTuneAmountParam != nullptr ? autoTuneAmountParam->load() : 0.0f;
     state.autoTuneStrength = juce::jlimit (0.0f, 1.0f, autoTuneAmount);
 

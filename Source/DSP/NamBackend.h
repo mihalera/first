@@ -62,6 +62,32 @@ namespace j37dsp
 
 #if J37_HAS_NAMCORE
 /**
+    Keeps NAM Core's architecture translation units linked into the plugin.
+
+    NAM Core registers each architecture (LSTM, WaveNet, ConvNet, Linear,
+    Sequential, SlimmableContainer) from a FILE-SCOPE STATIC inside that
+    architecture's own .cpp, and `get_dsp` reaches those registrations only
+    through a global registry - nothing calls `create_config` by name. A linker
+    that is handed those objects inside an archive therefore sees no undefined
+    symbol to resolve, never pulls them, and the registry comes up EMPTY: every
+    valid .nam file is then refused with "No config parser registered for
+    architecture: ...", which the panel shows as INVALID MODEL (BAD SHAPE).
+
+    That is exactly the layout CMake builds here: `namcore` is an OBJECT library,
+    JUCE's plugin target collects every object into libMiBoX_SharedCode.a, and
+    the archive is what the final VST3/CLAP/AU link scans. The harnesses under
+    tests/ never saw it because they put the objects on the command line - the
+    whole-program link prunes nothing - which is why the fixtures and the
+    archives' own models passed while the shipped plugin refused every file.
+
+    So this one call is the anchor: its translation unit
+    (Source/DSP/NamCoreRegistration.cpp) takes the address of each architecture's
+    factory, and a plugin TU calling it makes those objects resolvable, pulls
+    them out of the archive, and lets their registrations run at startup.
+*/
+void keepNamCoreArchitecturesLinked() noexcept;
+
+/**
     One NAM Core model, in the shape NeuralStage wants to drive it in.
 
     The interface is deliberately the same four calls the RTNeural path has -
@@ -107,6 +133,10 @@ public:
         `Reset` would prewarm anyway. */
     bool load (const nlohmann::json& namFile)
     {
+        // The registry this loader consults is populated by static initialisers
+        // in NAM Core's architecture objects; see the note above.
+        keepNamCoreArchitecturesLinked();
+
         nam::DspLoadOptions options;
         options.prewarm = false;
 

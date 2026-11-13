@@ -120,6 +120,9 @@ struct PitchCorrectionRule
     {
         const auto clampedOctave = juce::jlimit (minOctave, maxOctave, octave);
         return juce::jlimit (minRatio, maxRatio, std::pow (2.0f, static_cast<float> (clampedOctave)));
+=======
+        return std::pow (2.0f, static_cast<float> (juce::jlimit (minOctave, maxOctave,
+                                                                 octave)));
     }
 
     /** The pitch ratio the shifter should read at.

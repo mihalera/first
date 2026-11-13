@@ -32,6 +32,42 @@ mirrors it for the check and for whoever is sourcing the art.
 | `brand_lockups.png` | 512 × 128 | Square, horizontal, monochrome and reversed MiBoX marks, each in a 128 px cell. | Product windows and documentation |
 | `help_illustrations.png` | 1024 × 576 | Four 512 × 288 scenes for signal flow, A/B comparison, preset workflow and model loading. | User guide and quick-start material |
 | `signal_path.png` | 1600 × 500 | Full-width signal-flow diagram showing the major processing stages. | [`docs/signal-path.md`](../docs/signal-path.md) |
+PNG with alpha. `panel_texture` and each tile in `panel_materials` should be
+**seamless-ish and low contrast**: they are overlaid on a dark or light palette, so
+bright features can read as stains. The material tile order is locked to
+`ThemeChoice` in `Source/GUI/PanelPaint.h`; keep the enum and the atlas in step.
+The marks are artwork; the principle sprite sheet is a white alpha mask, so JUCE
+can tint the same seven shapes for every theme. The new icon atlases are indexed
+by stable names in [`asset_catalog.json`](asset_catalog.json); all their cells can
+be tinted from the alpha channel for normal, active, disabled or high-contrast
+states.
+The preset artwork atlas has one tile for every entry in CMake's factory preset
+list. That list also generates the preset index used by the processor and combo
+box, so the badge, selector, and embedded presets share one order. When no factory
+preset is active (for example, a fresh or user-edited state), the badge falls back
+to `brand_mark.png` and then to a drawn reel symbol.
+
+## Rebuilding the generated pack
+
+`generate_asset_pack.py` recreates the icon atlases, the 29 preset tiles, brand
+lockups and help illustrations. It reads the current tab and control names, model
+name arrays, and `FACTORY_PRESET_FILES`, then writes their cell names and indices
+to `asset_catalog.json`. This keeps the icon order attached to the plugin's own
+tables instead of maintaining a second handwritten list. Pillow 10.1 or newer is
+needed only to regenerate these PNGs; it is not a build or runtime dependency.
+
+The same catalog records the Android launcher set maintained under
+`android/app/src/main/res`: its five density PNGs, adaptive icon definitions,
+foreground vector, monochrome vector and package icon reference. Gradle reads
+those files directly; CMake embeds only the PNGs in this `Assets/` folder.
+
+```sh
+python Assets/generate_asset_pack.py
+python tests/assets/check_assets.py
+```
+=======
+=======
+=======
 
 PNG with alpha. `panel_texture` and each tile in `panel_materials` should be
 **seamless-ish and low contrast**: they are overlaid on a dark or light palette, so

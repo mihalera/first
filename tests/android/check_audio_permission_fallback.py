@@ -9,6 +9,16 @@ The plugin therefore removes the saved input mask before the holder reloads its
 device, while the holder's settings are already live in createPluginFilter(). This
 checks that project-side guard together with the upstream retry path.
 """
+=======
+"""Verify that denying Android microphone access keeps standalone audio output available."""
+=======
+input channels. Its AudioDeviceManager still has the same fallback: the standalone
+holder asks for zero inputs when access is denied, and initialiseFromXML retries
+with those zero needed inputs if opening the saved setup fails. This checks that
+both halves of that path are present, so a JUCE update cannot silently leave
+Android without output when the microphone prompt is declined.
+=======
+"""
 from __future__ import annotations
 
 import re
@@ -21,10 +31,14 @@ STANDALONE_H = (
     / "Standalone" / "juce_StandaloneFilterWindow.h"
 )
 PROCESSOR_CPP = ROOT / "Source" / "PluginProcessor.cpp"
+=======
+=======
 DEVICE_MANAGER_CPP = (
     ROOT / "JUCE" / "modules" / "juce_audio_devices"
     / "audio_io" / "juce_AudioDeviceManager.cpp"
 )
+=======
+=======
 
 
 def fail(message: str) -> None:
@@ -62,6 +76,19 @@ def main() -> None:
     if not re.search(
         r"deviceManager\.initialise\s*\(\s*enableAudioInput\s*\?\s*inputChannels\s*:\s*0"
         r"\s*,\s*outputChannels\s*,\s*savedState\.get\(\)\s*,\s*true\s*,",
+=======
+    permission_fallback = re.search(
+        r"if\s*\(\s*!\s*enableAudioInput\s*&&\s*savedState\s*!=\s*nullptr\s*\)"
+        r"\s*savedState->removeAttribute\s*\(\s*\"audioDeviceInChans\"\s*\)\s*;",
+        reload_body,
+    )
+    if permission_fallback is None:
+        fail("saved input-channel settings are not disabled when microphone access is denied")
+
+=======
+    if not re.search(
+        r"deviceManager\.initialise\s*\(\s*enableAudioInput\s*\?\s*inputChannels\s*:\s*0"
+        r"\s*,\s*outputChannels\s*,\s*savedState\.get\(\)\s*,\s*true\s*,",
         reload_body,
     ):
         fail("device initialization does not preserve output while disabling input")
@@ -75,6 +102,8 @@ def main() -> None:
     if not re.search(r"numInputChansNeeded\s*=\s*currentSetup\.inputChannels\.countNumberOfSetBits\s*\(\)", setup_body):
         fail("the saved input mask is no longer known to override the disabled input count")
 
+=======
+=======
     xml_body = method_body(device_manager, "String AudioDeviceManager::initialiseFromXML (")
     if not re.search(
         r"if\s*\(\s*error\.isNotEmpty\(\)\s*&&\s*selectDefaultDeviceOnFailure\s*\)"
@@ -100,6 +129,9 @@ def main() -> None:
     if not re.search(r"removeAttribute\s*\(\s*\"audioDeviceInChans\"\s*\)", guard_body):
         fail("the saved input-channel mask is not removed when microphone access is denied")
 
+=======
+=======
+=======
     print("Android audio permission fallback check passed (output remains enabled, input stays disabled)")
 
 

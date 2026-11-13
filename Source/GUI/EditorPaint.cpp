@@ -72,6 +72,7 @@ void FirstAudioProcessorEditor::rebuildPanelTextureLayers() {
     const auto bounds = getLocalBounds();
     if (bounds.isEmpty()) {
         panelTextureImage = {};
+        panelBackgroundImage = {};
         return;
     }
 
@@ -169,6 +170,105 @@ void FirstAudioProcessorEditor::rebuildPanelTextureLayers() {
     panelTextureImage = std::move(image);
 }
 
+// The static panel, composed once. Everything below the section panels - the
+// chassis fill, its grain, the five panel faces and their shadows, the texture
+// and the printed rules - is the same on every frame, so it is cheaper to keep
+// one opaque image of it and blit the damaged rectangle than to redraw five
+// blurred panels every time a knob breathes. That redraw was the phone's frame
+// budget: the knob strip animates at 60 Hz, and each knob's repaint ran this
+// whole function with a clip no larger than the knob.
+//
+// The tab-specific cards and the spectrum are deliberately NOT in here. They
+// depend on the active page, and the panel is rebuilt on resize and on a theme
+// change rather than on every tab click; paint() still draws those two pieces.
+void FirstAudioProcessorEditor::rebuildPanelBackground() {
+    const auto bounds = getLocalBounds();
+    if (bounds.isEmpty()) {
+        panelBackgroundImage = {};
+        return;
+    }
+
+    const auto &palette = paletteFor(darkTheme);
+    auto image = juce::Image(juce::Image::ARGB, bounds.getWidth(), bounds.getHeight(), true);
+    juce::Graphics g(image);
+
+    g.fillAll(palette.background);
+
+    const auto layout = getEditorLayout();
+
+    // Chassis grain. Two passes: a fine 3 px weave for the texture, and a much
+    // fainter 12 px one to break up the regularity. A single period reads as a
+    // pattern; two beating against each other read as brushed metal.
+    const auto chassis = bounds.reduced(8).toFloat();
+    const auto grainAlpha = darkTheme ? 0.016f : 0.022f;
+    const auto grainColour = palette.text.withAlpha(grainAlpha);
+
+    if (! j37panel::usesPhoneLayout (getWidth(), getHeight()))
+    {
+        g.setColour(grainColour);
+        for (float y = chassis.getY() + 2.0f; y < chassis.getBottom(); y += 3.0f)
+            g.drawHorizontalLine(juce::roundToInt(y), chassis.getX() + 6.0f,
+                                 chassis.getRight() - 6.0f);
+
+        g.setColour(palette.text.withAlpha(grainAlpha * 0.6f));
+        for (float y = chassis.getY() + 7.0f; y < chassis.getBottom(); y += 12.0f)
+            g.drawHorizontalLine(juce::roundToInt(y), chassis.getX() + 6.0f,
+                                 chassis.getRight() - 6.0f);
+    }
+
+    drawPanel(g, bounds.reduced(8), palette, 7.0f);
+    drawPanel(g, layout.header, palette, 5.0f);
+    drawPanel(g, layout.deck, palette, 5.0f);
+    drawPanel(g, layout.controls, palette, 5.0f);
+    drawPanel(g, layout.meters, palette, 5.0f);
+
+    // The arithmetic texture is part of the finished surface, so it goes into
+    // the image after the panels and before the printed rules. It is blitted at
+    // the same quality and with the same alpha handling it had in paint().
+    if (panelTextureImage.isValid()) {
+        g.setOpacity(1.0f);
+        g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
+        g.drawImage (panelTextureImage,
+                     0, 0, bounds.getWidth(), bounds.getHeight(),
+                     0, 0, panelTextureImage.getWidth(), panelTextureImage.getHeight(),
+                     false);
+        g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+    }
+
+    g.setColour(palette.accent.withAlpha(0.85f));
+    g.fillRect(layout.header.getX() + 17, layout.header.getY() + 14, 3,
+               layout.header.getHeight() - 28);
+
+    g.setColour(palette.border.withAlpha(0.75f));
+    g.drawHorizontalLine(layout.controls.getY() + controlsDividerOffset,
+                         static_cast<float>(layout.controls.getX() + 18),
+                         static_cast<float>(layout.controls.getRight() - 18));
+    g.drawHorizontalLine(layout.meters.getY() + 48, static_cast<float>(layout.meters.getX() + 18),
+                         static_cast<float>(layout.meters.getRight() - 18));
+    g.drawHorizontalLine(layout.deck.getBottom() - 1, static_cast<float>(layout.deck.getX() + 16),
+                         static_cast<float>(layout.deck.getRight() - 16));
+
+    g.setColour(palette.border.withAlpha(0.5f));
+    g.drawHorizontalLine(layout.header.getBottom() - 4,
+                         static_cast<float>(layout.header.getX() + 18),
+                         static_cast<float>(layout.header.getRight() - 18));
+
+    // The four corner screws are printed hardware: static, and part of the
+    // surface every partial repaint has to restore.
+    const auto headerX = static_cast<float>(layout.header.getX());
+    const auto headerRight = static_cast<float>(layout.header.getRight());
+    const auto headerY = static_cast<float>(layout.header.getY());
+    const auto headerBottom = static_cast<float>(layout.header.getBottom());
+
+    for (const auto point : {juce::Point<float>(headerX + 9.0f, headerY + 9.0f),
+                             juce::Point<float>(headerRight - 9.0f, headerY + 9.0f),
+                             juce::Point<float>(headerX + 9.0f, headerBottom - 9.0f),
+                             juce::Point<float>(headerRight - 9.0f, headerBottom - 9.0f)})
+        drawScrew(g, point.x, point.y, palette);
+
+    panelBackgroundImage = std::move(image);
+}
+
 //==============================================================================
 void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     // One line, once, when the diagnostic switch is on: it is the difference
@@ -185,8 +285,6 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     const auto clip = g.getClipBounds();
     const auto inClip = [&clip](const juce::Rectangle<int> &area) { return area.intersects(clip); };
 
-    g.fillAll(palette.background);
-
     const auto layout = getEditorLayout();
     // The two loader cards sit behind the MODELS page's picker cells, and their
     // geometry MIRRORS resized()'s: the grid is the controls band reduced by
@@ -201,6 +299,8 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     gridNow.removeFromBottom(8);
     const auto memberBandY = gridNow.getBottom() - memberBandHeightNow;
     const auto cellWidthNow = gridNow.getWidth() / tabColumnsNow;
+    const auto memberBand = juce::Rectangle<int>(gridNow.getX(), memberBandY,
+                                                 gridNow.getWidth(), memberBandHeightNow);
 
     // ------------------------------------------------------------------
     //  Chassis grain.
@@ -229,6 +329,10 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     const auto grainBottom = static_cast<float>(clip.getBottom());
 
     if (! j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
+=======
+    if (! j37panel::usesPhoneLayout (getWidth()))
+=======
+    if (! j37panel::usesPhoneLayout (getWidth(), getHeight()))
     {
         g.setColour(grainColour);
         for (float y = chassis.getY() + 2.0f; y < chassis.getBottom(); y += 3.0f)
@@ -241,70 +345,41 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
             if (y >= grainTop && y <= grainBottom)
                 g.drawHorizontalLine(juce::roundToInt(y), chassis.getX() + 6.0f,
                                      chassis.getRight() - 6.0f);
+=======
+    // A partial repaint (a knob at 60 Hz, say) only needs the static surface
+    // under its clip. Build that surface once, then blit the damaged rectangle.
+    // The flat fill is only the one-frame fallback before the first resize has
+    // produced the image.
+    if (! panelBackgroundImage.isValid()) {
+        if (! panelTextureImage.isValid())
+            rebuildPanelTextureLayers();
+        rebuildPanelBackground();
     }
 
-    // (The arithmetic texture is blitted further down, AFTER the panels, so the
-    // panels' own faces sit over the chassis grain rather than over the texture.)
+    if (panelBackgroundImage.isValid()) {
+        const auto damage = clip.getIntersection(getLocalBounds());
+        if (! damage.isEmpty()) {
+            g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+            g.drawImage(panelBackgroundImage,
+                        damage.getX(), damage.getY(), damage.getWidth(), damage.getHeight(),
+                        damage.getX(), damage.getY(), damage.getWidth(), damage.getHeight(),
+                        false);
+        }
+    } else {
+        g.fillAll(palette.background);
+    }
 
-    drawPanel(g, getLocalBounds().reduced(8), palette, 7.0f);
-
-    // The camera is set here rather than in the constructor because it depends
-    // on the panel's own size: the viewer stands over the CENTRE of whatever
-    // the panel currently is, so the same drawing code answers "how edge-on is
-    // this knob" correctly at the minimum window size and at four times it.
-    // The panel ITSELF, not a rectangle: the L&F converts it into the same
-    // top-level space every control is measured in, which is what it needs to
-    // know where each control stands relative to the viewer.
+    // The camera is set here rather than in the constructor because it depends on
+    // the panel's own size: the viewer stands over the CENTRE of whatever the
+    // panel currently is, so the same drawing code answers "how edge-on is this
+    // knob" correctly at the minimum window size and at four times it. The panel
+    // ITSELF, not a rectangle: the L&F converts it into the same top-level space
+    // every control is measured in.
     customLookAndFeel.setPanelCamera(*this);
     // The in-tab lists' inset is solved from the same panel height the camera is
     // measured in (comboTextInset), so the second look-and-feel is told the same
     // thing here rather than reading a size of its own.
     inlineLookAndFeel.setPanelBounds(*this);
-    drawPanel(g, layout.header, palette, 5.0f);
-    drawPanel(g, layout.deck, palette, 5.0f);
-    drawPanel(g, layout.controls, palette, 5.0f);
-    drawPanel(g, layout.meters, palette, 5.0f);
-
-    // ----------------------------------------------------------------------
-    //  The panel's texture, 2D and mathematical: static grain, wear blotches
-    //  and a live shimmer driven by signal level.
-    //
-    //   - static grain + wear blotches: ONE image, built once per resize in
-    //     rebuildPanelTextureLayers() from the same hash spaces the shader
-    //     uses (grain = fract(sin(p*7.5)), wear = value noise), blitted here
-    //     in one call - AFTER the panels, so their faces carry it rather than
-    //     hiding it, and BEFORE the child controls, which paint on top of
-    //     everything here by being children;
-    //   - live shimmer: a sparse drift of dots driven by DRIVE and compressor
-    //     activity, so the surface visibly responds to the signal.
-    //  Every dose is centered, so no branch can shift the panel's colour.
-    // ----------------------------------------------------------------------
-    if (panelTextureImage.isValid()) {
-        // Two rules keep the surface from reading as "square blocks":
-        //
-        //  1. RESAMPLING QUALITY. The ten-argument drawImage carries no quality
-        //     of its own - the blit runs at whatever Graphics::setImageResamplingQuality
-        //     last set, and Graphics' default is LOW, i.e. nearest-neighbour:
-        //     a half-res layer drawn through it arrives as 2x2 blocks, which is
-        //     precisely the "quadrats" the user saw on alternating frames. The
-        //     quality is set explicitly for this one blit and restored after, so
-        //     every other image in the panel keeps its old speed.
-        //
-        //  2. OPACITY-EXACT. The layer was built with per-pixel alpha already
-        //     carrying the dose, so multiplying it again would brighten the grain
-        //     whenever a repaint had to re-blend the layer, and the texture would
-        //     visibly jump between "normal" and "too strong" as frames
-        //     alternated. The alpha in the image IS the final amount.
-        g.setOpacity(1.0f);
-        g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
-        g.drawImage (panelTextureImage,
-                     0, 0, getWidth(), getHeight(),
-                     0, 0, panelTextureImage.getWidth(), panelTextureImage.getHeight(),
-                     false /* fillAlphaChannelWithCurrentBrush: NO - the alpha in
-                              the image is the final dose, re-multiplying it with
-                              a brush would double the ink */);
-        g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
-    }
 
     if (panelTextureWeights.shimmer > 0.0f) {
         const auto timeNow = static_cast<float>(juce::Time::getMillisecondCounterHiRes()) * 0.001f;
@@ -330,9 +405,13 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
             const auto alpha =
                 panelTextureWeights.shimmer * (0.35f + 0.65f * std::abs(a - 0.5f) * 2.0f);
 
+            const auto dotX = area.getX() + u * area.getWidth();
+            const auto dotY = area.getY() + v * area.getHeight();
+            if (! clip.toFloat().contains(dotX, dotY))
+                continue;
+
             g.setColour(ink.withAlpha(juce::jlimit(0.0f, 1.0f, alpha)));
-            g.fillEllipse(area.getX() + u * area.getWidth(), area.getY() + v * area.getHeight(),
-                          1.7f, 1.7f);
+            g.fillEllipse(dotX, dotY, 1.7f, 1.7f);
         }
     }
 
@@ -406,22 +485,27 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
                          static_cast<float>(layout.header.getX() + 18),
                          static_cast<float>(layout.header.getRight() - 18));
 
+=======
     // The machine-state badge wraps the statusLabel in the header's final row.
     // statusPillBounds() is shared with the timer's invalidation region so the
-    // animated lamp and its background are redrawn together.
-    const auto statusPill = statusPillBounds().toFloat();
-    g.setColour(palette.raised.darker(0.16f));
-    g.fillRoundedRectangle(statusPill, 4.0f);
+    // animated lamp and its background are redrawn together. A knob's repaint
+    // never intersects it, so the whole badge is skipped outside its own band.
+    const auto statusPill = statusPillBounds();
+    if (inClip(statusPill.expanded(12))) {
+        const auto pill = statusPill.toFloat();
+        g.setColour(palette.raised.darker(0.16f));
+        g.fillRoundedRectangle(pill, 4.0f);
 
-    // Status lamp: pulses with the compressor, so the panel shows that the
-    // plugin is alive and working even when no gain reduction is happening.
-    const auto lampCentre = juce::Point<float>(statusPill.getX() + 15.0f, statusPill.getCentreY());
-    const auto lampPulse = 4.5f + 2.5f * glowAmount;
-    g.setColour(palette.status.withAlpha(0.12f + 0.30f * glowAmount));
-    g.fillEllipse(lampCentre.x - lampPulse * 2.2f, lampCentre.y - lampPulse * 2.2f,
-                  lampPulse * 4.4f, lampPulse * 4.4f);
-    g.setColour(palette.status);
-    g.fillEllipse(lampCentre.x - 3.5f, lampCentre.y - 3.5f, 7.0f, 7.0f);
+        // Status lamp: pulses with the compressor, so the panel shows that the
+        // plugin is alive and working even when no gain reduction is happening.
+        const auto lampCentre = juce::Point<float>(pill.getX() + 15.0f, pill.getCentreY());
+        const auto lampPulse = 4.5f + 2.5f * glowAmount;
+        g.setColour(palette.status.withAlpha(0.12f + 0.30f * glowAmount));
+        g.fillEllipse(lampCentre.x - lampPulse * 2.2f, lampCentre.y - lampPulse * 2.2f,
+                      lampPulse * 4.4f, lampPulse * 4.4f);
+        g.setColour(palette.status);
+        g.fillEllipse(lampCentre.x - 3.5f, lampCentre.y - 3.5f, 7.0f, 7.0f);
+    }
 
     //  The MODELS page's band: TWO IDENTICAL CARDS, then the tape spectrum across
     //  the two columns that are left.
@@ -433,7 +517,7 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     //  a readout that spanned two cells and landed over the spectrum's caption.
     //  The card's bounds and the placement in placeTabMembers() are the same
     //  arithmetic: band, cell, inset.
-    if (activeTabIsShapers) {
+    if (activeTabIsShapers && inClip(memberBand)) {
         constexpr float cardInset = 8.0f;
         const auto bandY = static_cast<float>(memberBandY);
         const auto bandH = static_cast<float>(memberBandHeightNow);
@@ -530,25 +614,6 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
             g.drawRoundedRectangle(spectrumCell, 3.0f, 1.0f);
         }
     }
-
-    // (The hairline under the header was drawn above, before this badge, so it
-    // cannot be painted across the pill's rounded bottom.)
-
-    // getX()/getRight() return int, so the 9.0f insets are added *after* the cast.
-    // `getX() + 9.0f` promotes the int to float implicitly, which is exactly what
-    // the int-to-float conversion warnings on macOS flag. Reading the edges into
-    // float locals once also keeps the four screw positions consistent with each
-    // other instead of each one repeating its own mixed int/float arithmetic.
-    const auto headerX = static_cast<float>(layout.header.getX());
-    const auto headerRight = static_cast<float>(layout.header.getRight());
-    const auto headerY = static_cast<float>(layout.header.getY());
-    const auto headerBottom = static_cast<float>(layout.header.getBottom());
-
-    for (const auto point : {juce::Point<float>(headerX + 9.0f, headerY + 9.0f),
-                             juce::Point<float>(headerRight - 9.0f, headerY + 9.0f),
-                             juce::Point<float>(headerX + 9.0f, headerBottom - 9.0f),
-                             juce::Point<float>(headerRight - 9.0f, headerBottom - 9.0f)})
-        drawScrew(g, point.x, point.y, palette);
 
     // The reel, the spokes, the tape ribbon and the orbs are the deck's, and they
     // are the most expensive thing in here: six spokes' worth of cos/sin, a path

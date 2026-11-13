@@ -35,6 +35,8 @@
     <activity
         android:name="com.mcsmes.mibox.MainActivity"
         android:configChanges="orientation"
+=======
+        android:configChanges="keyboard|keyboardHidden|orientation|screenSize|navigation|smallestScreenSize|screenLayout|uiMode"
         android:launchMode="singleTask"
         android:hardwareAccelerated="true"
         android:exported="true">

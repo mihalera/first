@@ -22,6 +22,14 @@
     atlas, seven small alpha glyphs share another, and the factory preset artwork
     shares a third. All use one cached loader. Art needing unlimited scale can use
     the Drawable loader from the README.
+=======
+    WHY PNG HERE: the surface is raster art, and the seven small alpha glyphs
+    share a single sprite sheet and the same cached loader. Art that must remain
+    crisp at unlimited scale can use the Drawable loader described in the README.
+=======
+    atlas and seven small alpha glyphs share another, with one cached loader for
+    both. Art needing unlimited scale can use the Drawable loader from the README.
+=======
   ============================================================================ */
 #pragma once
 
@@ -59,7 +67,6 @@ inline constexpr Slot slots[] = {
     { "principle_icons", "principle_icons.png", "principle_icons_png", 448, 64,
       "Seven monochrome alpha glyphs for the MIX bar, ordered TAPE, VALVE, "
       "CASSETTE, VINYL, AMP, TRANSFORMER, DIGITAL. Tinted by the active palette." },
-
     { "factory_preset_art", "factory_preset_art.png", "factory_preset_art_png", 2240, 64,
       "Twenty-nine 64 px preset artwork tiles in the exact FACTORY_PRESET_FILES "
       "order from CMakeLists.txt; selected in the deck's current-preset badge." },
@@ -70,6 +77,46 @@ inline constexpr Slot slots[] = {
 
     { "parameter_glyphs", "parameter_glyphs.png", "parameter_glyphs_png", 512, 832,
       "Ninety-seven alpha glyphs in controlSpecs order, one for every plugin control; "
+      "all are tintable for active, disabled and high-contrast states." },
+
+    { "machine_models", "machine_models.png", "machine_models_png", 512, 512,
+      "Fifty-seven machine, model and OFF glyphs generated from the processor's "
+      "tape, valve, amp, transformer, digital and vinyl name tables." },
+
+    { "meter_status", "meter_status.png", "meter_status_png", 512, 256,
+      "Thirty-two meter, signal, phase, frequency-band and health-state glyphs." },
+
+    { "preset_categories", "preset_categories.png", "preset_categories_png", 512, 64,
+      "Eight preset category glyphs: mixing, mastering, drums, vocals, bass, "
+      "guitar, keys and creative." },
+
+    { "hardware_details", "hardware_details.png", "hardware_details_png", 256, 256,
+      "Sixteen panel-detail glyphs for screws, washers, vents, labels, jacks, "
+      "switches, scales, seams, reels and lamps." },
+
+    { "brand_lockups", "brand_lockups.png", "brand_lockups_png", 512, 128,
+      "Four 128 px brand variants: square mark, horizontal wordmark, monochrome "
+      "mark and reversed mark." },
+
+    { "help_illustrations", "help_illustrations.png", "help_illustrations_png", 1024, 576,
+      "Four 512x288 help scenes: signal path, A/B comparison, preset workflow, "
+      "and loading a model or impulse response." },
+
+    { "signal_path", "signal_path.png", "signal_path_png", 1600, 500,
+      "Full-width MiBoX signal-flow diagram for the user guide." },
+=======
+=======
+
+    { "factory_preset_art", "factory_preset_art.png", "factory_preset_art_png", 1856, 64,
+      "Twenty-nine 64 px preset artwork tiles in the exact FACTORY_PRESET_FILES "
+      "order from CMakeLists.txt; selected in the deck's current-preset badge." },
+
+    { "ui_icons", "ui_icons.png", "ui_icons_png", 512, 832,
+      "Ninety-nine named, alpha-masked navigation, control, workflow, file, "
+      "status, audio and platform glyphs; indices are in asset_catalog.json." },
+
+    { "parameter_glyphs", "parameter_glyphs.png", "parameter_glyphs_png", 512, 576,
+      "Seventy-one alpha glyphs in controlSpecs order, one for every plugin control; "
       "all are tintable for active, disabled and high-contrast states." },
 
     { "machine_models", "machine_models.png", "machine_models_png", 512, 512,
