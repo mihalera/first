@@ -316,7 +316,9 @@ set(J37_CLAP_ID "com.mcsmes.mibox")
 # kinds on Android and iOS. An unsupported FORMATS entry is intersected away;
 # leaving Android with no active format would produce no wrapper to link. On iOS
 # only AUv3 is a host-loadable plugin format, so do not build a Standalone app.
-set(J37_PLUGIN_FORMATS AU AUv3 VST3)
+# Standalone is included on desktop so the plugin can run without a host - it is
+# a self-contained app over the same SharedCode, not an extra format.
+set(J37_PLUGIN_FORMATS AU AUv3 VST3 Standalone)
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")
     set(J37_PLUGIN_FORMATS Standalone)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
