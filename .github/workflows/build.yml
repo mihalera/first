@@ -1352,7 +1352,26 @@ jobs:
   #  macOS - VST3 + AU + AUv3, universal (arm64 + x86_64)
   # ============================================================================
   build-macos:
-    runs-on: macos-latest
+    name: build-macos (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        #  One job per architecture instead of one universal build. The run was
+        #  the slowest of the pipeline by a wide margin - it compiled every
+        #  translation unit twice, and the two passes could not overlap - so the
+        #  work is now two jobs that do, on a runner of each architecture.
+        #
+        #  A native runner per architecture rather than cross-compiling both
+        #  slices on one machine: only the native job can run auval against the
+        #  slice it just built (a universal auval loads arm64 on an arm runner and
+        #  cannot load an x86_64-only bundle). macos-15-intel is the label GitHub
+        #  documents for x86_64, available through 2027; macos-latest is arm64.
+        include:
+          - arch: arm64
+            os: macos-latest
+          - arch: x86_64
+            os: macos-15-intel
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout repository
@@ -1370,10 +1389,10 @@ jobs:
           fi
           ls JUCE/modules | head -n 5
 
-      # The universal binary is requested through CMAKE_OSX_ARCHITECTURES so that
-      # every target in the build - plugin, AU wrapper and the AUv3 app extension
-      # - is built for both architectures in one pass. Passing -arch at the
-      # xcodebuild level would only affect the top-level target.
+      # One architecture per job, requested through CMAKE_OSX_ARCHITECTURES so
+      # that every target in the build - plugin, AU wrapper and the AUv3 app
+      # extension - carries it. Passing -arch at the xcodebuild level would only
+      # affect the top-level target.
       #
       # The Xcode generator is required, not merely preferred: JUCE only adds the
       # AUv3 target when the generator is Xcode (JUCEModuleSupport.cmake,
@@ -1392,7 +1411,7 @@ jobs:
         uses: ./.github/actions/build-cache
         with:
           build-dir: build
-          flavour: macos
+          flavour: macos-${{ matrix.arch }}
           deps-hash: ${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', '.gitmodules') }}
 
       - name: Configure CMake
@@ -1405,7 +1424,7 @@ jobs:
           cmake -S . -B build -G Xcode \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
             -DJ37_FAST_CI_BUILD=ON \
-            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DCMAKE_OSX_ARCHITECTURES="${{ matrix.arch }}" \
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="" \
@@ -1510,9 +1529,16 @@ jobs:
             exit 1
           fi
 
-      - name: Verify the binaries are universal
+      # The architecture, read out of the binary rather than assumed from the
+      # runner: a bundle built for the wrong slice - a stale cache, an
+      # architectures value that never reached the target - installs happily and
+      # then refuses to load on the machine it was meant for.
+      - name: Verify every binary is ${{ matrix.arch }}
         run: |
           set -euo pipefail
+
+          ARCH="${{ matrix.arch }}"
+          if [ "$ARCH" = "arm64" ]; then OTHER="x86_64"; else OTHER="arm64"; fi
 
           check() {
             local bundle="$1"
@@ -1524,10 +1550,12 @@ jobs:
             fi
             echo "--- $binary ---"
             lipo -info "$binary" | tee /tmp/lipo.txt
-            # Both slices must be present. A single-arch build would install but
-            # silently fail to load on the other half of the machines.
-            grep -q "arm64" /tmp/lipo.txt
-            grep -q "x86_64" /tmp/lipo.txt
+            grep -q "$ARCH" /tmp/lipo.txt
+            if grep -q "$OTHER" /tmp/lipo.txt; then
+              echo "$binary carries $OTHER as well: this job is meant to build the" >&2
+              echo "$ARCH slice alone, in the job that checks it." >&2
+              exit 1
+            fi
           }
 
           while IFS= read -r bundle; do
@@ -1587,7 +1615,7 @@ jobs:
             fi
             echo "--- $bundle"
 
-            for arch in arm64 x86_64; do
+            for arch in "${{ matrix.arch }}"; do
               MINOS="$(minos_of "$binary" "$arch")"
               if [ -z "$MINOS" ]; then
                 echo "$binary has no $arch slice to read a minimum version from" >&2
@@ -1725,7 +1753,7 @@ jobs:
       - name: Upload macOS Artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: MiBoX-macOS
+          name: MiBoX-macOS-${{ matrix.arch }}
           path: ${{ runner.temp }}/artifacts
           if-no-files-found: error
 

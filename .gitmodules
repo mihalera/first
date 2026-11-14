@@ -1,7 +1,7 @@
 [submodule "JUCE"]
 	path = JUCE
 	url = https://github.com/juce-framework/JUCE.git
-	branch = 9.0.5
+	branch = master
 [submodule "ThirdParty/farbot"]
 	path = ThirdParty/farbot
 	url = https://github.com/hogliux/farbot.git
