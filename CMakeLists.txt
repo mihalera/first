@@ -855,6 +855,20 @@ option(J37_PRECOMPILE_HEADERS
     ON)
 
 if(J37_PRECOMPILE_HEADERS)
+    #  JUCE's modules are NOT precompilable: each module's implementation file
+    #  opens with `#error "Incorrect use of JUCE cpp file"` when its own public
+    #  header has already been seen, which is exactly what a precompiled header
+    #  does to it - and juce_opengl.cpp then drowns the log in follow-on errors
+    #  from every file it includes. They are compiled into this same target, so
+    #  they are told to skip the header instead of being left out of it.
+    file(GLOB_RECURSE j37_juce_module_cpps CONFIGURE_DEPENDS
+         "${CMAKE_CURRENT_SOURCE_DIR}/JUCE/modules/*.cpp")
+
+    if(j37_juce_module_cpps)
+        set_source_files_properties(${j37_juce_module_cpps}
+            PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+    endif()
+
     target_precompile_headers(first PRIVATE
         <juce_core/juce_core.h>
         <juce_events/juce_events.h>
