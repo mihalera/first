@@ -828,7 +828,6 @@ target_link_libraries(first
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
 
-
 # ------------------------------------------------------------------------------
 #  The two GPU abstraction layers.
 #
