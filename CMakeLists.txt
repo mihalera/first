@@ -870,21 +870,27 @@ if(J37_PRECOMPILE_HEADERS)
     endif()
 
     target_precompile_headers(first PRIVATE
-        <juce_core/juce_core.h>
-        <juce_events/juce_events.h>
-        <juce_data_structures/juce_data_structures.h>
-        <juce_graphics/juce_graphics.h>
-        <juce_gui_basics/juce_gui_basics.h>
-        <juce_gui_extra/juce_gui_extra.h>
-        <juce_audio_basics/juce_audio_basics.h>
-        <juce_audio_devices/juce_audio_devices.h>
-        <juce_audio_formats/juce_audio_formats.h>
-        <juce_audio_processors/juce_audio_processors.h>
-        <juce_audio_utils/juce_audio_utils.h>
-        <juce_box2d/juce_box2d.h>
-        <juce_cryptography/juce_cryptography.h>
-        <juce_dsp/juce_dsp.h>
-        <juce_opengl/juce_opengl.h>)
+        #  C++ only. This target also compiles C sources, and a C precompiled
+        #  header built from JUCE's headers fails twice over: "JUCE requires
+        #  C++17 or later", then "fatal error: algorithm: No such file".
+        #  The language is part of the condition, so the C side gets an empty
+        #  header and behaves exactly as it did before.
+        "$<$<COMPILE_LANGUAGE:CXX>:juce_core/juce_core.h>"
+        "$<$<COMPILE_LANGUAGE:CXX>:juce_events/juce_events.h>"
+        "$<$<COMPILE_LANGUAGE:CXX>:juce_data_structures/juce_data_structures.h>"
+        "$<$<COMPILE_LANGUAGE:CXX>:juce_graphics/juce_graphics.h>"
+        "$<$<COMPILE_LANGUAGE:CXX>:juce_gui_basics/juce_gui_basics.h>"
+        "$<$<COMPILE_LANGUAGE:CXX>:juce_gui_extra/juce_gui_extra.h>"
+        "$<$<COMPILE_LANGUAGE:CXX>:juce_audio_basics/juce_audio_basics.h>"
+        "$<$<COMPILE_LANGUAGE:CXX>:juce_audio_devices/juce_audio_devices.h>"
+        "$<$<COMPILE_LANGUAGE:CXX>:juce_audio_formats/juce_audio_formats.h>"
+        "$<$<COMPILE_LANGUAGE:CXX>:juce_audio_processors/juce_audio_processors.h>"
+        "$<$<COMPILE_LANGUAGE:CXX>:juce_audio_utils/juce_audio_utils.h>"
+        "$<$<COMPILE_LANGUAGE:CXX>:juce_box2d/juce_box2d.h>"
+        "$<$<COMPILE_LANGUAGE:CXX>:juce_cryptography/juce_cryptography.h>"
+        "$<$<COMPILE_LANGUAGE:CXX>:juce_dsp/juce_dsp.h>"
+        "$<$<COMPILE_LANGUAGE:CXX>:juce_opengl/juce_opengl.h>"
+        )
 endif()
 
 # ------------------------------------------------------------------------------
