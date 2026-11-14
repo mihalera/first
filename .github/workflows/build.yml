@@ -78,6 +78,35 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      - name: Cache the CMake dependency trees
+        uses: ./.github/actions/build-cache
+        with:
+          build-dir: build
+          flavour: harness
+          deps-hash: ${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', '.gitmodules') }}
+
+      - name: Cache compiler output with ccache
+        uses: ./.github/actions/ccache
+        with:
+          flavour: harness
+
+      - name: Put ccache in front of the harness compiler
+        run: |
+          #  tests/lib/harness.sh runs "$CXX" - and "$CC" for its one C file -
+          #  so the launcher has to BE a compiler it can call: a two-line
+          #  wrapper that hands the same job to ccache. Both are set because
+          #  the script derives CC from the NAME of CXX, and a wrapper path
+          #  matches neither of the names it knows about.
+          bindir="$RUNNER_TEMP/ccache-bin"
+          mkdir -p "$bindir"
+          cxx=$(command -v "${CXX:-g++}")
+          cc=$(command -v "${CC:-${cxx%++}}" || command -v cc)
+          printf '#!/bin/sh\nexec ccache %s "$@"\n' "$cxx" > "$bindir/c++"
+          printf '#!/bin/sh\nexec ccache %s "$@"\n' "$cc" > "$bindir/cc"
+          chmod +x "$bindir/c++" "$bindir/cc"
+          echo "CXX=$bindir/c++" >> "$GITHUB_ENV"
+          echo "CC=$bindir/cc" >> "$GITHUB_ENV"
+
       - name: Run the subharmonic harness
         run: bash tests/dsp/run.sh
 
@@ -563,6 +592,35 @@ jobs:
           submodules: recursive
           fetch-depth: 0
 
+      - name: Cache the CMake dependency trees
+        uses: ./.github/actions/build-cache
+        with:
+          build-dir: build
+          flavour: harness
+          deps-hash: ${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', '.gitmodules') }}
+
+      - name: Cache compiler output with ccache
+        uses: ./.github/actions/ccache
+        with:
+          flavour: harness
+
+      - name: Put ccache in front of the harness compiler
+        run: |
+          #  tests/lib/harness.sh runs "$CXX" - and "$CC" for its one C file -
+          #  so the launcher has to BE a compiler it can call: a two-line
+          #  wrapper that hands the same job to ccache. Both are set because
+          #  the script derives CC from the NAME of CXX, and a wrapper path
+          #  matches neither of the names it knows about.
+          bindir="$RUNNER_TEMP/ccache-bin"
+          mkdir -p "$bindir"
+          cxx=$(command -v "${CXX:-g++}")
+          cc=$(command -v "${CC:-${cxx%++}}" || command -v cc)
+          printf '#!/bin/sh\nexec ccache %s "$@"\n' "$cxx" > "$bindir/c++"
+          printf '#!/bin/sh\nexec ccache %s "$@"\n' "$cc" > "$bindir/cc"
+          chmod +x "$bindir/c++" "$bindir/cc"
+          echo "CXX=$bindir/c++" >> "$GITHUB_ENV"
+          echo "CC=$bindir/cc" >> "$GITHUB_ENV"
+
       - name: Install Linux audio and GUI dependencies
         run: |
           sudo apt-get update
@@ -613,6 +671,35 @@ jobs:
         with:
           submodules: recursive
           fetch-depth: 0
+
+      - name: Cache the CMake dependency trees
+        uses: ./.github/actions/build-cache
+        with:
+          build-dir: build
+          flavour: harness
+          deps-hash: ${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', '.gitmodules') }}
+
+      - name: Cache compiler output with ccache
+        uses: ./.github/actions/ccache
+        with:
+          flavour: harness
+
+      - name: Put ccache in front of the harness compiler
+        run: |
+          #  tests/lib/harness.sh runs "$CXX" - and "$CC" for its one C file -
+          #  so the launcher has to BE a compiler it can call: a two-line
+          #  wrapper that hands the same job to ccache. Both are set because
+          #  the script derives CC from the NAME of CXX, and a wrapper path
+          #  matches neither of the names it knows about.
+          bindir="$RUNNER_TEMP/ccache-bin"
+          mkdir -p "$bindir"
+          cxx=$(command -v "${CXX:-g++}")
+          cc=$(command -v "${CC:-${cxx%++}}" || command -v cc)
+          printf '#!/bin/sh\nexec ccache %s "$@"\n' "$cxx" > "$bindir/c++"
+          printf '#!/bin/sh\nexec ccache %s "$@"\n' "$cc" > "$bindir/cc"
+          chmod +x "$bindir/c++" "$bindir/cc"
+          echo "CXX=$bindir/c++" >> "$GITHUB_ENV"
+          echo "CC=$bindir/cc" >> "$GITHUB_ENV"
 
       - name: Install Linux audio and GUI dependencies
         run: |
@@ -805,10 +892,24 @@ jobs:
           # coverage-guided run already has its own step above with its own budget.
           J37_SANITIZE=address,undefined J37_FUZZ_COVERAGE=0 bash tests/fuzz/run.sh
 
+      - name: Cache the CMake dependency trees
+        uses: ./.github/actions/build-cache
+        with:
+          build-dir: build
+          flavour: linux-debug
+          deps-hash: ${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', '.gitmodules') }}
+
+      - name: Cache compiler output with ccache
+        uses: ./.github/actions/ccache
+        with:
+          flavour: linux-debug
+
       - name: Configure CMake (Debug)
         run: |
           cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=Debug
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Compile (Debug)
         run: |
@@ -876,6 +977,13 @@ jobs:
           if (-not $prefix) { throw "could not locate the ipp-include prefix" }
           Write-Host "Intel IPP prefix: $prefix"
           "IPPROOT=$prefix" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Cache the CMake dependency trees
+        uses: ./.github/actions/build-cache
+        with:
+          build-dir: build
+          flavour: windows-x64
+          deps-hash: ${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', '.gitmodules') }}
 
       - name: Configure CMake
         shell: pwsh
@@ -1087,6 +1195,13 @@ jobs:
           Write-Host "ArmPL prefix: $prefix"
           "ARMPL_DIR=$prefix" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
+      - name: Cache the CMake dependency trees
+        uses: ./.github/actions/build-cache
+        with:
+          build-dir: build
+          flavour: windows-arm64
+          deps-hash: ${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', '.gitmodules') }}
+
       - name: Configure CMake (ARM64, ArmPL required)
         shell: pwsh
         run: |
@@ -1220,26 +1335,16 @@ jobs:
       # Code signing is disabled: this is a CI build with no Developer ID
       # certificate. See README "Signing and notarisation" for what a
       # distributable build needs instead.
-      # Configure spends most of its six minutes DOWNLOADING, not configuring:
-      # CPM checks out chowdsp_utils, RTNeural, readerwriterqueue, clap-juce-
-      # extensions and friends into .cpm-cache, and the inspector, blur and
-      # foleys trees are fetched into build/deps beside them. Both are pure
-      # dependency checkouts, so they are worth keeping between runs: a hit
-      # removes the network from the step, and a miss costs what it cost before.
-      #
-      # The key hashes every file that can change WHICH dependency is fetched and
-      # restore-keys falls back to the newest cache for this platform, so moving
-      # one pin re-downloads only what that pin moved. Nothing here is an
-      # artifact: the bundles still come out of the build either way.
-      - name: Cache the dependency checkouts
-        uses: actions/cache@v6
+      # The dependency checkouts, through the same action the other build jobs
+      # use. Its CPM entry is shared across platforms on purpose: those checkouts
+      # are sources, byte-identical on every runner, so the first job to finish
+      # pays for them and this one restores them.
+      - name: Cache the CMake dependency trees
+        uses: ./.github/actions/build-cache
         with:
-          path: |
-            .cpm-cache
-            build/deps
-          key: cpm-macos-${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', '.gitmodules') }}
-          restore-keys: |
-            cpm-macos-
+          build-dir: build
+          flavour: macos
+          deps-hash: ${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', '.gitmodules') }}
 
       - name: Configure CMake
         run: |
@@ -1602,6 +1707,13 @@ jobs:
           fi
           ls JUCE/modules | head -n 5
 
+      - name: Cache the CMake dependency trees
+        uses: ./.github/actions/build-cache
+        with:
+          build-dir: build-ios-${{ matrix.sdk }}
+          flavour: ios-${{ matrix.sdk }}
+          deps-hash: ${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', '.gitmodules') }}
+
       - name: Configure CMake for ${{ matrix.sdk }}
         run: |
           cmake -S . -B "build-ios-${{ matrix.sdk }}" -G Xcode \
@@ -1612,28 +1724,29 @@ jobs:
             -DJ37_RENDER_BACKEND=SOKOL \
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY=""
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="" \
+            -DCMAKE_XCODE_ATTRIBUTE_COMPILER_INDEX_STORE_ENABLE=NO
 
       - name: Build the AUv3 extension
         run: |
-          set -o pipefail
+          #  One pass. The old shape built twice: the first piped into grep with its
+          #  status dropped, the second into /dev/null only to learn the exit code.
+          #  That was a second full walk of every target, and the failing output was
+          #  unreachable anyway.
+          status=0
           cmake --build "build-ios-${{ matrix.sdk }}" \
-            --config ${{ env.BUILD_TYPE }} \
+            --config "${{ env.BUILD_TYPE }}" \
             --target first_AUv3 \
-            --parallel 2 2>&1 |
-            grep -E 'error|warning|Error|FAILED|BUILD' || true
+            --parallel 2 \
+            > "$RUNNER_TEMP/ios-build.log" 2>&1 || status=$?
 
-          cmake --build "build-ios-${{ matrix.sdk }}" \
-            --config ${{ env.BUILD_TYPE }} \
-            --target first_AUv3 \
-            --parallel 2 > /dev/null 2>&1 || {
-              echo "iOS AUv3 build failed - re-running with full output:"
-              cmake --build "build-ios-${{ matrix.sdk }}" \
-                --config ${{ env.BUILD_TYPE }} \
-                --target first_AUv3 \
-                --parallel 2
-              exit 1
-            }
+          grep -E 'error|warning|Error|FAILED|BUILD' "$RUNNER_TEMP/ios-build.log" || true
+
+          if [ "$status" -ne 0 ]; then
+            echo "Build failed with exit code $status - full log follows:"
+            cat "$RUNNER_TEMP/ios-build.log"
+            exit "$status"
+          fi
 
       - name: Verify the iOS AUv3 bundle
         run: |
@@ -1784,10 +1897,24 @@ jobs:
               ;;
           esac
 
+      - name: Cache the CMake dependency trees
+        uses: ./.github/actions/build-cache
+        with:
+          build-dir: build
+          flavour: linux
+          deps-hash: ${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', '.gitmodules') }}
+
+      - name: Cache compiler output with ccache
+        uses: ./.github/actions/ccache
+        with:
+          flavour: linux
+
       - name: Configure CMake
         run: |
           cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       # --parallel "$J37_BUILD_JOBS" rather than a bare --parallel: see the note
       # on J37_BUILD_JOBS at the top of this file. This is the job the OOM killer
@@ -1795,16 +1922,21 @@ jobs:
       # that ran out of memory once runs out of memory again, three times over.
       - name: Build
         run: |
-          set -o pipefail
-          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel "$J37_BUILD_JOBS" 2>&1 |
-            grep -E 'error|warning|Error|FAILED|BUILD' || true
+          #  One pass. The old shape built twice: the first piped into grep with its
+          #  status dropped, the second into /dev/null only to learn the exit code.
+          #  That was a second full walk of every target, and the failing output was
+          #  unreachable anyway.
+          status=0
+          cmake --build build --config "${{ env.BUILD_TYPE }}" --parallel "$J37_BUILD_JOBS" \
+            > "$RUNNER_TEMP/linux-build.log" 2>&1 || status=$?
 
-          # Second pass to verify actual exit code
-          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel "$J37_BUILD_JOBS" > /dev/null 2>&1 || {
-            echo "Build failed - re-running with full output:"
-            cmake --build build --config ${{ env.BUILD_TYPE }} --parallel "$J37_BUILD_JOBS"
-            exit 1
-          }
+          grep -E 'error|warning|Error|FAILED|BUILD' "$RUNNER_TEMP/linux-build.log" || true
+
+          if [ "$status" -ne 0 ]; then
+            echo "Build failed with exit code $status - full log follows:"
+            cat "$RUNNER_TEMP/linux-build.log"
+            exit "$status"
+          fi
 
       - name: Verify VST3 bundle was produced
         id: vst3
@@ -1977,11 +2109,25 @@ jobs:
               ;;
           esac
 
+      - name: Cache the CMake dependency trees
+        uses: ./.github/actions/build-cache
+        with:
+          build-dir: build
+          flavour: linux-arm64
+          deps-hash: ${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', '.gitmodules') }}
+
+      - name: Cache compiler output with ccache
+        uses: ./.github/actions/ccache
+        with:
+          flavour: linux-arm64
+
       - name: Configure CMake (ArmPL required)
         run: |
           set -euo pipefail
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DJ37_ENABLE_ARMPL=ON \
             -DJ37_ARMPL_REQUIRED=ON 2>&1 | tee configure.log
 
@@ -1997,15 +2143,21 @@ jobs:
 
       - name: Build
         run: |
-          set -o pipefail
-          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel "$J37_BUILD_JOBS" 2>&1 |
-            grep -E 'error|warning|Error|FAILED|BUILD' || true
+          #  One pass. The old shape built twice: the first piped into grep with its
+          #  status dropped, the second into /dev/null only to learn the exit code.
+          #  That was a second full walk of every target, and the failing output was
+          #  unreachable anyway.
+          status=0
+          cmake --build build --config "${{ env.BUILD_TYPE }}" --parallel "$J37_BUILD_JOBS" \
+            > "$RUNNER_TEMP/linux-arm64-build.log" 2>&1 || status=$?
 
-          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel "$J37_BUILD_JOBS" > /dev/null 2>&1 || {
-            echo "Build failed - re-running with full output:"
-            cmake --build build --config ${{ env.BUILD_TYPE }} --parallel "$J37_BUILD_JOBS"
-            exit 1
-          }
+          grep -E 'error|warning|Error|FAILED|BUILD' "$RUNNER_TEMP/linux-arm64-build.log" || true
+
+          if [ "$status" -ne 0 ]; then
+            echo "Build failed with exit code $status - full log follows:"
+            cat "$RUNNER_TEMP/linux-arm64-build.log"
+            exit "$status"
+          fi
 
       - name: Verify the ARM64 VST3 and CLAP bundles
         id: bundles
@@ -2130,6 +2282,18 @@ jobs:
         with:
           python-version: '3.x'
 
+      - name: Cache the CMake dependency trees
+        uses: ./.github/actions/build-cache
+        with:
+          build-dir: build-android
+          flavour: android
+          deps-hash: ${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', '.gitmodules') }}
+
+      - name: Cache compiler output with ccache
+        uses: ./.github/actions/ccache
+        with:
+          flavour: android
+
       - name: Configure CMake (Android Cross-Build)
         run: |
           # API 28, not 24: chowdsp_core's aligned allocator (a hard dependency
@@ -2148,6 +2312,8 @@ jobs:
           # spliced into the path.
           cmake -S . -B build-android \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_SYSTEM_NAME=Android \
             -DCMAKE_ANDROID_API=29 \
             -DCMAKE_ANDROID_NDK="$J37_ANDROID_NDK" \
@@ -2158,15 +2324,21 @@ jobs:
 
       - name: Build
         run: |
-          set -o pipefail
-          cmake --build build-android --config ${{ env.BUILD_TYPE }} --parallel 2>&1 |
-            grep -E 'error|warning|Error|FAILED|BUILD' || true
+          #  One pass. The old shape built twice: the first piped into grep with its
+          #  status dropped, the second into /dev/null only to learn the exit code.
+          #  That was a second full walk of every target, and the failing output was
+          #  unreachable anyway.
+          status=0
+          cmake --build build-android --config "${{ env.BUILD_TYPE }}" --parallel \
+            > "$RUNNER_TEMP/android-build.log" 2>&1 || status=$?
 
-          cmake --build build-android --config ${{ env.BUILD_TYPE }} --parallel > /dev/null 2>&1 || {
-            echo "Build failed - re-running with full output:"
-            cmake --build build-android --config ${{ env.BUILD_TYPE }} --parallel
-            exit 1
-          }
+          grep -E 'error|warning|Error|FAILED|BUILD' "$RUNNER_TEMP/android-build.log" || true
+
+          if [ "$status" -ne 0 ]; then
+            echo "Build failed with exit code $status - full log follows:"
+            cat "$RUNNER_TEMP/android-build.log"
+            exit "$status"
+          fi
 
       # The APK is assembled here rather than by CMake: CMake has no Gradle
       # exporter, and the Gradle project in `android/` owns the app shell while

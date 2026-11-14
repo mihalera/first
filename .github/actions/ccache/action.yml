@@ -1,0 +1,46 @@
+name: Cache compiler output with ccache
+description: >
+  Installs nothing (every runner image that can build this plugin already has
+  ccache) but checks that it is there, bounds its size, and keeps its directory
+  between runs. The job then passes -DCMAKE_<LANG>_COMPILER_LAUNCHER=ccache,
+  which is honoured by the Makefile and Ninja generators.
+
+inputs:
+  flavour:
+    description: A short name that separates one job's cache from another's.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    #  Refused rather than skipped: the job passes ccache on the CMake command
+    #  line, so a runner without it would fail at the first compile with a much
+    #  less obvious message than this one.
+    - name: Check ccache is available
+      shell: bash
+      run: |
+        ccache --version | head -n 1
+        ccache --max-size=1G
+
+        #  Without these, every checkout's absolute path is part of the hash and
+        #  the cache never hits between runs; with them the same source at the
+        #  same path reuses its objects.
+        echo "CCACHE_BASEDIR=${GITHUB_WORKSPACE}" >> "$GITHUB_ENV"
+        echo "CCACHE_SLOPPINESS=time_macros,include_file_mtime,include_file_ctime" >> "$GITHUB_ENV"
+
+    #  Keyed on the commit, restored from the newest cache of this flavour: a
+    #  commit always writes its own entry (so a re-run of it never inherits a
+    #  half-written one) and always starts from the most recent objects, which is
+    #  where nearly all of the hit rate is - JUCE's modules and NAM Core's Eigen
+    #  translation units do not change between commits.
+    - name: Restore ccache
+      uses: actions/cache@v6
+      with:
+        path: ~/.ccache
+        key: ccache-${{ runner.os }}-${{ inputs.flavour }}-${{ github.sha }}
+        restore-keys: |
+          ccache-${{ runner.os }}-${{ inputs.flavour }}-
+
+    - name: Report the cache position
+      shell: bash
+      run: ccache --show-stats || true

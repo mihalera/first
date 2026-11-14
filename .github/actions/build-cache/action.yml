@@ -1,0 +1,51 @@
+name: Cache the CMake dependency trees
+description: >
+  Keeps the two trees a configure downloads so that only a changed pin pays for
+  the network. Both are pure dependency checkouts - nothing here is a build
+  artifact - and a miss costs exactly what the step cost before it existed.
+
+inputs:
+  build-dir:
+    description: >
+      The build directory of THIS job (build, build-android, build-ios-iphoneos,
+      ...). Only its deps/ subtree is cached: CPM puts the foleys, melatonin and
+      blur checkouts under ${CMAKE_BINARY_DIR}/deps.
+    required: false
+    default: build
+  flavour:
+    description: A short name that separates the per-platform deps caches.
+    required: true
+  deps-hash:
+    description: >
+      hashFiles of every file that can change WHICH dependency is fetched.
+      Passed in rather than computed here so the hash is evaluated by the
+      workflow, where hashFiles is unambiguously relative to the workspace.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    #  ONE cache for every job on every runner: .cpm-cache holds git checkouts of
+    #  the pinned dependencies (chowdsp_utils, RTNeural, readerwriterqueue,
+    #  nlohmann_json, foleys_gui_magic, the CLAP extensions ...) and those sources
+    #  are byte-identical on Linux, Windows, macOS and Android. Sharing the entry
+    #  means the first job to finish populates it and every other job - including
+    #  the ones on other operating systems - restores it instead of cloning.
+    - name: CPM source checkouts
+      uses: actions/cache@v6
+      with:
+        path: .cpm-cache
+        key: cpm-${{ inputs.deps-hash }}
+        restore-keys: |
+          cpm-
+
+    #  The extras under <build>/deps are configured, not just checked out, so
+    #  their trees carry this platform's compiler in them. They get a cache of
+    #  their own, per platform and per job.
+    - name: Fetched extras
+      uses: actions/cache@v6
+      with:
+        path: ${{ inputs.build-dir }}/deps
+        key: cmake-deps-${{ runner.os }}-${{ inputs.flavour }}-${{ inputs.deps-hash }}
+        restore-keys: |
+          cmake-deps-${{ runner.os }}-${{ inputs.flavour }}-
