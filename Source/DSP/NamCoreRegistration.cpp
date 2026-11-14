@@ -30,6 +30,12 @@
 #include "OptionalLibraries.h"
 
 #if J37_HAS_NAMCORE
+    //  The declaration this file's one exported function must have. Without it
+    //  the definition below reads as an external symbol no header mentions,
+    //  which is exactly what -Wmissing-prototypes reports. NamBackend.h owns the
+    //  contract; its load() is the caller.
+    #include "NamBackend.h"
+
     //  Every architecture NAM Core knows, by the header that declares its
     //  factory. The list is the format's, not this plugin's: an architecture
     //  missing here disappears from the registry exactly as if it had never been

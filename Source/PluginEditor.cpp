@@ -405,7 +405,9 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
 
 void FirstAudioProcessorEditor::setTip (juce::SettableTooltipClient& component, const juce::String& english)
 {
-    tooltipSources.push_back ({ &component, english });
+    //  Three fields, all three named: a plain tooltip has no hints, and the
+    //  empty string is that fact rather than an omission (-Wmissing-field-initializers).
+    tooltipSources.push_back ({ &component, english, {} });
     component.setTooltip (xlat (english));
 }
 

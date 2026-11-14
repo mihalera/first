@@ -583,6 +583,17 @@ if(J37_NAMCORE)
              "${J37_NAMCORE_ROOT}/NAM/*.cpp"
              "${J37_NAMCORE_ROOT}/NAM/*/*.cpp")
 
+        #  `wavenet/a2_fast.cpp` is entirely inside
+        #  `#if defined (NAM_ENABLE_A2_FAST)`, and this project deliberately does
+        #  not define that macro (see the note above: one WaveNet code path, not
+        #  two that are only partly covered by tests). The whole translation unit
+        #  therefore compiles to nothing - one wasted compile per architecture,
+        #  and libtool's "'a2_fast.o' has no symbols" on any static-library link.
+        #  The vendored file stays exactly as upstream ships it; the source LIST
+        #  is ours, so the empty unit simply is not on it. If the a2 fast path is
+        #  ever switched on, define that macro AND drop this filter together.
+        list(FILTER J37_NAMCORE_SOURCES EXCLUDE REGEX "/a2_fast\\.cpp$")
+
         # OBJECT, not STATIC, because a STATIC namcore would be pruned as a
         # whole by anything that only calls get_dsp(): NAM Core registers each
         # architecture with a file-scope `static ConfigParserHelper` in its own

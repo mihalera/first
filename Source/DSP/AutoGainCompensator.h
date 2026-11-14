@@ -91,11 +91,11 @@ public:
 
         // How far the finished signal has fallen below the reference taken after
         // the input trim. Positive means level was lost and needs paying back.
-            // Guard against ratio overflow: clamp to prevent Inf from sqrt.
-            constexpr float maxRatio = 1e12f;
-            constexpr float minRatio = 1e-12f;
-            const auto safeRatio = std::max (minRatio, std::min (maxRatio, referencePower / outputPower));
-            const auto levelRatioDb = gainToDecibels (std::sqrt (safeRatio));
+        // Guard against ratio overflow: clamp to prevent Inf from sqrt.
+        constexpr float maxRatio = 1e12f;
+        constexpr float minRatio = 1e-12f;
+        const auto safeRatio = std::max (minRatio, std::min (maxRatio, referencePower / outputPower));
+        const auto levelRatioDb = gainToDecibels (std::sqrt (safeRatio));
 
         // Only ever restore, never exaggerate: the correction may recover a loss
         // but must not become an extra boost stage of its own.

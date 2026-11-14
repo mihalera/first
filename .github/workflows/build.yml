@@ -1220,14 +1220,41 @@ jobs:
       # Code signing is disabled: this is a CI build with no Developer ID
       # certificate. See README "Signing and notarisation" for what a
       # distributable build needs instead.
+      # Configure spends most of its six minutes DOWNLOADING, not configuring:
+      # CPM checks out chowdsp_utils, RTNeural, readerwriterqueue, clap-juce-
+      # extensions and friends into .cpm-cache, and the inspector, blur and
+      # foleys trees are fetched into build/deps beside them. Both are pure
+      # dependency checkouts, so they are worth keeping between runs: a hit
+      # removes the network from the step, and a miss costs what it cost before.
+      #
+      # The key hashes every file that can change WHICH dependency is fetched and
+      # restore-keys falls back to the newest cache for this platform, so moving
+      # one pin re-downloads only what that pin moved. Nothing here is an
+      # artifact: the bundles still come out of the build either way.
+      - name: Cache the dependency checkouts
+        uses: actions/cache@v6
+        with:
+          path: |
+            .cpm-cache
+            build/deps
+          key: cpm-macos-${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', '.gitmodules') }}
+          restore-keys: |
+            cpm-macos-
+
       - name: Configure CMake
         run: |
+          # COMPILER_INDEX_STORE_ENABLE=NO: the index store is Xcode's database
+          # for code completion and navigation, no part of the build product,
+          # and nobody indexes a CI runner. Left on, clang writes it for every
+          # translation unit of every target - measurable time and disk for an
+          # output that is thrown away with the workspace.
           cmake -S . -B build -G Xcode \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
             -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY=""
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="" \
+            -DCMAKE_XCODE_ATTRIBUTE_COMPILER_INDEX_STORE_ENABLE=NO
 
       - name: Build
         run: |
@@ -1235,18 +1262,24 @@ jobs:
           # full JUCE plugin is hundreds of translation units across two architectures,
           # and printing every one of them buried the actual result. Only warnings and
           # errors are kept.
-          set -o pipefail
-          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel 2>&1 |
-            grep -E 'error|warning|Error|FAILED|BUILD' || true
+          #
+          # ONE pass. This used to build twice - the first piped into grep with its
+          # status discarded, then a no-op second build "just to get the exit code" -
+          # which cost a full second graph walk over every target on every run and
+          # still could not show the failing output. The log is kept instead, filtered
+          # for reading, and cmake's own status is captured beside the filter rather
+          # than through it.
+          status=0
+          cmake --build build --config "${{ env.BUILD_TYPE }}" --parallel \
+            > "$RUNNER_TEMP/macos-build.log" 2>&1 || status=$?
 
-          # grep returns 1 when it matches nothing, so the pipeline status cannot be
-          # trusted alone. Re-run the build's own status check instead: a no-op second
-          # pass costs a second and reports the real exit code.
-          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel > /dev/null 2>&1 || {
-            echo "Build failed - re-running with full output:"
-            cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
-            exit 1
-          }
+          grep -E 'error|warning|Error|FAILED|BUILD' "$RUNNER_TEMP/macos-build.log" || true
+
+          if [ "$status" -ne 0 ]; then
+            echo "Build failed with exit code $status - full log follows:"
+            cat "$RUNNER_TEMP/macos-build.log"
+            exit "$status"
+          fi
 
       # Ad-hoc signing. There is no Developer ID certificate in CI (see README
       # "Signing and notarisation"), so the bundles leave the build unsigned -

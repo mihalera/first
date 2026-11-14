@@ -392,7 +392,11 @@ private:
     void spawnGrain() noexcept
     {
         const auto offset = randomUnit() * static_cast<float> (rate) * 0.2f + 2.0f;
-        const auto length = static_cast<int> (grainLength * (0.6f + 0.8f * randomUnit()));
+        //  The cast is on the INTEGER, so the multiply happens in float: the
+        //  implicit int -> float here was -Wimplicit-int-float-conversion, and a
+        //  grain length above 2^24 would silently round.
+        const auto length = static_cast<int> (static_cast<float> (grainLength)
+                                              * (0.6f + 0.8f * randomUnit()));
 
         for (auto& voice : voicesLeft)
         {
