@@ -199,7 +199,8 @@ wait_for_wave
     -isystem "${RTNEURAL_ROOT}" \
     -isystem "${NLOHMANN_ROOT}" \
     -isystem "${NAM_ROOT}" -isystem "${EIGEN_ROOT}" -isystem "${NAM_JSON_INCLUDE}" \
-    "${HERE}/fixture_test.cpp" "${nam_objects[@]}" -o "${BUILD}/fixture_test"
+    "${HERE}/fixture_test.cpp" "${SOURCE}/DSP/NamCoreRegistration.cpp" \
+    "${nam_objects[@]}" -o "${BUILD}/fixture_test"
 
 "${BUILD}/fixture_test" "${HERE}/fixtures"
 
@@ -226,6 +227,66 @@ wait_for_wave
     -I "${HERE}/../dsp" -I "${SOURCE}" -I "${SOURCE}/DSP" \
     -isystem "${NLOHMANN_ROOT}" \
     -isystem "${NAM_ROOT}" -isystem "${EIGEN_ROOT}" -isystem "${NAM_JSON_INCLUDE}" \
-    "${HERE}/nam_only_test.cpp" "${nam_objects[@]}" -o "${BUILD}/nam_only_test"
+    "${HERE}/nam_only_test.cpp" "${SOURCE}/DSP/NamCoreRegistration.cpp" \
+    "${nam_objects[@]}" -o "${BUILD}/nam_only_test"
 
 "${BUILD}/nam_only_test" "${HERE}/fixtures"
+
+# -----------------------------------------------------------------------------
+#  And the layout that actually broke: NAM Core inside a STATIC ARCHIVE.
+#
+#  Every binary above puts ${nam_objects[@]} on the command line, and a
+#  whole-program link prunes nothing - so all of them passed while the shipped
+#  plugin refused every WaveNet file with "No config parser registered for
+#  architecture: WaveNet". The plugin's target is a static library
+#  (libMiBoX_SharedCode.a, which is what juce_add_plugin makes it), and an
+#  archive member is pulled only when a symbol it defines is referenced. NAM
+#  Core's six registration objects define no such symbol, so they were pruned
+#  before their static initialisers could fill the registry.
+#
+#  Source/DSP/NamCoreRegistration.cpp is the anchor that gives the linker a
+#  reference: it takes the address of each architecture's config parser. This
+#  step is what keeps that anchor load-bearing - the archive is built here, the
+#  test's own translation unit goes into the executable, and the only thing it
+#  asks of the archive is the loader path. Remove the anchor and this is the one
+#  binary in the tree that fails.
+#
+#  `ar` is the only tool this harness needs beyond the compiler, and every image
+#  that can build the plugin has one: llvm-ar rides with clang, binutils' ar with
+#  gcc. Missing both is an error rather than a skip - a test that silently does
+#  not run is the reason this defect shipped.
+# -----------------------------------------------------------------------------
+AR_TOOL=""
+for candidate in "${AR:-}" llvm-ar ar; do
+    if [ -n "${candidate}" ] && command -v "${candidate}" >/dev/null 2>&1; then
+        AR_TOOL="${candidate}"
+        break
+    fi
+done
+
+if [ -z "${AR_TOOL}" ]; then
+    echo "tests/neural: no archiver found (looked for \$AR, llvm-ar, ar)" >&2
+    exit 1
+fi
+
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" -Wno-cpp \
+    "${sanitize_flags[@]}" \
+    -DJ37_NAMCORE=1 \
+    -I "${SOURCE}" -I "${SOURCE}/DSP" \
+    -isystem "${NLOHMANN_ROOT}" \
+    -isystem "${NAM_ROOT}" -isystem "${EIGEN_ROOT}" -isystem "${NAM_JSON_INCLUDE}" \
+    -c "${SOURCE}/DSP/NamCoreRegistration.cpp" -o "${NAM_BUILD}/NamCoreRegistration.o"
+
+rm -f "${BUILD}/libnamcore.a"
+"${AR_TOOL}" rcs "${BUILD}/libnamcore.a" \
+    "${NAM_BUILD}/NamCoreRegistration.o" "${nam_objects[@]}"
+
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" -Wno-cpp \
+    "${sanitize_flags[@]}" \
+    -DJ37_HAS_RTNEURAL=0 -DJ37_NAMCORE=1 \
+    -I "${HERE}/../dsp" -I "${SOURCE}" -I "${SOURCE}/DSP" \
+    -isystem "${NLOHMANN_ROOT}" \
+    -isystem "${NAM_ROOT}" -isystem "${EIGEN_ROOT}" -isystem "${NAM_JSON_INCLUDE}" \
+    "${HERE}/archive_test.cpp" "${BUILD}/libnamcore.a" -o "${BUILD}/archive_test"
+
+"${BUILD}/archive_test" "${HERE}/fixtures"
