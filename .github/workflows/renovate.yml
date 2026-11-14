@@ -1,0 +1,70 @@
+# Renovate, on our own clock.
+#
+# The hosted Renovate App runs when IT decides to (roughly hourly, and only when
+# the repository looks active), so its cadence cannot be set to "every two hours"
+# from renovate.json - that file's `schedule` only says when a run MAY open pull
+# requests, not when a run happens. This workflow is what makes the cadence real:
+# one run every two hours, around the clock.
+#
+# Renovate cannot run two ways over the same repository at once - both would open
+# the same branches and fight - so if the Mend Renovate App is still installed on
+# this repository, remove it in favour of this workflow.
+#
+# The token must be a personal access token (classic: `repo` + `workflow`; fine-
+# grained: Contents and Pull requests read/write), stored as the RENOVATE_TOKEN
+# secret. The automatic GITHUB_TOKEN is deliberately not used: pull requests it
+# opens do not trigger this repository's workflows, so every dependency update
+# would sit there without a single check having run.
+name: Renovate
+
+on:
+  schedule:
+    # Every two hours, on the hour: 00:00, 02:00, ... 22:00 UTC, every day.
+    - cron: '0 */2 * * *'
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: Renovate log level
+        type: choice
+        default: info
+        options: [debug, info, warn]
+
+permissions:
+  contents: read
+
+# A long run and the next tick must not overlap: the second one would find the
+# first one's branches half-written.
+concurrency:
+  group: renovate
+  cancel-in-progress: false
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check the token is configured
+        env:
+          TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+        run: |
+          if [ -z "${TOKEN}" ]; then
+            echo "::error::RENOVATE_TOKEN is not set. Add a personal access token with 'repo' and 'workflow' scopes (classic) or Contents + Pull requests read/write (fine-grained) as the RENOVATE_TOKEN repository secret."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Renovate
+        uses: renovatebot/github-action@v46.3.13
+        with:
+          configurationFile: renovate.json
+          token: ${{ secrets.RENOVATE_TOKEN }}
+        env:
+          LOG_LEVEL: ${{ github.event.inputs.logLevel || 'info' }}
+          # Only this repository: the token may be wider than that.
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          # The app's own commit message and branch layout, kept identical so the
+          # dashboard, the labels and every existing branch keep working.
+          RENOVATE_ONBOARDING: 'false'
+          RENOVATE_REQUIRE_CONFIG: 'required'
