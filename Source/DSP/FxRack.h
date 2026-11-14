@@ -177,7 +177,9 @@ public:
     }
 
     /** Block rate: what the parameters say now. */
-    void setTargets (const FxTargets& targets) noexcept { this->targets = targets; }
+    //  `newTargets`, not `targets`: a parameter named after the member it fills
+    //  is a shadow (-Wshadow) and reads like a self-assignment at a glance.
+    void setTargets (const FxTargets& newTargets) noexcept { targets = newTargets; }
 
     /** The smoothed amounts, for the panel and for the harness. */
     const Amounts& currentAmounts() const noexcept { return amounts; }

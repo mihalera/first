@@ -417,7 +417,13 @@ const char* threadSlotName (ThreadSlot slot) noexcept
         case ThreadSlot::message: return "message";
         case ThreadSlot::gl:      return "gl";
         case ThreadSlot::audio:   return "audio";
-        default:                  return "unknown";
+
+            //  Spelled out rather than left to `default`: -Wswitch-enum wants
+            //  every enumerator named, and a value added later should be a
+            //  warning at the switch rather than a silent "unknown" here.
+        case ThreadSlot::count:   break;
     }
+
+    return "unknown";
 }
 } // namespace j37diag
