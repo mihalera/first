@@ -1016,6 +1016,10 @@ j37_apply_windows_settings(first)
 # ------------------------------------------------------------------------------
 j37_apply_android_settings(first)
 
+#  LTO off for CI-speed builds, on every platform. See cmake/J37Platform.cmake;
+#  -DJ37_FAST_CI_BUILD=OFF is what a distributable build wants.
+j37_apply_fast_build_settings(first)
+
 # ------------------------------------------------------------------------------
 #  Summary
 # ------------------------------------------------------------------------------

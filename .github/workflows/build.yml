@@ -947,6 +947,7 @@ jobs:
         run: |
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Debug \
+            -DJ37_FAST_CI_BUILD=ON \
             -DCMAKE_C_COMPILER_LAUNCHER="${J37_COMPILER_LAUNCHER}" \
             -DCMAKE_CXX_COMPILER_LAUNCHER="${J37_COMPILER_LAUNCHER}"
 
@@ -1047,6 +1048,7 @@ jobs:
           # speed is worth more here than the last few percent of optimisation.
           cmake -S . -B build -A x64 `
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
+            -DJ37_FAST_CI_BUILD=ON `
             -DJ37_FAST_WINDOWS_BUILD=ON
 
       - name: Show which toolchain CMake selected
@@ -1253,6 +1255,7 @@ jobs:
         run: |
           cmake -S . -B build -A ARM64 `
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
+            -DJ37_FAST_CI_BUILD=ON `
             -DJ37_FAST_WINDOWS_BUILD=ON `
             -DJ37_ENABLE_ARMPL=ON `
             -DJ37_ARMPL_REQUIRED=ON 2>&1 | Tee-Object -FilePath configure.log
@@ -1401,6 +1404,7 @@ jobs:
           # output that is thrown away with the workspace.
           cmake -S . -B build -G Xcode \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DJ37_FAST_CI_BUILD=ON \
             -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
@@ -1767,6 +1771,7 @@ jobs:
             -DCMAKE_OSX_SYSROOT=${{ matrix.sdk }} \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DJ37_FAST_CI_BUILD=ON \
             -DJ37_RENDER_BACKEND=SOKOL \
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
@@ -1959,6 +1964,7 @@ jobs:
         run: |
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DJ37_FAST_CI_BUILD=ON \
             -DCMAKE_C_COMPILER_LAUNCHER="${J37_COMPILER_LAUNCHER}" \
             -DCMAKE_CXX_COMPILER_LAUNCHER="${J37_COMPILER_LAUNCHER}"
 
@@ -2179,6 +2185,7 @@ jobs:
           set -euo pipefail
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DJ37_FAST_CI_BUILD=ON \
             -DCMAKE_C_COMPILER_LAUNCHER="${J37_COMPILER_LAUNCHER}" \
             -DCMAKE_CXX_COMPILER_LAUNCHER="${J37_COMPILER_LAUNCHER}" \
             -DJ37_ENABLE_ARMPL=ON \
@@ -2372,6 +2379,7 @@ jobs:
           # spliced into the path.
           cmake -S . -B build-android \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DJ37_FAST_CI_BUILD=ON \
             -DCMAKE_C_COMPILER_LAUNCHER="${J37_COMPILER_LAUNCHER}" \
             -DCMAKE_CXX_COMPILER_LAUNCHER="${J37_COMPILER_LAUNCHER}" \
             -DCMAKE_SYSTEM_NAME=Android \
