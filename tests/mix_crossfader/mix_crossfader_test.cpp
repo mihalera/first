@@ -263,6 +263,38 @@ void testClamp()
     check (true, "clamping a position twice changes nothing");
 }
 
+
+// =============================================================================
+//  The gate that decides whether the crossfade is open at all.
+// =============================================================================
+void testOpenThreshold()
+{
+    // The stages that gate on MIX stay skipped at or below 1e-5 of position, exactly
+    // as the literal comparison they replaced did.
+    check (! j37dsp::MixCrossfader::isOpen (0.0f),
+           "MIX 0 is not open");
+    check (! j37dsp::MixCrossfader::isOpen (1.0e-5f),
+           "MIX exactly at the threshold is not open: the comparison is strict");
+    check (j37dsp::MixCrossfader::isOpen (2.0e-5f),
+           "MIX just past the threshold is open");
+    check (j37dsp::MixCrossfader::isOpen (1.0f),
+           "MIX fully wet is open");
+    check (! j37dsp::MixCrossfader::isOpen (-1.0f),
+           "a negative position is never open");
+
+    check (j37dsp::MixCrossfader::openThreshold == 1.0e-5f,
+           "the threshold is 1e-5 of MIX position");
+
+    // ... and that position is about -96 dB of wet gain, because the law takes the
+    // sine of the quarter turn rather than the position itself. Pinned so the two
+    // numbers cannot drift apart: the threshold is a silence, not an arbitrary epsilon.
+    const auto atThreshold = j37dsp::MixCrossfader::gainsFor (j37dsp::MixCrossfader::openThreshold);
+    const auto db = 20.0 * std::log10 (static_cast<double> (atThreshold.wet));
+
+    check (db > -97.0 && db < -95.0,
+           "the open threshold sits at about -96 dB of wet gain, which is silence");
+}
+
 } // namespace
 
 int main()
@@ -274,6 +306,7 @@ int main()
     testLevelOnRenderedSignal();
     testBothLegsAreGated();
     testClamp();
+    testOpenThreshold();
 
     if (gFailures != 0)
     {
