@@ -1,0 +1,39 @@
+name: Report the compiler cache position
+description: >
+  Prints ccache's own numbers after the build: cache size, hits, misses and the
+  hit rate for this job, plus the reasons ccache gives for the misses. Read-only,
+  never fails, and says so plainly when ccache is not in use on the runner.
+
+runs:
+  using: composite
+  steps:
+    #  Callers use `if: always()` on purpose - the interesting case for a miss is
+    #  often a build that failed half way - so this step is written so that it
+    #  cannot turn a build red: every command is guarded and the exit status is 0
+    #  either way.
+    - name: Print the compiler cache statistics
+      shell: bash
+      run: |
+        if ! command -v ccache >/dev/null 2>&1; then
+          echo "ccache is not installed on this runner - nothing to report"
+          exit 0
+        fi
+
+        echo "### ccache statistics (this job)"
+        ccache --show-stats || echo "ccache exists but would not report its statistics"
+
+        #  A hit rate on its own says a cache did not pay, never why. ccache
+        #  writes one "Result: ..." line per compilation into CCACHE_LOGFILE,
+        #  which is what turns "0 %" into a cause: a miss because nothing was
+        #  restored, a miss because the command line differs, a miss because the
+        #  preprocessed output differs.
+        log="${CCACHE_LOGFILE:-}"
+        if [ -n "$log" ] && [ -f "$log" ]; then
+          echo "### ccache results behind those numbers"
+          grep -oE 'Result: [A-Za-z_, ]+' "$log" | sed 's/Result: //' \
+            | sort | uniq -c | sort -rn | head -8
+        else
+          echo "no ccache log on this runner - the numbers above stand alone"
+        fi
+
+        exit 0

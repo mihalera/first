@@ -62,6 +62,7 @@ runs:
             echo "CCACHE_BASEDIR=${GITHUB_WORKSPACE}"
             echo "CCACHE_SLOPPINESS=time_macros,include_file_mtime,include_file_ctime"
             echo "CCACHE_COMPILERCHECK=content"
+            echo "CCACHE_LOGFILE=${RUNNER_TEMP}/ccache.log"
           } >> "$GITHUB_ENV"
 
           printf '#!/bin/sh\nexec %s "$@"\n' "$(command -v ccache)" > "$bindir/launcher"
@@ -96,6 +97,14 @@ runs:
         restore-keys: |
           ccache-${{ runner.os }}-${{ inputs.flavour }}--
 
-    - name: Report the cache position
+    #  Counters start at zero for this run so that the numbers reported after the
+    #  build (./.github/actions/ccache-report) are this job's own hits and misses,
+    #  not the previous job's totals restored with the directory.
+    - name: Start counting compiler cache events
       shell: bash
-      run: ccache --show-stats 2>/dev/null || echo "ccache is not in use on this runner"
+      run: |
+        #  What the restore actually brought, before the counters are cleared.
+        #  "Cache not found" in the restore step and "0.0 GB" here mean the same
+        #  thing: the build is about to compile everything from scratch.
+        ccache --show-stats 2>/dev/null | grep -E "Cache size"           || echo "ccache is not in use on this runner"
+        ccache --zero-stats 2>/dev/null || true
