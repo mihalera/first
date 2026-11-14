@@ -869,6 +869,16 @@ if(J37_PRECOMPILE_HEADERS)
             PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
     endif()
 
+    #  The one translation unit that owns the sokol_gfx implementation also has
+    #  to stay out of it: sokol's GL backend needs GL_ARRAY_BUFFER and friends at
+    #  global scope, while JUCE declares them inside namespace juce::gl, so the
+    #  header in front of it turns every one of them into "use of undeclared
+    #  identifier". Only the implementation TU is affected - the renderer that
+    #  merely calls sokol is fine.
+    set_source_files_properties(
+        "${CMAKE_CURRENT_SOURCE_DIR}/Source/GUI/SokolGfxImpl.cpp"
+        PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+
     target_precompile_headers(first PRIVATE
         #  C++ only. This target also compiles C sources, and a C precompiled
         #  header built from JUCE's headers fails twice over: "JUCE requires
