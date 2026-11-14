@@ -286,3 +286,47 @@ function(j37_apply_android_settings target)
     message(STATUS "  Next step   : point a Gradle project's externalNativeBuild at "
                    "this CMakeLists (see README, the Android section)")
 endfunction()
+
+# ==============================================================================
+#
+#   Fast builds: link-time code generation off, on every platform
+#
+#   LTO is the pass that inlines across translation units at link time. It makes
+#   a smaller, faster plugin, and it costs minutes on every single build: the
+#   whole program is re-read and re-optimised whenever anything is linked.
+#
+#   That is the wrong trade for CI, and this project had half made it already -
+#   J37_FAST_WINDOWS_BUILD defaults to ON in the Windows block above, so Windows
+#   CI has not linked with LTO for a while. This is the same decision for the
+#   platforms that were still paying: Linux, macOS, iOS and Android.
+#
+#   It is a build-shape flag, not a behaviour flag. The artifact is the same
+#   plugin, built without cross-TU optimisation; nothing in the source, the
+#   parameters or the state format knows the difference. A build that is meant to
+#   be distributed should not use it:
+#
+#       cmake -S . -B build -DJ37_FAST_CI_BUILD=OFF ...
+#
+#   The mechanism is the one documented in the Windows block and for the same
+#   reason: the flags arrive through the INTERFACE of juce_recommended_lto_flags
+#   as generator expressions, so filtering this target's own options finds
+#   nothing and only clearing that interface takes effect.
+#
+# ==============================================================================
+option(J37_FAST_CI_BUILD "Skip link-time code generation (CI and iteration)" OFF)
+
+function(j37_apply_fast_build_settings target)
+    if(NOT J37_FAST_CI_BUILD)
+        return()
+    endif()
+
+    if(TARGET juce_recommended_lto_flags)
+        set_property(TARGET juce_recommended_lto_flags PROPERTY
+                     INTERFACE_COMPILE_OPTIONS "")
+        set_property(TARGET juce_recommended_lto_flags PROPERTY
+                     INTERFACE_LINK_LIBRARIES "")
+    endif()
+
+    message(STATUS "Fast CI build: LTO disabled (J37_FAST_CI_BUILD=ON)")
+    message(STATUS "  Set -DJ37_FAST_CI_BUILD=OFF for a distributable build.")
+endfunction()
