@@ -727,12 +727,10 @@ public:
     /** The fundamental the cascade is locked to, in Hz. Zero when unlocked. */
     float getSubfundTrackedHz() const noexcept { return subfundTrackedHz.load (std::memory_order_relaxed); }
 
-    /** The tempo the deck is running at, for the panel's BPM readout. Read from
-        the message thread; the audio thread writes it as a plain double, which is
-        the same discipline every other published value here follows, and a torn
-        double read would only smear one displayed digit for one frame. */
-    double getDeckTempoBpm() const noexcept { return hostTempoBpm; }
-    bool   getDeckTempoValid() const noexcept { return hostTempoValid; }
+    /** The tempo the deck is running at, for the panel's BPM readout. The audio
+        thread publishes both values atomically for message-thread readers. */
+    double getDeckTempoBpm() const noexcept { return hostTempoBpm.load (std::memory_order_relaxed); }
+    bool   getDeckTempoValid() const noexcept { return hostTempoValid.load (std::memory_order_relaxed); }
 
     /** How solidly the detector is tracking, 0..1. Zero means nothing is being generated. */
     float getSubfundConfidence() const noexcept { return subfundConfidence.load (std::memory_order_relaxed); }
@@ -2069,8 +2067,8 @@ private:
     //  falling back to 120 would make the delay jump every time the transport
     //  stopped, which is worse than holding the last known tempo.
     // -----------------------------------------------------------------------
-    double hostTempoBpm = 120.0;
-    bool hostTempoValid = false;
+    std::atomic<double> hostTempoBpm { 120.0 };
+    std::atomic<bool> hostTempoValid { false };
 
     // The amp controls. PRESENCE and CABINET are coefficients rather than gains,
     // so they are smoothed for the same reason every other pole is: a stepped

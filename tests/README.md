@@ -36,6 +36,7 @@ tests/scale/run.sh        # scale degree membership, all tonic/mode ring notes a
 tests/diagnostics/run.sh  # the diagnostic switch, the trace sink and the shutdown watchdog (real thread stacks on Windows)
 tests/fuzz/run.sh         # the WAV decoder fed mutated bytes, under ASan/UBSan and (where clang is) libFuzzer
 tests/unit/run.sh         # the equaliser, the compressor and the transient shaper, as units
+cmake --build build --target j37_processor_boundary_tests && ctest --test-dir build -R processor_boundaries --output-on-failure
 
 tests/dsp/check_headers_juce.sh     # every Source/DSP/*.h against real JUCE
 tests/editor/check_editor_juce.sh   # every translation unit and Source/GUI/*.h against real JUCE
@@ -205,9 +206,10 @@ shipping header* tests the code the plugin compiles.
 Listed here rather than left to be discovered, because each one is a proposal in
 [docs/plugin-improvement-plan.md](../docs/plugin-improvement-plan.md):
 
-- **`processBlock`'s boundaries.** Zero frames, one frame, a prime block size, a
-  rate change between blocks, a prepared-but-never-played plugin. The stages are
-  measured; the edges between them are not.
+- **`processBlock`'s boundaries.** `j37_processor_boundary_tests` calls the real
+  processor with zero-, one-, and prime-sized blocks, checks finite output and
+  guard samples around the buffers, changes the sample rate between blocks, and
+  prepares then releases an instance that never processes audio.
 - **The rendering backends.** `Source/GUI/NativeRenderer_{D3D11,D3D12,Vulkan,Metal}`
   are compiled by the platform builds and checked by nothing else. The Metal
   adapter's display-scale handling is the one part of it a Linux machine cannot

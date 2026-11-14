@@ -1021,6 +1021,35 @@ j37_apply_android_settings(first)
 j37_apply_fast_build_settings(first)
 
 # ------------------------------------------------------------------------------
+#  Processor boundary harness. This executable links the real plugin processor
+#  and calls its public host entry points without opening an editor or audio device.
+# ------------------------------------------------------------------------------
+if(J37_BUILD_TESTS)
+    enable_testing()
+
+    get_target_property(J37_GENERATED_SOURCES_DIR first JUCE_GENERATED_SOURCES_DIRECTORY)
+    add_executable(j37_processor_boundary_tests tests/processor_boundaries.cpp)
+    # JUCE's generated plugin definitions include category strings with `|`; on
+    # Windows clang's module scanner passes those through cmd.exe as a pipe.
+    # This target has no C++ modules, so do not invoke that scanner for it.
+    set_property(TARGET j37_processor_boundary_tests PROPERTY CXX_SCAN_FOR_MODULES OFF)
+    target_compile_definitions(j37_processor_boundary_tests PRIVATE
+        JucePlugin_Name="MiBoX"
+        JucePlugin_IsSynth=0
+        JucePlugin_IsMidiEffect=0
+        JucePlugin_PreferredChannelConfigurations=0)
+    target_include_directories(j37_processor_boundary_tests PRIVATE
+        Source
+        "${J37_GENERATED_SOURCES_DIR}"
+        "${CMAKE_CURRENT_BINARY_DIR}/generated")
+    target_link_libraries(j37_processor_boundary_tests PRIVATE
+        first
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
+    add_test(NAME processor_boundaries COMMAND j37_processor_boundary_tests)
+endif()
+
+# ------------------------------------------------------------------------------
 #  Summary
 # ------------------------------------------------------------------------------
 message(STATUS "")

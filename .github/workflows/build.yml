@@ -665,6 +665,11 @@ jobs:
       - name: Run the DSP unit tests under ASan and UBSan
         run: J37_SANITIZE=address,undefined bash tests/unit/run.sh
 
+      - name: Build and run processor boundary tests
+        run: |
+          cmake --build build --target j37_processor_boundary_tests --parallel 2
+          ctest --test-dir build -C Release -R processor_boundaries --output-on-failure
+
       #  The job's last step, so the numbers cover everything it compiled, and
       #  the counters were zeroed before the build: these are this job's own.
       - name: Report the compiler cache position
