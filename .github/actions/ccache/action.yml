@@ -96,6 +96,9 @@ runs:
         restore-keys: |
           ccache-${{ runner.os }}-${{ inputs.flavour }}--
 
-    - name: Report the cache position
+    #  Counters start at zero for this run so that the numbers reported after the
+    #  build (./.github/actions/ccache-report) are this job's own hits and misses,
+    #  not the previous job's totals restored with the directory.
+    - name: Start counting compiler cache events
       shell: bash
-      run: ccache --show-stats 2>/dev/null || echo "ccache is not in use on this runner"
+      run: ccache --zero-stats 2>/dev/null || echo "ccache is not in use on this runner"

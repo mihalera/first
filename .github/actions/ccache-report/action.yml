@@ -1,0 +1,24 @@
+name: Report the compiler cache position
+description: >
+  Prints ccache's own numbers after the build: cache size, hits, misses and the
+  hit rate for this job. Read-only, never fails, and says so plainly when ccache
+  is not in use on the runner.
+
+runs:
+  using: composite
+  steps:
+    #  Callers use `if: always()` on purpose - the interesting case for a miss is
+    #  often a build that failed half way - so this step is written so that it
+    #  cannot turn a build red: every command is guarded and the exit status is 0
+    #  either way.
+    - name: Print the compiler cache statistics
+      shell: bash
+      run: |
+        if ! command -v ccache >/dev/null 2>&1; then
+          echo "ccache is not installed on this runner - nothing to report"
+          exit 0
+        fi
+
+        echo "### ccache statistics (this job)"
+        ccache --show-stats || echo "ccache exists but would not report its statistics"
+        exit 0

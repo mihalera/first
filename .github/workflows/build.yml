@@ -534,6 +534,13 @@ jobs:
       - name: Check the plugin's own files against JUCE
         run: bash tests/editor/check_editor_juce.sh
 
+      #  The job's last step, so the numbers cover everything it compiled, and
+      #  the counters were zeroed before the build: these are this job's own.
+      - name: Report the compiler cache position
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/ccache-report
+
   # ============================================================================
   #  DSP unit tests - the pieces UNDERNEATH the harnesses
   #
@@ -658,6 +665,13 @@ jobs:
       - name: Run the DSP unit tests under ASan and UBSan
         run: J37_SANITIZE=address,undefined bash tests/unit/run.sh
 
+      #  The job's last step, so the numbers cover everything it compiled, and
+      #  the counters were zeroed before the build: these are this job's own.
+      - name: Report the compiler cache position
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/ccache-report
+
   # ============================================================================
   #  DSP micro-benchmarks - measurement, never a gate
   #
@@ -774,6 +788,13 @@ jobs:
           print(f"tanh+exp CPU share ~ {share:.2%} of tanh+exp frame cost")
           sys.exit(0)
           PROBE
+
+      #  The job's last step, so the numbers cover everything it compiled, and
+      #  the counters were zeroed before the build: these are this job's own.
+      - name: Report the compiler cache position
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/ccache-report
 
   # ============================================================================
   #  Editor Debug build - Linux VST3 with the Melatonin inspector embedded
@@ -949,6 +970,13 @@ jobs:
           name: first-linux-debug-vst3
           path: build/first_artefacts/Debug/**/*.vst3
           if-no-files-found: error
+
+      #  The job's last step, so the numbers cover everything it compiled, and
+      #  the counters were zeroed before the build: these are this job's own.
+      - name: Report the compiler cache position
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/ccache-report
 
   # ============================================================================
   #  Windows - VST3
@@ -2005,6 +2033,13 @@ jobs:
             ${{ steps.clap.outputs.clap }}
           if-no-files-found: error
 
+      #  The job's last step, so the numbers cover everything it compiled, and
+      #  the counters were zeroed before the build: these are this job's own.
+      - name: Report the compiler cache position
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/ccache-report
+
   #  Linux ARM64 - VST3 + CLAP, with Arm Performance Libraries
   #
   #  A job of its own rather than a matrix leg of build-linux, because almost
@@ -2209,6 +2244,13 @@ jobs:
             ${{ steps.bundles.outputs.vst3 }}
             ${{ steps.bundles.outputs.clap }}
           if-no-files-found: error
+
+      #  The job's last step, so the numbers cover everything it compiled, and
+      #  the counters were zeroed before the build: these are this job's own.
+      - name: Report the compiler cache position
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/ccache-report
 
   # ============================================================================
   #  Android - Standalone (the only format JUCE's CMake layer produces there)
@@ -2469,3 +2511,10 @@ jobs:
           file "$so" | grep -q "aarch64" || {
             echo "The produced library is not aarch64"; exit 1;
           }
+
+      #  The job's last step, so the numbers cover everything it compiled, and
+      #  the counters were zeroed before the build: these are this job's own.
+      - name: Report the compiler cache position
+        if: always()
+        continue-on-error: true
+        uses: ./.github/actions/ccache-report
