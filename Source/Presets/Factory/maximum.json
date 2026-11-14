@@ -139,25 +139,4 @@
   "fx_spectral": 1.0,
   "fx_speed": 1.0,
   "comp_upward": 1.0
-=======
-  "amp_source": 0.0,
-  "valve_source": 0.0,
-  "transformer_source": 0.0,
-  "tuning_tonic": 0,
-  "tuning_mode": 0,
-  "autotune_amount": 0.0,
-  "autotune_speed": 0.5,
-  "autotune_range": 1.0,
-  "autotune_octave": 0,
-  "autotune_tolerance": 10.0,
-  "autotune_gate": 0.5,
-  "delay_damp": 0.0,
-  "reverb_lowcut": 120.0,
-  "comp_threshold": -18.0,
-  "comp_ratio": 2.0,
-  "comp_attack": 10.0,
-  "comp_release": 120.0,
-  "comp_makeup": 0.0,
-  "comp_mix": 0.0,
-  "ir_mix": 0.0
 }

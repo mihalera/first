@@ -86,7 +86,6 @@ void FirstAudioProcessorEditor::applyTheme() {
     // immediately when changing to the new palette.
     configureTextureWeights(panelTextureDrive, panelTextureGainReduction);
     rebuildPanelTextureLayers();
-    rebuildPanelBackground();
     deckHeadingLabel.setColour(juce::Label::textColourId, palette.accent);
     buildLabel.setColour(juce::Label::textColourId, palette.secondary);
     tapeTypeLabel.setColour(juce::Label::textColourId, palette.secondary);

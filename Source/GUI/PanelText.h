@@ -791,20 +791,6 @@ namespace j37panel
                    "0 is the untouched signal and takes the whole stage, detector "
                    "included, out of the path; 100 is the full pull the current "
                    "RANGE allows. It does not change the retune speed - SPEED owns "
-=======
-                   "TUNE AMOUNT above zero, the corrected pitch is snapped to "
-                   "the scale that starts on this note.";
-=======
-        if (id == "tuning_mode")
-            return "MODE - the scale the pitch correction quantises to: major or "
-                   "minor on the TONIC, or chromatic, which snaps to semitones "
-                   "only. RANGE caps how far a reading may travel to reach that "
-                   "scale. It has no effect while TUNE AMOUNT is zero.";
-        if (id == "autotune_amount")
-            return "TUNE AMOUNT - the depth of the correction and the only on/off: "
-                   "0 is the untouched signal and takes the whole stage, detector "
-                   "included, out of the path; 100 is the full pull the current "
-                   "RANGE allows. It does not change the retune speed - SPEED owns "
                    "that - so a deep, natural correction is possible without "
                    "the snap. Default 0 percent (off).";
         if (id == "autotune_speed")

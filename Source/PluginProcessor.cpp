@@ -1849,8 +1849,6 @@ namespace
         }
 
         j37diag::note ("android: microphone permission not granted, dropping saved input channels");
-=======
-            return;
 
         if (auto* holder = juce::StandalonePluginHolder::getInstance())
         {
@@ -1864,7 +1862,6 @@ namespace
                 // Also set a flag to indicate permission was denied, so the UI can
                 // show an appropriate message if needed
                 settings->setValue ("microphonePermissionDenied", true);
-=======
             }
         }
     }
@@ -1878,7 +1875,6 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
     // lifecycle lines by the time this runs, so the two halves share one file.
     j37diag::beginRunForThisPlatform ("createPluginFilter");
 
-=======
    #if JUCE_ANDROID
     dropSavedInputChannelsWithoutPermission();
    #endif
@@ -1886,6 +1882,4 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
     auto* processor = new FirstAudioProcessor();
     j37diag::note ("native: plugin instance created");
     return processor;
-=======
-    return new FirstAudioProcessor();
 }
