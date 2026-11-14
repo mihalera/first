@@ -14,7 +14,7 @@
     "git-submodules"
   ],
   "schedule": [
-    "before 6am on monday"
+    "at any time"
   ],
   "timezone": "Etc/UTC",
   "prConcurrentLimit": 10,

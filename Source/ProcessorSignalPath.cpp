@@ -3967,7 +3967,7 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         const float bleedToLeft  = tracksBleedBuffer[1][static_cast<std::size_t> (bleedReadPosition)];
         const float bleedToRight = tracksBleedBuffer[0][static_cast<std::size_t> (bleedReadPosition)];
 
-        if (mixNow > 1.0e-5f)
+        if (j37dsp::MixCrossfader::isOpen (mixNow))
         {
             const auto bleed = j37dsp::trackBleedFrame (outputSignal[0], outputSignal[1],
                                                         bleedToLeft, bleedToRight,
@@ -4059,7 +4059,8 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         antiPhaseAmount.store (state.antiPhaseGuardOn ? antiPhaseCorrection : 0.0f,
                                std::memory_order_relaxed);
 
-        if (j37dsp::antiPhaseIsEngaged (antiPhaseCorrection) && mixNow > 1.0e-5f)
+        if (j37dsp::antiPhaseIsEngaged (antiPhaseCorrection)
+            && j37dsp::MixCrossfader::isOpen (mixNow))
         {
             // The correction above is the FRAME's, and it is what gates the
             // guard. The rotation itself happens per BAND, in

@@ -82,6 +82,27 @@ public:
         return { std::cos (angle), std::sin (angle) };
     }
 
+    /** The MIX position below which the crossfade is not audibly open.
+
+        1e-5 of MIX position is about -96 dB of wet gain - inaudible on any system,
+        and below the point where a smoother's last hash could still be called a
+        crossfade. Three places
+        in the frame read it - the track bleed, the anti-phase rotation and the
+        hot-path probe - so it is named here once rather than written as a literal in
+        each, where one of them would eventually drift away from the others.
+    */
+    static constexpr float openThreshold = 1.0e-5f;
+
+    /** Whether MIX is far enough off zero for the stages that gate on it to matter.
+
+        Strictly greater, which is what the comparisons it replaces asked: exactly at
+        the threshold the wet leg is -96 dB and those stages stay skipped.
+    */
+    static bool isOpen (float mix) noexcept
+    {
+        return mix > openThreshold;
+    }
+
     /** The machine's leg of the crossfade, gated. */
     static float dryLeg (float dryInput, Gains gains, float platterGate) noexcept
     {
