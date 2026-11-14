@@ -88,9 +88,13 @@ runs:
       uses: actions/cache@v6
       with:
         path: ~/.ccache
-        key: ccache-${{ runner.os }}-${{ inputs.flavour }}-${{ github.sha }}
+        #  The double dash matters: with a single one, the plain `linux`
+        #  flavour's restore prefix `ccache-Linux-linux-` also matched
+        #  `ccache-Linux-linux-debug-...`, so build-linux restored the debug
+        #  job's objects, hit nothing and reported the hit rate of a cold build.
+        key: ccache-${{ runner.os }}-${{ inputs.flavour }}--${{ github.sha }}
         restore-keys: |
-          ccache-${{ runner.os }}-${{ inputs.flavour }}-
+          ccache-${{ runner.os }}-${{ inputs.flavour }}--
 
     - name: Report the cache position
       shell: bash
