@@ -1,39 +1,76 @@
-name: Cache compiler output with ccache
+name: Put a compiler launcher in front of the compiler
 description: >
-  Installs nothing (every runner image that can build this plugin already has
-  ccache) but checks that it is there, bounds its size, and keeps its directory
-  between runs. The job then passes -DCMAKE_<LANG>_COMPILER_LAUNCHER=ccache,
-  which is honoured by the Makefile and Ninja generators.
+  Installs ccache when the runner image does not carry it, bounds its size, keeps
+  its directory between runs and exports ONE launcher path for the job to pass as
+  CMAKE_<LANG>_COMPILER_LAUNCHER (or to wrap the harness compiler with).
+
+  Nothing here is required for a correct build. A runner without the package, a
+  cache service having a bad day, or an evicted cache all leave the job building
+  exactly what it built before this action existed - just without the saving.
 
 inputs:
   flavour:
     description: A short name that separates one job's cache from another's.
     required: true
 
+outputs:
+  launcher:
+    description: >
+      Absolute path of the launcher to hand to CMake. It always exists: with
+      ccache it runs ccache, without it, it execs its arguments unchanged.
+    value: ${{ steps.prepare.outputs.launcher }}
+
 runs:
   using: composite
   steps:
-    #  Refused rather than skipped: the job passes ccache on the CMake command
-    #  line, so a runner without it would fail at the first compile with a much
-    #  less obvious message than this one.
-    - name: Check ccache is available
+    - name: Prepare the compiler launcher
+      id: prepare
       shell: bash
       run: |
-        ccache --version | head -n 1
-        ccache --max-size=1G
+        #  ccache is NOT on every runner image (ubuntu-26.04 does not ship it),
+        #  and a job that passes `ccache` on the CMake command line then dies at
+        #  the first compile with "ccache: command not found" - exit 127, three
+        #  minutes into a build that was otherwise fine. So it is installed when
+        #  it can be, and when it cannot the launcher below still exists and
+        #  simply execs the compiler. Uncached, never broken.
+        if ! command -v ccache >/dev/null 2>&1; then
+          (sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends ccache) \
+            >/dev/null 2>&1 || true
+        fi
 
-        #  Without these, every checkout's absolute path is part of the hash and
-        #  the cache never hits between runs; with them the same source at the
-        #  same path reuses its objects.
-        echo "CCACHE_BASEDIR=${GITHUB_WORKSPACE}" >> "$GITHUB_ENV"
-        echo "CCACHE_SLOPPINESS=time_macros,include_file_mtime,include_file_ctime" >> "$GITHUB_ENV"
+        bindir="$RUNNER_TEMP/j37-launcher"
+        mkdir -p "$bindir"
 
-    #  Keyed on the commit, restored from the newest cache of this flavour: a
-    #  commit always writes its own entry (so a re-run of it never inherits a
-    #  half-written one) and always starts from the most recent objects, which is
-    #  where nearly all of the hit rate is - JUCE's modules and NAM Core's Eigen
-    #  translation units do not change between commits.
+        if command -v ccache >/dev/null 2>&1; then
+          ccache --version | head -n 1
+          ccache --max-size=1G
+
+          #  Without these the absolute checkout path is part of every hash and
+          #  the cache never hits between runs.
+          echo "CCACHE_BASEDIR=${GITHUB_WORKSPACE}" >> "$GITHUB_ENV"
+          echo "CCACHE_SLOPPINESS=time_macros,include_file_mtime,include_file_ctime" >> "$GITHUB_ENV"
+
+          printf '#!/bin/sh\nexec %s "$@"\n' "$(command -v ccache)" > "$bindir/launcher"
+        else
+          printf '#!/bin/sh\nexec "$@"\n' > "$bindir/launcher"
+          echo "::warning::ccache is unavailable on this runner - the launcher passes every call straight to the compiler, so this run is uncached but correct."
+        fi
+
+        chmod +x "$bindir/launcher"
+        echo "J37_COMPILER_LAUNCHER=$bindir/launcher" >> "$GITHUB_ENV"
+        echo "launcher=$bindir/launcher" >> "$GITHUB_OUTPUT"
+
+    #  Keyed on the commit and restored from the newest entry of its flavour: a
+    #  commit always writes its own (so a re-run never inherits a half-written
+    #  one) and always starts from the most recent objects, which is where nearly
+    #  all of the hit rate is - JUCE's modules and NAM Core's Eigen translation
+    #  units do not change between commits.
+    #
+    #  continue-on-error: a cache is an optimisation. If the service is down or
+    #  the entry has been evicted, the build must still run.
     - name: Restore ccache
+      id: cache
+      continue-on-error: true
       uses: actions/cache@v6
       with:
         path: ~/.ccache
@@ -43,4 +80,4 @@ runs:
 
     - name: Report the cache position
       shell: bash
-      run: ccache --show-stats || true
+      run: ccache --show-stats 2>/dev/null || echo "ccache is not in use on this runner"

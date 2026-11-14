@@ -25,6 +25,10 @@ inputs:
 runs:
   using: composite
   steps:
+    #  continue-on-error on both: a cache is an optimisation. If the service is
+    #  down, the entry has been evicted, or a fork cannot write one, the job must
+    #  still configure and build - a miss costs what the step cost before this
+    #  existed, never a red build.
     #  ONE cache for every job on every runner: .cpm-cache holds git checkouts of
     #  the pinned dependencies (chowdsp_utils, RTNeural, readerwriterqueue,
     #  nlohmann_json, foleys_gui_magic, the CLAP extensions ...) and those sources
@@ -32,6 +36,7 @@ runs:
     #  means the first job to finish populates it and every other job - including
     #  the ones on other operating systems - restores it instead of cloning.
     - name: CPM source checkouts
+      continue-on-error: true
       uses: actions/cache@v6
       with:
         path: .cpm-cache
@@ -43,6 +48,7 @@ runs:
     #  their trees carry this platform's compiler in them. They get a cache of
     #  their own, per platform and per job.
     - name: Fetched extras
+      continue-on-error: true
       uses: actions/cache@v6
       with:
         path: ${{ inputs.build-dir }}/deps

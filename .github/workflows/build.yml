@@ -97,12 +97,18 @@ jobs:
           #  wrapper that hands the same job to ccache. Both are set because
           #  the script derives CC from the NAME of CXX, and a wrapper path
           #  matches neither of the names it knows about.
-          bindir="$RUNNER_TEMP/ccache-bin"
+          bindir="$RUNNER_TEMP/harness-compiler"
           mkdir -p "$bindir"
           cxx=$(command -v "${CXX:-g++}")
           cc=$(command -v "${CC:-${cxx%++}}" || command -v cc)
-          printf '#!/bin/sh\nexec ccache %s "$@"\n' "$cxx" > "$bindir/c++"
-          printf '#!/bin/sh\nexec ccache %s "$@"\n' "$cc" > "$bindir/cc"
+
+          #  Through the launcher action's path rather than through ccache by
+          #  name: that path always exists, and without ccache on the runner it
+          #  execs the compiler directly instead of failing the whole job.
+          printf '#!/bin/sh\nexec "%s" %s "$@"\n' \
+            "$J37_COMPILER_LAUNCHER" "$cxx" > "$bindir/c++"
+          printf '#!/bin/sh\nexec "%s" %s "$@"\n' \
+            "$J37_COMPILER_LAUNCHER" "$cc" > "$bindir/cc"
           chmod +x "$bindir/c++" "$bindir/cc"
           echo "CXX=$bindir/c++" >> "$GITHUB_ENV"
           echo "CC=$bindir/cc" >> "$GITHUB_ENV"
@@ -611,12 +617,18 @@ jobs:
           #  wrapper that hands the same job to ccache. Both are set because
           #  the script derives CC from the NAME of CXX, and a wrapper path
           #  matches neither of the names it knows about.
-          bindir="$RUNNER_TEMP/ccache-bin"
+          bindir="$RUNNER_TEMP/harness-compiler"
           mkdir -p "$bindir"
           cxx=$(command -v "${CXX:-g++}")
           cc=$(command -v "${CC:-${cxx%++}}" || command -v cc)
-          printf '#!/bin/sh\nexec ccache %s "$@"\n' "$cxx" > "$bindir/c++"
-          printf '#!/bin/sh\nexec ccache %s "$@"\n' "$cc" > "$bindir/cc"
+
+          #  Through the launcher action's path rather than through ccache by
+          #  name: that path always exists, and without ccache on the runner it
+          #  execs the compiler directly instead of failing the whole job.
+          printf '#!/bin/sh\nexec "%s" %s "$@"\n' \
+            "$J37_COMPILER_LAUNCHER" "$cxx" > "$bindir/c++"
+          printf '#!/bin/sh\nexec "%s" %s "$@"\n' \
+            "$J37_COMPILER_LAUNCHER" "$cc" > "$bindir/cc"
           chmod +x "$bindir/c++" "$bindir/cc"
           echo "CXX=$bindir/c++" >> "$GITHUB_ENV"
           echo "CC=$bindir/cc" >> "$GITHUB_ENV"
@@ -691,12 +703,18 @@ jobs:
           #  wrapper that hands the same job to ccache. Both are set because
           #  the script derives CC from the NAME of CXX, and a wrapper path
           #  matches neither of the names it knows about.
-          bindir="$RUNNER_TEMP/ccache-bin"
+          bindir="$RUNNER_TEMP/harness-compiler"
           mkdir -p "$bindir"
           cxx=$(command -v "${CXX:-g++}")
           cc=$(command -v "${CC:-${cxx%++}}" || command -v cc)
-          printf '#!/bin/sh\nexec ccache %s "$@"\n' "$cxx" > "$bindir/c++"
-          printf '#!/bin/sh\nexec ccache %s "$@"\n' "$cc" > "$bindir/cc"
+
+          #  Through the launcher action's path rather than through ccache by
+          #  name: that path always exists, and without ccache on the runner it
+          #  execs the compiler directly instead of failing the whole job.
+          printf '#!/bin/sh\nexec "%s" %s "$@"\n' \
+            "$J37_COMPILER_LAUNCHER" "$cxx" > "$bindir/c++"
+          printf '#!/bin/sh\nexec "%s" %s "$@"\n' \
+            "$J37_COMPILER_LAUNCHER" "$cc" > "$bindir/cc"
           chmod +x "$bindir/c++" "$bindir/cc"
           echo "CXX=$bindir/c++" >> "$GITHUB_ENV"
           echo "CC=$bindir/cc" >> "$GITHUB_ENV"
@@ -908,8 +926,8 @@ jobs:
         run: |
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=Debug \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+            -DCMAKE_C_COMPILER_LAUNCHER="${J37_COMPILER_LAUNCHER}" \
+            -DCMAKE_CXX_COMPILER_LAUNCHER="${J37_COMPILER_LAUNCHER}"
 
       - name: Compile (Debug)
         run: |
@@ -1913,8 +1931,8 @@ jobs:
         run: |
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+            -DCMAKE_C_COMPILER_LAUNCHER="${J37_COMPILER_LAUNCHER}" \
+            -DCMAKE_CXX_COMPILER_LAUNCHER="${J37_COMPILER_LAUNCHER}"
 
       # --parallel "$J37_BUILD_JOBS" rather than a bare --parallel: see the note
       # on J37_BUILD_JOBS at the top of this file. This is the job the OOM killer
@@ -2126,8 +2144,8 @@ jobs:
           set -euo pipefail
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_C_COMPILER_LAUNCHER="${J37_COMPILER_LAUNCHER}" \
+            -DCMAKE_CXX_COMPILER_LAUNCHER="${J37_COMPILER_LAUNCHER}" \
             -DJ37_ENABLE_ARMPL=ON \
             -DJ37_ARMPL_REQUIRED=ON 2>&1 | tee configure.log
 
@@ -2312,8 +2330,8 @@ jobs:
           # spliced into the path.
           cmake -S . -B build-android \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_C_COMPILER_LAUNCHER="${J37_COMPILER_LAUNCHER}" \
+            -DCMAKE_CXX_COMPILER_LAUNCHER="${J37_COMPILER_LAUNCHER}" \
             -DCMAKE_SYSTEM_NAME=Android \
             -DCMAKE_ANDROID_API=29 \
             -DCMAKE_ANDROID_NDK="$J37_ANDROID_NDK" \

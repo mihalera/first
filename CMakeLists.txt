@@ -829,6 +829,51 @@ target_link_libraries(first
         juce::juce_recommended_warning_flags)
 
 # ------------------------------------------------------------------------------
+#  Precompiled headers
+#
+#  Every plugin source includes <JuceHeader.h>, and that header pulls in every
+#  JUCE module this target links - so the same body of headers is parsed once per
+#  translation unit, fifty-odd times, on every clean build. A precompiled header
+#  is parsed once per target, per configuration, per architecture, and every
+#  translation unit after that reads it from a memory map.
+#
+#  This is the part of the cost no cache can remove. ccache saves a SECOND build
+#  of the same source; a cold checkout, a cache-less machine or an evicted entry
+#  pays the whole price, and that is exactly what this cuts.
+#
+#  The set is spelled out rather than pointed at JuceHeader.h itself, because
+#  that file is the OUTPUT of a build-time custom command (juceaide header ...)
+#  and a precompiled-header rule cannot be made to depend on it. What is listed
+#  is what JuceHeader.h would include: the modules linked above, and the ones
+#  they pull in.
+#
+#  ON by default. -DJ37_PRECOMPILE_HEADERS=OFF is the answer for a toolchain that
+#  mishandles precompiled headers, and it changes nothing but the time.
+# ------------------------------------------------------------------------------
+option(J37_PRECOMPILE_HEADERS
+    "Precompile the JUCE headers once per target instead of once per translation unit"
+    ON)
+
+if(J37_PRECOMPILE_HEADERS)
+    target_precompile_headers(first PRIVATE
+        <juce_core/juce_core.h>
+        <juce_events/juce_events.h>
+        <juce_data_structures/juce_data_structures.h>
+        <juce_graphics/juce_graphics.h>
+        <juce_gui_basics/juce_gui_basics.h>
+        <juce_gui_extra/juce_gui_extra.h>
+        <juce_audio_basics/juce_audio_basics.h>
+        <juce_audio_devices/juce_audio_devices.h>
+        <juce_audio_formats/juce_audio_formats.h>
+        <juce_audio_processors/juce_audio_processors.h>
+        <juce_audio_utils/juce_audio_utils.h>
+        <juce_box2d/juce_box2d.h>
+        <juce_cryptography/juce_cryptography.h>
+        <juce_dsp/juce_dsp.h>
+        <juce_opengl/juce_opengl.h>)
+endif()
+
+# ------------------------------------------------------------------------------
 #  The two GPU abstraction layers.
 #
 #  ONE PER BUILD. sokol_gfx and bgfx are both GPU abstraction layers - each owns
