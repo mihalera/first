@@ -43,12 +43,26 @@ runs:
 
         if command -v ccache >/dev/null 2>&1; then
           ccache --version | head -n 1
+
+          #  ccache 4.x writes to $XDG_CACHE_HOME/ccache - ~/.cache/ccache - not
+          #  to the ~/.ccache of ccache 3.x. Caching the wrong directory saves
+          #  nothing and restores nothing, which is exactly what the first run
+          #  did: "Cache not found for input keys: ccache-Linux-...". So the
+          #  directory is named here and both the save path below and ccache
+          #  itself use it.
+          export CCACHE_DIR="$HOME/.ccache"
           ccache --max-size=1G
 
-          #  Without these the absolute checkout path is part of every hash and
-          #  the cache never hits between runs.
-          echo "CCACHE_BASEDIR=${GITHUB_WORKSPACE}" >> "$GITHUB_ENV"
-          echo "CCACHE_SLOPPINESS=time_macros,include_file_mtime,include_file_ctime" >> "$GITHUB_ENV"
+          #  Without BASEDIR the absolute checkout path is part of every hash,
+          #  and without COMPILERCHECK=content a restored toolchain with a new
+          #  mtime invalidates everything. Both would mean a permanent miss that
+          #  looks like a working cache.
+          {
+            echo "CCACHE_DIR=$CCACHE_DIR"
+            echo "CCACHE_BASEDIR=${GITHUB_WORKSPACE}"
+            echo "CCACHE_SLOPPINESS=time_macros,include_file_mtime,include_file_ctime"
+            echo "CCACHE_COMPILERCHECK=content"
+          } >> "$GITHUB_ENV"
 
           printf '#!/bin/sh\nexec %s "$@"\n' "$(command -v ccache)" > "$bindir/launcher"
         else
