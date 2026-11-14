@@ -1430,7 +1430,7 @@ function(j37_setup_graphics_backend target)
         CPMAddPackage(
             NAME dawn
             GITHUB_REPOSITORY google/dawn
-            GIT_TAG 89c82aaeaa0c016c1bdae167dc5549e7cbc20e92)
+            GIT_TAG 12c86c40d485500ec13385b48a5224bbd3ce0f34)
 
         if(NOT TARGET dawn::webgpu_dawn)
             message(FATAL_ERROR "Dawn did not define the expected 'dawn::webgpu_dawn' target")
