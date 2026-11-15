@@ -63,7 +63,8 @@ python3 "${HERE}/extract.py" "${BUILD}/extracted_dsp.inc"
 #  than an equality, and where the two are SUPPOSED to differ).
 #
 #  This is the one library in the tree that is a DEV dependency and never reaches
-#  the plugin: libebur128 is MIT, vendored under ThirdParty/libebur128 at v1.2.6,
+#  the plugin: libebur128 is MIT, vendored under ThirdParty/libebur128 (its digest
+#  is tracked by Renovate, so there is no version written here to drift from it),
 #  and it is compiled into this binary and nothing else. A pruned checkout, or a
 #  compiler whose C library has no <sys/queue.h> (MSVC's does not), SKIPS it and
 #  says so rather than failing a build for a tool that does not ship.
@@ -76,7 +77,18 @@ if [ -f "${ORACLE_SOURCE}/ebur128/ebur128.c" ] \
     # non-strict dialect (or _GNU_SOURCE). It is C either way; the extensions are
     # the header's, which is why the upstream file carries the MSVC note about
     # _USE_MATH_DEFINES next to its own includes.
+    #
+    #  The header is on the INCLUDE PATH rather than only beside the source, and
+    #  that is not belt and braces: ebur128.c says `#include <ebur128.h>` in the
+    #  digest this tree carries now (it said "ebur128.h" when it was pinned at
+    #  v1.2.6). A QUOTED include is looked up beside the includer first, so the
+    #  old line compiled with no include path at all; an ANGLED one searches the
+    #  include path and nowhere else, so the oracle stopped compiling on a digest
+    #  bump that changed nothing else - reported as a missing header, as if the
+    #  vendored library had been pruned. -I costs a search and covers both
+    #  spellings, so the next bump cannot bring this back.
     "${CXX}" -std=gnu99 -O2 "${sanitize_flags[@]}" -x c -c \
+        -I "${ORACLE_SOURCE}/ebur128" \
         "${ORACLE_SOURCE}/ebur128/ebur128.c" -o "${BUILD}/ebur128.o"
 
     "${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
