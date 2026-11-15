@@ -301,6 +301,11 @@ const Page pages[] = {
     // as its meters live in their own panel beside the grid - see the stubs above.
     { "AUTOTUNE", 6, false, Knobs::autotune },
     { "COMP", 6, false, Knobs::compressor },
+    // The RACK family's four pages, which the table grew after this list was
+    // written. They were the only pages nothing measured, and they are seven
+    // knobs each - the widest row the strip has to break in two.
+    { "DRIVE", 7, false }, { "SHAPE", 7, false },
+    { "MOTION", 7, false }, { "PITCH", 4, false },
 };
 
 int failures = 0;

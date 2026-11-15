@@ -63,7 +63,8 @@ python3 "${HERE}/extract.py" "${BUILD}/extracted_dsp.inc"
 #  than an equality, and where the two are SUPPOSED to differ).
 #
 #  This is the one library in the tree that is a DEV dependency and never reaches
-#  the plugin: libebur128 is MIT, vendored under ThirdParty/libebur128 at v1.2.6,
+#  the plugin: libebur128 is MIT, vendored under ThirdParty/libebur128 (its digest
+#  is tracked by Renovate, so there is no version written here to drift from it),
 #  and it is compiled into this binary and nothing else. A pruned checkout, or a
 #  compiler whose C library has no <sys/queue.h> (MSVC's does not), SKIPS it and
 #  says so rather than failing a build for a tool that does not ship.
@@ -71,24 +72,57 @@ python3 "${HERE}/extract.py" "${BUILD}/extracted_dsp.inc"
 ORACLE_SOURCE="$(j37_path ebur128)"
 
 if [ -f "${ORACLE_SOURCE}/ebur128/ebur128.c" ] \
+   && [ -f "${ORACLE_SOURCE}/ebur128/ebur128/once.pthread.c" ] \
    && printf '#include <sys/queue.h>\n' | "${CXX}" -E -x c - > /dev/null 2>&1; then
     # gnu99, not c99: the library uses M_PI, which glibc only declares under a
     # non-strict dialect (or _GNU_SOURCE). It is C either way; the extensions are
     # the header's, which is why the upstream file carries the MSVC note about
     # _USE_MATH_DEFINES next to its own includes.
+    #
+    #  The header is on the INCLUDE PATH rather than only beside the source, and
+    #  that is not belt and braces: ebur128.c says `#include <ebur128.h>` in the
+    #  digest this tree carries now (it said "ebur128.h" when it was pinned at
+    #  v1.2.6). A QUOTED include is looked up beside the includer first, so the
+    #  old line compiled with no include path at all; an ANGLED one searches the
+    #  include path and nowhere else, so the oracle stopped compiling on a digest
+    #  bump that changed nothing else - reported as a missing header, as if the
+    #  vendored library had been pruned. -I costs a search and covers both
+    #  spellings, so the next bump cannot bring this back.
+    #  The second translation unit is the library's OWN once-only primitive
+    #  (ebur128/ebur128/once.pthread.c): the digest this tree carries calls
+    #  ebur128_once_call() from ebur128_init() and ships one implementation per
+    #  threading model, so compiling ebur128.c alone links nothing into it. The
+    #  pthread one is the right choice for the hosts this oracle runs on - the
+    #  guard above has already skipped the platforms whose C library cannot build
+    #  the library at all - and it is also the one upstream selects when
+    #  thread-safety is available, which is what the v1.2.6 pin used to be.
+    #
+    #  Both include paths are needed, and they are not the same directory: the
+    #  library's own headers say `#include <ebur128.h>` (so ebur128/ is on the
+    #  path) and the primitive says `#include <ebur128/once.h>` (so the versioned
+    #  root above it is too).
+    ONCE_SOURCE="${ORACLE_SOURCE}/ebur128/ebur128/once.pthread.c"
+    ORACLE_INCLUDES=(-I "${ORACLE_SOURCE}" -I "${ORACLE_SOURCE}/ebur128")
+
     "${CXX}" -std=gnu99 -O2 "${sanitize_flags[@]}" -x c -c \
+        "${ORACLE_INCLUDES[@]}" \
         "${ORACLE_SOURCE}/ebur128/ebur128.c" -o "${BUILD}/ebur128.o"
 
+    "${CXX}" -std=gnu99 -O2 "${sanitize_flags[@]}" -x c -c \
+        "${ORACLE_INCLUDES[@]}" \
+        "${ONCE_SOURCE}" -o "${BUILD}/ebur128_once.o"
+
     "${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
-        "${sanitize_flags[@]}" \
-        -I "${HERE}" -I "${SOURCE}" -I "${ORACLE_SOURCE}/ebur128" \
-        "${HERE}/loudness_oracle_test.cpp" "${BUILD}/ebur128.o" "${J37_MATH_LIB[@]}" \
+        "${sanitize_flags[@]}" -pthread \
+        -I "${HERE}" -I "${SOURCE}" "${ORACLE_INCLUDES[@]}" \
+        "${HERE}/loudness_oracle_test.cpp" "${BUILD}/ebur128.o" "${BUILD}/ebur128_once.o" \
+        "${J37_MATH_LIB[@]}" \
         -o "${BUILD}/loudness_oracle_test"
 
     "${BUILD}/loudness_oracle_test"
 else
-    echo "  skip  loudness oracle: ThirdParty/libebur128 is absent, or this platform" \
-         "has no <sys/queue.h>"
+    echo "  skip  loudness oracle: ThirdParty/libebur128 (or its once.pthread.c) is" \
+         "absent, or this platform has no <sys/queue.h>"
 fi
 
 # -----------------------------------------------------------------------------

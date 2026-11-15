@@ -352,6 +352,32 @@ juce_add_plugin(first
     DESCRIPTION                 "Nonlinear analog tape saturation and magnetic coloration"
     FORMATS                     ${J37_PLUGIN_FORMATS}
 
+    #  THE APPLICATION ICON, which is the file's own icon and the one the window
+    #  shows in its title bar.
+    #
+    #  Without these two the build has no icon at all: juceaide generates no
+    #  icon.ico and no .icns, so Windows draws the generic white-page-with-a-
+    #  window default on the Standalone's .exe (and on its taskbar button and
+    #  Alt-Tab entry), and the macOS .app carries the stock application icon.
+    #  That is exactly what "there is no icon in the Standalone" was: nothing
+    #  was broken, the artwork was simply never handed to the toolkit.
+    #
+    #  These are the plugin target's properties, not the wrapper's, and that is
+    #  deliberate: JUCE's _juce_configure_bundle() reads JUCE_ICON_BIG from the
+    #  SOURCE target when it configures every wrapper's bundle, so one pair here
+    #  covers the VST3/AU/CLAP bundles and the Standalone app alike. Writing it
+    #  per wrapper would be four more places to forget.
+    #
+    #  ICON_BIG is the brand mark - the reel face, 256 x 256, which is the
+    #  largest square the asset pack carries and the size Windows and macOS want
+    #  for the big slots. ICON_SMALL is the window icon the panel already draws
+    #  in its own title bar (64 x 64), so the small sizes in the generated .ico
+    #  are the same picture the panel uses rather than a downscaled copy of the
+    #  other one. Both are PNGs from Assets/: juceaide does the conversion, so
+    #  there is no second, hand-maintained .ico or .icns to drift from them.
+    ICON_BIG                    "${CMAKE_CURRENT_SOURCE_DIR}/Assets/brand_mark.png"
+    ICON_SMALL                  "${CMAKE_CURRENT_SOURCE_DIR}/Assets/window_icon.png"
+
     # An EFFECT first: the identity, the bus layout and every saved session are
     # the effect's, and IS_SYNTH stays FALSE so a host keeps handing it audio
     # input. The second category is the "also" the user asked for rather than a

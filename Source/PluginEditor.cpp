@@ -1745,16 +1745,45 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
                           // caption above its own readout, or its own box)
     };
 
+    //  `equalColumns` is what turns a row from a chain of items into a GRID row.
+    //
+    //  The two kinds of row on this deck are genuinely different things. The
+    //  TRANSPORT row is a chain: a key is as wide as its word and the mode switch
+    //  is a wide bar, so each item keeps its own width and the slack lives in the
+    //  gaps. The three rows above it are a MATRIX: five pairs on the model row,
+    //  four on the switches row, six type selectors - and a matrix whose cells
+    //  are 96 px on one side of the row and 150 px on the other does not read as
+    //  a matrix, it reads as controls that were dropped where they landed. That
+    //  is the crookedness the user kept reporting: every number was justified
+    //  (a tonic name is longer than "15 ips") and the ROW was not.
+    //
+    //  With this on, every column of the row gets the same slice and each cell
+    //  fills it, so one row is one width repeated. Rows with different column
+    //  counts cannot share vertical edges, but every one of them starts and
+    //  ends on the deck's own insets, which is what makes three rows read as a
+    //  stack instead of as three independent chains.
+    //
+    //  The slice is the row's span divided by its columns, so it can be a little
+    //  narrower than a base width that was chosen for its longest value - at the
+    //  780 px floor the TONIC list ellipsises its widest entry a few pixels
+    //  sooner. That is the trade this makes deliberately: the type row above
+    //  already accepts the same one, and a value that shortens itself is a far
+    //  smaller defect than a row whose cells are 96 px, 96 px, 150 px, 150 px.
     const auto placeDeckRow = [] (const std::vector<DeckRowItem>& items,
-                                  int left, int right, int rowY, int minimumGap)
+                                  int left, int right, int rowY, int minimumGap,
+                                  bool equalColumns = false)
     {
         int content = 0;
         int elasticGaps = 0;
+        int baseWidths = 0;
 
         for (std::size_t i = 0; i < items.size(); ++i)
         {
             if (! items[i].sameColumn)
+            {
                 content += items[i].width;
+                baseWidths += items[i].width;
+            }
 
             // A gap belongs to the item that ENDS a column: the caption of a
             // horizontal pair, and the value of a stacked one.
@@ -1812,6 +1841,15 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
                                   ? 0
                                   : (slack - usedByGaps) / columnCount;
 
+        // The equal slice: the row's span less the gaps it actually spends,
+        // divided by its columns. `slack - usedByGaps + baseWidths` is the same
+        // quantity written from the row's own sum, so a row whose bases already
+        // exceed the span still gets a positive width rather than a negative one.
+        const auto uniformWidth = equalColumns && columnCount > 0
+                                    ? juce::jmax (1, (slack - usedByGaps + baseWidths)
+                                                         / columnCount)
+                                    : 0;
+
         auto widest = juce::Range<int> (0, 0);
         int edge = left;
         int columnLeft = left;
@@ -1828,7 +1866,7 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
             if (! item.sameColumn)
             {
                 columnLeft = edge;
-                columnWidth = item.width + widthShare;
+                columnWidth = equalColumns ? uniformWidth : item.width + widthShare;
             }
 
             item.component->setBounds (columnLeft, rowY + item.y, columnWidth, item.height);
@@ -1885,7 +1923,11 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
             { &vinylSpeedLabel,   96, -1,  0, captionHeight, false },
             { &vinylSpeedBox,      0, -1, captionHeight, controlHeight, true  },
             { &bpmLabel,          96, -1,  0, captionHeight, false },
-            { &bpmReadout,         0, -1, captionHeight, captionHeight - 2, true  },
+            // The tempo readout is a VALUE like the two lists beside it, so it
+            // takes the control band's height rather than the 13 px a caption
+            // line would give it: at caption height it was a stub of type under
+            // a caption, and the row behind it read as four boxes and a fragment.
+            { &bpmReadout,         0, -1, captionHeight, controlHeight, true  },
             { &tuningTonicLabel, 150, -1,  0, captionHeight, false },
             { &tuningTonicBox,     0, -1, captionHeight, controlHeight, true  },
             { &tuningModeLabel,  150, -1,  0, captionHeight, false },
@@ -1893,7 +1935,7 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         };
 
         placeDeckRow (row, deck.getX() + 18, deck.getRight() - reelCorridor,
-                      deckTop (j37panel::DeckBands::model), 14);
+                      deckTop (j37panel::DeckBands::model), 14, true);
     }
 
     // ---- row 2: SWITCHES ----------------------------------------------------
@@ -1909,16 +1951,16 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
             { &instrumentBox,      0, -1, captionHeight, controlHeight, true  },
 
             { &harmonicsLabel,   108, -1,  0, captionHeight, false },
-            { &harmonicsReadout,   0, -1, captionHeight, captionHeight - 2, true  },
+            { &harmonicsReadout,   0, -1, captionHeight, controlHeight, true  },
             { &subfundLabel,     108, -1,  0, captionHeight, false },
-            { &subfundReadout,     0, -1, captionHeight, captionHeight - 2, true  },
+            { &subfundReadout,     0, -1, captionHeight, controlHeight, true  },
             { &antiPhaseLabel,   108, -1,  0, captionHeight, false },
-            { &antiPhaseReadout,   0, -1, captionHeight, captionHeight - 2, true  }
+            { &antiPhaseReadout,   0, -1, captionHeight, controlHeight, true  }
         };
 
         placeDeckRow (row, deck.getX() + 18,
                       deck.getRight() - deckRightInset,
-                      deckTop (j37panel::DeckBands::switches), 12);
+                      deckTop (j37panel::DeckBands::switches), 12, true);
 
         // The readouts are the only deck text whose width now depends on the
         // panel, so they are the only ones that can run out of room - and they
@@ -1989,7 +2031,7 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
             { &digitalTypeBox,         0, -1, captionHeight, controlHeight, true  }
         };
 
-        placeDeckRow (row, rowLeft, rowRight, typesTop, 14);
+        placeDeckRow (row, rowLeft, rowRight, typesTop, 14, true);
     }
 
     // ---- row 4: TRANSPORT ---------------------------------------------------
@@ -2156,8 +2198,17 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     //  drift along the machine's bottom edge, behind the badge text, which is
     //  the one place on the panel where motion can be seen without being drawn
     //  over a control.
+    //
+    //  The corridor now STARTS where the badge caption ends. "Behind the text"
+    //  was meant as depth and read as a smear: six dots crossing "FACTORY STATE"
+    //  look like damage to the caption, not like dust in the machine. The strip
+    //  to the right of the caption is just as wide and holds nothing at all, so
+    //  the dust lives there, and on a panel too narrow to leave it 20 px the
+    //  length test in the paint routine hides the motes rather than crowding the
+    //  text they were hurt by.
     // ------------------------------------------------------------------
-    deckParticleCorridorX = { deck.getX() + 24, deck.getRight() - 24 };
+    deckParticleCorridorX = { juce::jmax (deck.getX() + 24, presetBadgeLabel.getRight() + 12),
+                              deck.getRight() - 24 };
     deckParticleCorridorY = { deckTop (j37panel::DeckBands::badge) + 1,
                               deckTop (j37panel::DeckBands::badge)
                                   + deckBandHeight (j37panel::DeckBands::badge) - 1 };
