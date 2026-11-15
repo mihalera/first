@@ -381,6 +381,11 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void paint(juce::Graphics &) override;
     void resized() override;
 
+    /** The standalone's title bar is drawn by JUCE, not by Windows, so the icon
+        the executable carries never reaches it. This is where the panel hands
+        the window the brand mark the rest of the desktop already shows. */
+    void parentHierarchyChanged() override;
+
   private:
     /** A load key that is also a file drop target. The three file pickers already
         own the validation, the status line and the folder memory; this only gives
@@ -1385,6 +1390,8 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // model is actually doing to the signal rather than what it is receiving.
     juce::Label harmonicsLabel;
     juce::Label harmonicsReadout;
+    bool titleIconSet = false;
+
     juce::Label bpmLabel;
     juce::Label bpmReadout;
 
