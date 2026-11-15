@@ -32,6 +32,37 @@ namespace
 {
 std::atomic<bool> sokolContextClaimed { false };
 
+/** sokol_gfx's log sink.
+
+    Sokol reports through this callback and through nothing else: a validation
+    failure logs its reason here and then panics, so with no logger installed the
+    reason is discarded and the process dies in abort() with only the CRT's
+    dialog to show for it. Routing the message into JUCE's logger puts it where
+    this project's diagnostics already go (the debugger's output window in a
+    debug build, the host's log in a shipping one), and the level is carried
+    through so a warning is not dressed up as a panic. */
+void sokolLog (const char* tag, uint32_t logLevel, uint32_t logItemId,
+               const char* messageOrNull, uint32_t lineNr,
+               const char* fileNameOrNull, void*)
+{
+    const char* level = logLevel == 0 ? "panic" : logLevel == 1 ? "error"
+                        : logLevel == 2 ? "warning"
+                                       : "info";
+
+    juce::String text;
+    text << "sokol_gfx " << tag << ' ' << level << " (" << static_cast<int> (logItemId);
+
+    if (messageOrNull != nullptr)
+        text << ": " << messageOrNull;
+
+    text << ")";
+
+    if (fileNameOrNull != nullptr)
+        text << " at " << fileNameOrNull << ':' << static_cast<int> (lineNr);
+
+    juce::Logger::writeToLog (text);
+}
+
 #if defined (SOKOL_GLES3)
  #define J37_SOKOL_SHADER_VERSION "#version 300 es\nprecision highp float;\n"
  constexpr auto sceneDepthFormat = SG_PIXELFORMAT_DEPTH;
@@ -129,6 +160,14 @@ uniform float uArcAngle;
 uniform float uKeyDown;
 uniform vec3 uPanelHalf;
 
+//  Nothing in the build compiles the text above or below this line: it is a
+//  string the driver parses when the first frame is drawn, so a mistake in it is
+//  not a compiler error but a shader that fails to build, a pipeline that never
+//  becomes valid and - before the logger above existed - an abort() with no
+//  reason in it. The interpolation here had lost its closing paren and one of
+//  its two factors, which is how the sokol renderer came to draw nothing at all
+//  in either configuration.
+
 // Subtle procedural surface texture for the control bank.
 float hash (vec2 p)
 {
@@ -142,7 +181,7 @@ float valueNoise (vec2 p)
     vec2 u = f * f * (3.0 - 2.0 * f);
 
     return mix (mix (hash (i), hash (i + vec2 (1.0, 0.0)), u.x),
-                mix (hash (i + vec2 (0.0, 1.0)), hash (i + vec2 (1.0, 1.0)), u.y);
+                mix (hash (i + vec2 (0.0, 1.0)), hash (i + vec2 (1.0, 1.0)), u.x), u.y);
 }
 
 // Procedural grain, tape shimmer and broad wear marks share local
@@ -491,11 +530,19 @@ private:
         desc.environment.defaults.depth_format = sceneDepthFormat;
         desc.environment.defaults.sample_count = 4;
 
-#if defined (SOKOL_VALIDATE)
-        // Enable Sokol's validation layer in debug builds.
-        desc.logger.func = sokol_debug_log;
+        //  Sokol has NO logger unless this is installed, and it is silent without
+        //  one - "sokol-gfx will be completely silent, e.g. it will not report
+        //  errors, warnings and validation layer messages", in its own words.
+        //  That is what made a Debug abort unreadable: the validation layer found
+        //  a bad sg_pipeline_desc, called _SG_PANIC and the CRT put up "abort()
+        //  has been called" - a dialog with no reason in it, because the reason
+        //  is a string handed to this callback and there was no callback. So one
+        //  is installed in EVERY build, not only under SOKOL_VALIDATE (which is
+        //  only ever defined by SokolBackend.h for a diagnostic configure): the
+        //  messages are cheap, they only happen on failure, and a renderer that
+        //  dies silently is a renderer nobody can fix.
+        desc.logger.func = sokolLog;
         desc.logger.user_data = this;
-#endif
 
         sg_setup (&desc);
         if (! sg_isvalid())
@@ -522,6 +569,7 @@ private:
         shader = {};
         mainPipeline = {};
         glowPipeline = {};
+        appliedPipeline = {};
         gpuMeshes.clear();
         uploadedFrom = nullptr;
         {
@@ -600,6 +648,13 @@ private:
 #endif
 
         sg_begin_pass (&pass);
+
+        //  A pass starts with no pipeline applied, which is also what sokol
+        //  records: sg_apply_pipeline is what resets the "bindings and uniforms
+        //  applied since the pipeline" counter, and a pass that begins with a
+        //  stale one would let a draw through without them. See drawFrame().
+        appliedPipeline = {};
+
         drawFrame (frame);
 #if defined (SOKOL_DEBUG)
         sg_pop_debug_group ();
@@ -841,11 +896,23 @@ private:
     }
 
     /** Records every draw of a validated frame. Called inside the frame's
-        pass; the pipeline and the bindings are re-applied per draw because the
-        mesh is. The two uniform blocks go through the cache, so a draw that
-        repeats the block the program already holds - the fragment block of two
-        knobs with the same angle, the vertex block of a frame that did not
-        move - costs no upload at all. */
+        pass; the bindings are re-applied per draw because the mesh is. The two
+        uniform blocks go through the cache, so a draw that repeats the block
+        the program already holds - the fragment block of two knobs with the
+        same angle, the vertex block of a frame that did not move - costs no
+        upload at all.
+
+        THE PIPELINE IS APPLIED ONLY WHEN IT CHANGES, and that is sokol's rule
+        rather than an optimisation. sg_apply_pipeline resets the library's
+        "what has been applied since this pipeline" counter to zero and every
+        uniform block has to be re-applied after it; the cache exists precisely
+        to NOT re-upload a block that is already in the program, so re-applying
+        the pipeline per draw while the cache skips the upload fails sokol's own
+        check (VALIDATE_DRAW_REQUIRED_BINDINGS_OR_UNIFORMS_MISSING) and, in a
+        Debug build, aborts the render thread on the first frame. Applying the
+        pipeline on a change - and dropping the cache with it, because the new
+        program has uploaded nothing - keeps both properties true: one upload
+        per block per program, and every block present when the draw is made. */
     void drawFrame (const SceneFrame& frame) noexcept
     {
         for (const auto& draw : frame.draws)
@@ -861,8 +928,17 @@ private:
             const auto& vs = uniforms.vertex;
             const auto& fs = uniforms.fragment;
 
-            sg_apply_pipeline (draw.material == SceneMaterial::glow ? glowPipeline
-                                                                    : mainPipeline);
+            const auto pipeline = draw.material == SceneMaterial::glow ? glowPipeline
+                                                                       : mainPipeline;
+
+            if (pipeline.id != appliedPipeline.id)
+            {
+                sg_apply_pipeline (pipeline);
+                appliedPipeline = pipeline;
+
+                // A different program holds none of this renderer's blocks yet.
+                uniformCache.invalidate();
+            }
 
             sg_bindings bindings {};
             bindings.vertex_buffers[0] = mesh.vertices;
@@ -937,6 +1013,10 @@ private:
         against another surface. */
     void releaseSceneResources() noexcept
     {
+        // Nothing is applied once the context has gone, and the next context's
+        // first draw must apply its own pipeline rather than assume this one.
+        appliedPipeline = {};
+
         if (sg_isvalid())
         {
             releaseMeshes();
@@ -966,6 +1046,7 @@ private:
             shader = {};
             mainPipeline = {};
             glowPipeline = {};
+            appliedPipeline = {};
         }
     }
 
@@ -1024,6 +1105,9 @@ private:
     sg_shader shader {};
     sg_pipeline mainPipeline {};
     sg_pipeline glowPipeline {};
+    /** The pipeline sokol currently has applied inside the live pass - the one
+        field that keeps a draw from re-applying it (see drawFrame). */
+    sg_pipeline appliedPipeline {};
     std::vector<GpuMesh> gpuMeshes;
     const void* uploadedFrom = nullptr;
 };

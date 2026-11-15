@@ -37,6 +37,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <limits>
 #include <vector>
 
@@ -780,6 +781,18 @@ int main()
             check (tileH >= tileW + 24 || tileH == rowHeight,
                    "the tile is never shorter than its square form (unless the row is)",
                    page.name, W, H);
+
+            //  The seven-knob RACK pages are the case the two-row preference
+            //  exists for, and they are the ones with the room for it: no member
+            //  band stands under their strip, so a split is drawable at every
+            //  size measured here - the 780 x 664 floor included, where the user
+            //  asked for two rows rather than a seven-wide line. Held here so the
+            //  solver cannot quietly fall back to one row again.
+            const bool rackSevenKnobs = std::strcmp (page.name, "DRIVE") == 0
+                                        || std::strcmp (page.name, "SHAPE") == 0
+                                        || std::strcmp (page.name, "MOTION") == 0;
+            if (rackSevenKnobs)
+                check (built.rows >= 2, "a seven-knob RACK page uses two rows", page.name, W, H);
 
             for (std::size_t i = 0; i < built.cells.size(); ++i)
                 for (std::size_t j = i + 1; j < built.cells.size(); ++j)

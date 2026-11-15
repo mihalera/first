@@ -1,4 +1,4 @@
-#include "PluginProcessor.h"
+﻿#include "PluginProcessor.h"
 
 // The generated resource accessors: the factory presets and the translation
 // tables, both compiled into the binary by CMakeLists.txt.
@@ -31,6 +31,7 @@
 // parameter shows (Source/GUI/PanelText.h). The using block below is what every
 // call site in this file already reads through.
 #include "GUI/ChipCaption.h"
+#include "GUI/PanelAssets.h"
 #include "GUI/PanelTabs.h"
 #include "GUI/PanelPaint.h"
 #include "GUI/PanelText.h"
@@ -1151,6 +1152,29 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
 
 
 
+
+void FirstAudioProcessorEditor::parentHierarchyChanged()
+{
+    //  The standalone's window has NO native frame - JUCE draws that title bar
+    //  itself, out of the window's name and an OPTIONAL image - and nothing had
+    //  ever given it one. So the mark the executable carries reached Explorer,
+    //  the taskbar and Alt-Tab, and the bar directly above the panel showed the
+    //  name with no face. Handing the window the same brand mark is what puts it
+    //  there, next to the title. Inside a host the parent is not a DocumentWindow
+    //  and the call is skipped, so a DAW's own window is left alone.
+    if (! titleIconSet)
+        if (auto* window = findParentComponentOfClass<juce::DocumentWindow>())
+        {
+            if (const auto& mark = j37panel::assets::cachedImage ("brand_mark_png");
+                mark.isValid())
+            {
+                window->setIcon (mark);
+                titleIconSet = true;
+            }
+        }
+
+    juce::AudioProcessorEditor::parentHierarchyChanged();
+}
 
 bool FirstAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
 {
@@ -2535,6 +2559,29 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
     // was cost the height-capped pages a further 1.4 px of disc (MACHINE at
     // 1060 x 916 measures 70.2 with it and 68.8 without).
     constexpr int knobRowGap = 8;
+    //  How small a disc a two-row split may draw and still be taken. It is a
+    //  RADIUS because that is what the solver scores - computeKnobMetrics returns
+    //  a radius and every comparison above is made in that unit - while the thing
+    //  the rule is about is a 9 px DISC. Written as 9.0f against a radius, the
+    //  floor was twice as strict as it read, and that is exactly what kept the
+    //  seven-knob RACK pages on one row at the window's own minimum size: their
+    //  two-row split scores a 6.9 px radius (a 13.8 px disc, larger than the one
+    //  row it replaced), and a threshold of 9 refused it for a hair over a
+    //  quarter of a pixel of radius. Pages that genuinely cannot host two rows
+    //  are unaffected: MACHINE at 780 x 664 has 60 px rows once its member band
+    //  is taken, and a tile that short scores a 2.4 px radius, well under the
+    //  floor, so it keeps its one row.
+    constexpr float minimumTwoRowRadius = 4.5f;
+    //  And how much of the one-row disc a split may give away. Two rows are the
+    //  PREFERRED arrangement for a page of more than five knobs - but not at any
+    //  price: at the 780 x 664 floor a six-knob page can be split into two rows
+    //  of 85 px that draw a 15 px disc, where the one row draws a 30 px one. Half
+    //  the hardware to turn one line into two is a bad trade, and fifteen discs of
+    //  thirty read as a row of controls rather than as beads. A seven-knob RACK
+    //  page is the case the split is FOR: its one row is already a 22 px bead
+    //  strip, and 15 px in two rows is the better panel. The share is what tells
+    //  those two apart without naming a page.
+    constexpr float minimumSplitShare = 0.6f;
     const auto rowsForColumns = [knobCount] (int columns)
     {
         return (knobCount + columns - 1) / columns;
@@ -2663,7 +2710,8 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
         // it the split is not drawable: phone landscape keeps its one row, and the
         // 780 x 664 floor still has no two-row arrangement that clears the tile
         // chrome, so both fall through to the one-row layout untouched.
-        if (bestColumns > 0 && bestDisc >= 9.0f)
+        if (bestColumns > 0 && bestDisc >= minimumTwoRowRadius
+            && bestDisc >= knobScore * minimumSplitShare)
         {
             knobScore = bestDisc;
             knobColumns = bestColumns;
