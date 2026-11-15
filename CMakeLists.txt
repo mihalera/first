@@ -1038,10 +1038,18 @@ if(J37_BUILD_TESTS)
         JucePlugin_IsSynth=0
         JucePlugin_IsMidiEffect=0
         JucePlugin_PreferredChannelConfigurations=0)
+    #  PluginProcessor.h includes <JuceHeader.h> and the plugin's own DSP headers,
+    #  so this target has to compile against the same include surface the plugin
+    #  does: every JUCE module, the generated binary data, and the third-party
+    #  headers between them. `first` already carries that whole list, so it is
+    #  asked for the list rather than restated - and rather than linked, because a
+    #  JUCE module keeps its sources on the same interface as its includes, so
+    #  linking one here would compile every module a second time.
     target_include_directories(j37_processor_boundary_tests PRIVATE
         Source
         "${J37_GENERATED_SOURCES_DIR}"
-        "${CMAKE_CURRENT_BINARY_DIR}/generated")
+        "${CMAKE_CURRENT_BINARY_DIR}/generated"
+        $<TARGET_PROPERTY:first,INCLUDE_DIRECTORIES>)
     target_link_libraries(j37_processor_boundary_tests PRIVATE
         first
         juce::juce_recommended_config_flags
