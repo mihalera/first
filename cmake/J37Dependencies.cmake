@@ -745,7 +745,7 @@ endif()
 CPMAddPackage(
     NAME iPlug2
     GITHUB_REPOSITORY iPlug2/iPlug2
-    GIT_TAG 44dc413c7ac3c3c64e98a92ab743d2a47729ed06
+    GIT_TAG df2fcbe5894be49aa2ad938bee28a4356e638398
     DOWNLOAD_ONLY YES)
 
 # ChowCentaur - Chowdhury's Centaur overdrive (the modelled Klon KS-12). A JUCE
