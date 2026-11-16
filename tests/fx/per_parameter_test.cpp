@@ -150,6 +150,7 @@ namespace
         { "fx_vocoder", &j37dsp::FxTargets::vocoder, 0.0f },
         { "fx_granular", &j37dsp::FxTargets::granular, 0.0f },
         { "fx_spectral", &j37dsp::FxTargets::spectral, 0.0f },
+        { "fx_stutter", &j37dsp::FxTargets::stutter, 0.0f },
         { "fx_speed", &j37dsp::FxTargets::speed, 0.5f },
     };
 
@@ -187,13 +188,16 @@ int main()
     {
         const auto label = std::string (control.name);
 
-        // SPEED is a RATE rather than an amount: at twice the tape's speed the
-        // read head sits 0.75 s ahead of the write head, so the buffer has to be
-        // fed that long before there is anything to read. Its own audition
-        // therefore runs on a second of signal; the rest of the rack is measured
-        // on the 200 ms tone.
-        const auto isSpeed = std::string (control.name) == "fx_speed";
-        const auto fullInput = isSpeed ? tone (440.0f, 0.5f, 72000) : input;
+        // Two stages need longer than the 200 ms tone, and for opposite reasons.
+        // SPEED is a RATE: at twice the tape's speed the read head sits 0.75 s
+        // ahead of the write head, so the buffer has to be fed that long before
+        // there is anything to read. STUTTER has to LISTEN for a whole slice - 240
+        // ms at a low amount - before it has anything to repeat, so a tone shorter
+        // than one cycle of it would measure the listening half and report that the
+        // control does nothing.
+        const auto label2 = std::string (control.name);
+        const auto needsLongInput = label2 == "fx_speed" || label2 == "fx_stutter";
+        const auto fullInput = needsLongInput ? tone (440.0f, 0.5f, 72000) : input;
 
         // ALONE: full amount, everything else neutral.
         j37dsp::FxTargets full;

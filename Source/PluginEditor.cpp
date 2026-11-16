@@ -3659,28 +3659,24 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
 //==============================================================================
 void FirstAudioProcessorEditor::randomiseAllParameters()
 {
-    static constexpr const char* monitorOnlyIds[] { "bypass", "delta" };
-
     auto& random = juce::Random::getSystemRandom();
+
+    //  The two monitor switches are held by POINTER rather than skipped by id, and
+    //  the loop works on the AudioProcessorParameter the list already hands out:
+    //  Android builds this plugin with RTTI off, so a dynamic_cast there is a build
+    //  failure rather than a slower path, and the base class has no id to compare.
+    auto* bypassParameter = static_cast<juce::AudioProcessorParameter*> (
+        audioProcessor.parameters.getParameter ("bypass"));
+    auto* deltaParameter = static_cast<juce::AudioProcessorParameter*> (
+        audioProcessor.parameters.getParameter ("delta"));
 
     for (auto* parameter : audioProcessor.getParameters())
     {
-        auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (parameter);
-
-        if (ranged == nullptr)
+        if (parameter == nullptr || parameter == bypassParameter || parameter == deltaParameter)
             continue;
 
-        const auto id = ranged->getParameterID();
-        bool isMonitorSwitch = false;
-
-        for (const auto* monitorId : monitorOnlyIds)
-            isMonitorSwitch = isMonitorSwitch || id == monitorId;
-
-        if (isMonitorSwitch)
-            continue;
-
-        ranged->beginChangeGesture();
-        ranged->setValueNotifyingHost (random.nextFloat());
-        ranged->endChangeGesture();
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost (random.nextFloat());
+        parameter->endChangeGesture();
     }
 }

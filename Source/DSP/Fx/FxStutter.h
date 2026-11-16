@@ -80,14 +80,14 @@ public:
     */
     void process (float& left, float& right, float amount) noexcept
     {
-        amount = juce::jlimit (0.0f, 1.0f, amount);
+        amount = std::clamp (amount, 0.0f, 1.0f);
 
         // Higher amount = a shorter slice and more passes over it. 100 ms...240 ms
         // covers a machine-gun hold at the top and a slow reel hiccup at the
         // bottom, which is the whole useful range of the effect.
         const auto wantedSlice = static_cast<int> (
             std::lround (rate * static_cast<double> (0.24f - 0.14f * amount)));
-        sliceLength = juce::jlimit (windowLength * 4, ringLength, wantedSlice);
+        sliceLength = std::clamp (wantedSlice, windowLength * 4, ringLength);
         const auto repeats = 1 + static_cast<int> (std::lround (amount * 3.0f));
 
         // The live signal is always recorded, so the slice a cycle captures is
@@ -156,8 +156,12 @@ private:
                           / static_cast<float> (windowLength);
         const auto fadeOut = static_cast<float> (sliceLength - position)
                            / static_cast<float> (windowLength);
-        const auto ramp = juce::jlimit (0.0f, 1.0f, std::min (fadeIn, fadeOut));
-        return 0.5f - 0.5f * std::cos (ramp * juce::MathConstants<float>::pi);
+        const auto ramp = std::clamp (std::min (fadeIn, fadeOut), 0.0f, 1.0f);
+        //  Pi as a literal rather than juce::MathConstants: this header is compiled by
+        //  the effects-rack harness with no JUCE at all, which is the same rule the
+        //  rest of Source/DSP/Fx/ follows.
+        constexpr float pi = 3.14159265358979323846f;
+        return 0.5f - 0.5f * std::cos (ramp * pi);
     }
 
     /** Copies the slice that just ended out of the ring, oldest first. It is a
