@@ -289,8 +289,8 @@ namespace j37panel
                                7, 2, { 71, 82, 83, 84, 85, 79, 94 } },
              { "MOTION", "The rack's modulators: CHORUS, FLANGER, PHASER, TREM, VIBRATO and ROTARY are the classic sweeps, each at its own rate and depth, and VOCODER imposes the bands of the input on a synthesised carrier. Each knob is how much of that stage is in the path.",
                                7, 2, { 86, 87, 88, 89, 90, 91, 92 } },
-             { "PITCH", "The rack's time and pitch stages: PITCH shifts up to an octave, OCTAVE adds the octave below, GRAIN scatters the signal into grains and SPEED is the tape's own three-position switch - half below a quarter, 1x in the middle, double above three quarters.",
-                               4, 2, { 81, 80, 93, 95 } }
+             { "PITCH", "The rack's time and pitch stages: PITCH shifts up to an octave, OCTAVE adds the octave below, GRAIN scatters the signal into grains, STUTTER holds a slice of what just played and repeats it, and SPEED is the tape's own three-position switch - half below a quarter, 1x in the middle, double above three quarters.",
+                               5, 2, { 81, 80, 93, 97, 95 } }
         } };
 
     // One SHORT subtitle per page, in tabSpecs' order: the sentence the section

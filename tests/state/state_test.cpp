@@ -457,6 +457,52 @@ void checkRefusal()
                 "an unknown id cannot add a parameter");
 }
 
+//==============================================================================
+//  THE MODEL LISTS' OFF ENTRY.
+//
+//  Every model list carries an OFF, and every one of them carries it LAST - the
+//  choice index is what a saved session and a factory preset store, so an entry
+//  inserted at the front would renumber the real models under every session that
+//  already exists. That is a rule about the ORDER, not just about the existence,
+//  which is exactly the sort of thing a hand-written list drifts away from.
+//
+//  The two new controls are checked here too: a parameter that is in the table but
+//  never read by the engine is silent, and a default that is not the neutral one
+//  is a machine that sounds different the moment this build loads a session.
+//==============================================================================
+void checkTheModelLists()
+{
+    std::printf ("the model lists' OFF entries\n");
+
+    FirstAudioProcessor processor;
+
+    for (const auto* id : { "tracks", "vinyl_generation", "vinyl_turntable", "vinyl_cartridge" })
+    {
+        const auto* parameter = processor.parameters.getParameter (id);
+        check (parameter != nullptr, std::string (id) + " exists");
+
+        if (parameter == nullptr)
+            continue;
+
+        const auto choices = parameter->getNumChoices();
+        check (choices >= 2, std::string (id) + " has its models and its OFF");
+        check (parameter->getChoiceName (choices - 1) == "Off",
+               std::string (id) + " ends in Off, so no existing index moved");
+        check (parameter->getDefaultValue() == 0.0f,
+               std::string (id) + " still defaults to its first model");
+    }
+
+    const auto* stutter = processor.parameters.getParameter ("fx_stutter");
+    check (stutter != nullptr, "the stutter is in the table");
+    check (stutter != nullptr && stutter->getDefaultValue() == 0.0f,
+           "the stutter defaults to out of the path");
+
+    const auto* glue = processor.parameters.getParameter ("glue_on");
+    check (glue != nullptr, "the glue compressor switch is in the table");
+    check (glue != nullptr && glue->getDefaultValue() == 1.0f,
+           "the glue compressors default to on, which is the machine every earlier build was");
+}
+
 } // namespace
 
 int main()
@@ -465,6 +511,7 @@ int main()
                  expectedParameterCount);
 
     checkTheTable();
+    checkTheModelLists();
     checkTheRoundTrip();
     checkTheMigration();
     checkTheSessionLoad();

@@ -306,7 +306,7 @@ const Page pages[] = {
     // written. They were the only pages nothing measured, and they are seven
     // knobs each - the widest row the strip has to break in two.
     { "DRIVE", 7, false }, { "SHAPE", 7, false },
-    { "MOTION", 7, false }, { "PITCH", 4, false },
+    { "MOTION", 7, false }, { "PITCH", 5, false },
 };
 
 int failures = 0;

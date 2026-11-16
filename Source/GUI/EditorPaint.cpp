@@ -12,6 +12,7 @@
 
 // The panel vocabulary this file reads through, from the headers that hold
 // it - the paint kit, the page table and the knob table.
+#include "GUI/DeckBands.h"
 #include "GUI/PanelAssetSlots.h"
 #include "GUI/PanelAssets.h"
 #include "GUI/PanelPaint.h"
@@ -259,6 +260,29 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     inlineLookAndFeel.setPanelBounds(*this);
     drawPanel(g, layout.header, palette, 5.0f);
     drawPanel(g, layout.deck, palette, 5.0f);
+
+    //  The deck's sections, ruled off. One hairline above the type row and one above
+    //  the transport row is the cheapest structure a console can have, and it is
+    //  what the deck was missing: without them the five bands read as one column of
+    //  controls that happen to be stacked, which is the "everything put in at
+    //  random" the user described. The rules sit in the band gap, so they cross no
+    //  control and need no pixel of the solved rhythm.
+    if (!j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
+    {
+        //  The same solve placeDeck() places the rows from, so a rule can never sit
+        //  on a control: it is read from the band's own top, in the gap above it.
+        const auto bands = j37panel::DeckBands::solve (layout.deck.getHeight());
+
+        for (const auto band : { j37panel::DeckBands::types, j37panel::DeckBands::transport })
+        {
+            const auto bandY = static_cast<float> (layout.deck.getY()
+                + bands.top[static_cast<std::size_t> (band)]);
+            g.setColour (palette.border.withAlpha (0.28f));
+            g.drawHorizontalLine (juce::roundToInt (bandY - 1.0f),
+                                  static_cast<float> (layout.deck.getX() + 14),
+                                  static_cast<float> (layout.deck.getRight() - 14));
+        }
+    }
     drawPanel(g, layout.controls, palette, 5.0f);
     drawPanel(g, layout.meters, palette, 5.0f);
 
@@ -462,8 +486,13 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
             // under the caption - however tall the member band ends up being.
             const auto curveArea = spectrumCell.withTrimmedTop(captionHeight);
 
+            //  The curve is drawn from the DISPLAYED bands rather than from the raw
+            //  frame - see the note on displayedSpectrumDb. The measurement is what
+            //  the analyser reported; the display holds it like a meter so a single
+            //  empty frame cannot blink the line down to the floor and back.
             const auto points =
-                j37spectrum::curve(spectrumBandsDb, curveArea.getWidth(), curveArea.getHeight());
+                j37spectrum::curve(displayedSpectrumDb, curveArea.getWidth(),
+                                   curveArea.getHeight());
 
             // y is measured DOWN from the top of the box and this one is drawn up
             // from its bottom, which is the one place the two conventions meet -
@@ -473,24 +502,64 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
             curvePath.startNewSubPath(curveArea.getX() + points.front().x,
                                       curveArea.getBottom() - points.front().y);
 
+            //  The line is SMOOTHED rather than joined: twenty-four measured points
+            //  across a 370 px cell are 15 px apart, and a polyline through them
+            //  reads as a zigzag at exactly the level where the ear hears a curve.
+            //  Each segment ends on the midpoint of the next pair, with the sampled
+            //  point as its control, which passes through the measurements while
+            //  rounding what lies between them.
             for (std::size_t i = 1; i < points.size(); ++i)
-                curvePath.lineTo(curveArea.getX() + points[i].x,
-                                 curveArea.getBottom() - points[i].y);
+            {
+                const auto current = juce::Point<float>(curveArea.getX() + points[i].x,
+                                                        curveArea.getBottom() - points[i].y);
+                const auto previous = juce::Point<float>(curveArea.getX() + points[i - 1].x,
+                                                         curveArea.getBottom() - points[i - 1].y);
+                curvePath.quadraticTo (previous, (previous + current) * 0.5f);
+            }
 
-            // The area under the line, filled: at this size a stroke alone reads as
-            // a scratch on the panel, and the shape of the energy is the point.
+            const auto last = juce::Point<float>(curveArea.getX() + points.back().x,
+                                                 curveArea.getBottom() - points.back().y);
+            curvePath.lineTo (last);
+
+            //  A dB grid behind the curve, at a third and two thirds of the box:
+            //  the axis is fixed (-72 dBFS at the floor, full scale at the top), so
+            //  two hairlines are enough to read a level off the curve, and they are
+            //  drawn as a rule in the panel's own border ink rather than as a chart.
+            for (const auto share : { 1.0f / 3.0f, 2.0f / 3.0f })
+            {
+                const auto y = curveArea.getBottom() - curveArea.getHeight() * share;
+                g.setColour (palette.border.withAlpha (0.35f));
+                g.drawHorizontalLine (juce::roundToInt (y), curveArea.getX() + 2.0f,
+                                      curveArea.getRight() - 2.0f);
+            }
+
+            // The area under the line, filled with a vertical gradient: at this
+            // size a stroke alone reads as a scratch on the panel, and the shape of
+            // the energy is the point. The gradient lets the top of the curve stay
+            // bright without the fill becoming a slab that fights the caption.
             auto underCurve = curvePath;
-            underCurve.lineTo(curveArea.getRight(), curveArea.getBottom());
-            underCurve.lineTo(curveArea.getX(), curveArea.getBottom());
+            underCurve.lineTo (curveArea.getRight(), curveArea.getBottom());
+            underCurve.lineTo (curveArea.getX(), curveArea.getBottom());
             underCurve.closeSubPath();
 
-            g.setColour(palette.accent.withAlpha(0.35f));
-            g.fillPath(underCurve);
-            g.setColour(palette.accent);
-            g.strokePath(curvePath, juce::PathStrokeType(1.0f));
+            juce::ColourGradient fill (palette.accent.withAlpha (0.42f),
+                                       curveArea.getCentreX(), curveArea.getY(),
+                                       palette.accent.withAlpha (0.04f),
+                                       curveArea.getCentreX(), curveArea.getBottom(), false);
+            g.setGradientFill (fill);
+            g.fillPath (underCurve);
 
-            g.setColour(palette.border.withAlpha(0.55f));
-            g.drawRoundedRectangle(spectrumCell, 3.0f, 1.0f);
+            //  A wider, faint stroke under the bright one gives the line a little
+            //  weight on the dark panels without thickening the measurement.
+            g.setColour (palette.accent.withAlpha (0.22f));
+            g.strokePath (curvePath, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved,
+                                                           juce::PathStrokeType::rounded));
+            g.setColour (palette.accent);
+            g.strokePath (curvePath, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved,
+                                                           juce::PathStrokeType::rounded));
+
+            g.setColour (palette.border.withAlpha (0.55f));
+            g.drawRoundedRectangle (spectrumCell, 3.0f, 1.0f);
         }
     }
 

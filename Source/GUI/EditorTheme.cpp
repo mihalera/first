@@ -303,6 +303,9 @@ void FirstAudioProcessorEditor::applyTheme() {
     // constructor's ivory face on every dark panel - the exact defect the picker
     // buttons above were collected here to fix.
     stylePickerButton(userThemeButton);
+    // RND is a TextButton like THEME, so it is inked here; GLUE COMP is a
+    // ToggleButton and draws itself through J37LookAndFeel::drawToggleButton.
+    stylePickerButton(randomButton);
     userThemeLabel.setColour(juce::Label::textColourId, palette.secondary);
 
     styleCombo(oversamplingBox);

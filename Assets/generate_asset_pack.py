@@ -180,7 +180,8 @@ def parameter_definitions() -> list[dict]:
         "fx_de_esser": "filter", "fx_chorus": "stereo", "fx_flanger": "wobble",
         "fx_phaser": "phase", "fx_tremolo": "envelope", "fx_vibrato": "wobble",
         "fx_rotary": "reel", "fx_vocoder": "chip", "fx_granular": "spark",
-        "fx_spectral": "eq_high", "fx_speed": "clock", "comp_upward": "compressor",
+        "fx_spectral": "eq_high", "fx_stutter": "echo", "fx_speed": "clock",
+        "comp_upward": "compressor",
     }
     result = []
     for key in control_ids():

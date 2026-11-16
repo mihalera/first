@@ -1420,8 +1420,13 @@ private:
     std::atomic<float>* fxVocoderParam = nullptr;
     std::atomic<float>* fxGranularParam = nullptr;
     std::atomic<float>* fxSpectralParam = nullptr;
+    std::atomic<float>* fxStutterParam = nullptr;
     std::atomic<float>* fxSpeedParam = nullptr;
     std::atomic<float>* compUpwardParam = nullptr;
+    // The two glue compressors' own switch, read once per block and turned into
+    // a smoothed SHARE so switching them out is a fade of the squeeze rather
+    // than a step in the level. See the note on addMonitorControls.
+    std::atomic<float>* glueOnParam = nullptr;
 
     float sampleRate = 44100.0f;
     // Every smoother below is advanced exactly once at the top of each sample frame.
@@ -1446,6 +1451,10 @@ private:
     // flag were a pair that had to move together with nothing tying them together.
     // The formula is right on its own now, so there is no flag left to keep.
     SampleSmoother mixSmoothed { sampleClock, false, false, 0.5f };
+    // 1 = both glue stages in the path, 0 = neither. Advanced once per frame like
+    // every other smoother here, and read in both the input and the output stage's
+    // gain expressions (the two stages share the switch).
+    SampleSmoother glueShareSmoothed { sampleClock, false, false, 1.0f };
     SampleSmoother widthSmoothed { sampleClock };
     SampleSmoother bypassSmoothed { sampleClock };
     // DELTA listen is a monitor position rather than a level control, but it is

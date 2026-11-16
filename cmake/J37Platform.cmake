@@ -82,6 +82,22 @@ function(j37_apply_windows_settings target)
     # in its default mode. The Projucer project set this too.
     target_compile_definitions(${target} PRIVATE _CRT_SECURE_NO_WARNINGS)
 
+    # ------------------------------------------------------------------
+    #  ASIO.
+    #
+    #  The standalone's Options > Audio/MIDI Settings lists a device type only if
+    #  juce_audio_devices was compiled with that backend, and ASIO is off by
+    #  default. The backend itself is Windows-only by definition, and JUCE ships
+    #  the Steinberg headers it needs, so the switch is one define and no external
+    #  SDK - the license note is in JUCE/modules/juce_audio_devices/native/asio.
+    #
+    #  It is set for the whole target rather than for the standalone alone: the
+    #  backend lives in juce_audio_devices, which is one compile unit shared by
+    #  the plugin, the standalone and the test executables, so a standalone-only
+    #  define would be a link-time disagreement about a struct's layout.
+    # ------------------------------------------------------------------
+    target_compile_definitions(${target} PRIVATE JUCE_ASIO=1)
+
     # Warning level and conformance only. The optimisation flags that used to be
     # here (/O2 /Ob3 /GL /LTCG) have been removed: juce_recommended_config_flags
     # and juce_recommended_lto_flags already set all four, so re-stating them

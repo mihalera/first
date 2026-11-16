@@ -1414,7 +1414,10 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
         titleLabel.setVisible (true);
 
         const auto switchesLeft = header.getX() + titleWidth + 8;
-        const auto switchWidth = juce::jmax (1, (header.getRight() - switchesLeft - 4) / 4);
+        // Five switches on the phone's first row since GLUE COMP joined them; the
+        // cell is the row's width split five ways, and the caption fit handles the
+        // rest (every switch shrinks its own text before it clips).
+        const auto switchWidth = juce::jmax (1, (header.getRight() - switchesLeft - 4) / 5);
         const auto placeSwitch = [&] (juce::Component& component, int index)
         {
             component.setBounds (switchesLeft + index * switchWidth, rowOneY,
@@ -1425,14 +1428,20 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
         placeSwitch (deltaButton, 1);
         placeSwitch (polarityButton, 2);
         placeSwitch (autoGainButton, 3);
+        placeSwitch (glueButton, 4);
 
         const auto rowTwoY = header.getY() + 41;
-        const auto utilityWidth = juce::jmax (1, juce::jmin (88, (header.getWidth() - 12) / 3));
+        // Four keys on the phone's second row since RND joined it (OSCRing,
+        // THEME, RND, then the status badge reads what is left).
+        const auto utilityWidth = juce::jmax (1, juce::jmin (88, (header.getWidth() - 12) / 4));
         oscButton.setBounds (header.getX() + 4, rowTwoY, utilityWidth, 25);
         themeButton.setBounds (header.getX() + utilityWidth + 8, rowTwoY,
                                utilityWidth, 25);
+        randomButton.setBounds (header.getX() + 2 * (utilityWidth + 8), rowTwoY,
+                                utilityWidth, 25);
         oscButton.setVisible (true);
         themeButton.setVisible (true);
+        randomButton.setVisible (true);
 
         // The machine-state readout is a header citizen on the phone as well.
         // It used to be left with whatever rectangle the desktop grid gave it,
@@ -1440,7 +1449,7 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
         // STEREO / REAL TIME line hanging crooked under the switches, outside
         // the row it belongs to. It shares row two with the two utility keys
         // instead, same height, centred in what the keys leave.
-        const auto statusLeft = header.getX() + 2 * utilityWidth + 12;
+        const auto statusLeft = header.getX() + 3 * (utilityWidth + 8) + 4;
         statusLabel.setBounds (statusLeft, rowTwoY,
                                juce::jmax (1, header.getRight() - statusLeft - 4), 25);
         statusLabel.setJustificationType (juce::Justification::centred);
@@ -1484,7 +1493,9 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     //  and starts at header.right - 394 = x + 358 on a 780 panel, clearing the
     //  title block (ends x + 346) by 12 px at the tightest size and more above it.
     // ------------------------------------------------------------------------------
-    const auto headerRight = header.getRight();
+    //  Six pixels short of the panel's own edge, so the last cell of the row - GLUE
+    //  COMP since it joined - is not flush with the frame it sits in.
+    const auto headerRight = header.getRight() - 6;
     // The grid dimensions are declared on the class so these cells stay aligned.
     constexpr int headerGap = headerColumnGap;
     constexpr int headerColumns = headerColumnCount;
@@ -1532,16 +1543,18 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     headerCell (polarityButton,  2, headerRowOneY, headerSwitchHeight);
     headerCell (autoGainButton,  3, headerRowOneY, headerSwitchHeight);
     headerCell (oscButton,       4, headerRowOneY, headerSwitchHeight);
+    headerCell (glueButton,      5, headerRowOneY, headerSwitchHeight);
 
-    // Row two: THEME, then the language pair - caption cell + a box that spans
-    // whatever the grid has left of it. Written as a count of cells rather than
-    // as a literal 154 px so a sixth column would widen the box instead of
+    // Row two: THEME, RND, then the language pair - caption cell + a box that
+    // spans whatever the grid has left of it. Written as a count of cells rather
+    // than as a literal 154 px so a seventh column would widen the box instead of
     // leaving a hole at the end of the row.
     headerCell (themeButton,     0, headerRowTwoY, headerSwitchHeight);
-    headerCell (languageLabel,   1, headerRowTwoY, headerSwitchHeight);
+    headerCell (randomButton,    1, headerRowTwoY, headerSwitchHeight);
+    headerCell (languageLabel,   2, headerRowTwoY, headerSwitchHeight);
     languageLabel.setJustificationType (juce::Justification::centredRight);
-    constexpr int languageColumns = headerColumns - 2;
-    languageBox.setBounds (headerGridLeft + 2 * (headerColumnWidth + headerGap),
+    constexpr int languageColumns = headerColumns - 3;
+    languageBox.setBounds (headerGridLeft + 3 * (headerColumnWidth + headerGap),
                            headerRowTwoY,
                            languageColumns * headerColumnWidth
                                + (languageColumns - 1) * headerGap,
@@ -1962,29 +1975,55 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
                       deckTop (j37panel::DeckBands::model), 14, true);
     }
 
+    // ---- THE DECK'S GRID -----------------------------------------------------
+    //  One column width, solved once from the type row - the widest row on the
+    //  deck, and the one whose six equal selectors set the rhythm - and then used
+    //  by EVERY row that can hold it. The rows used to carry their own literals
+    //  (96/96/96/150/150 in the rate row, four 108s in the switches row, 87s in
+    //  the type row), so nothing lined up across a band boundary and the panel
+    //  read as controls dropped into rows rather than as a console. A single
+    //  number shared by the rows is what makes the columns stand above each other.
+    const auto deckTypesRight = deck.getRight() - deckRightInset;
+    const auto deckRingSize = deckBandHeight (j37panel::DeckBands::types);
+    const auto deckRowLeft = deck.getX() + 18;
+    constexpr int deckRingGap = 10;
+    //  Rows 1 to 3 all end on this edge. It is the ring's corridor at the type row
+    //  and the tape ribbon's at the rate row - the two happen to be the same 70 px,
+    //  which is why one number serves them and why the deck's right edge is a
+    //  single vertical line rather than three near-misses.
+    const auto deckRowRight = deckTypesRight - deckRingSize - deckRingGap;
+    const auto deckTypeColumn = juce::jmax (60, juce::jmin (108,
+        (deckRowRight - deckRowLeft - 5 * 14) / 6));
+
     // ---- row 2: SWITCHES ----------------------------------------------------
     // OVERSAMPLING is a SETTINGS-tab member and lives in the member row under
     // that tab's knobs (placeDeckSwitch below).
     //
-    //  Four equal 108 px columns, the type row's grid again: INSTRUMENT, then
-    //  the three readout pairs - caption above value, one column each, all
-    //  standing exactly above the type row's columns.
+    //  INSTRUMENT takes one TYPE column and the three readouts share what is
+    //  left between them. They are STATUS, not settings - a caption over a value
+    //  that only reports - so they are one group off the instrument's right edge
+    //  rather than three columns pretending to be controls: the old row gave them
+    //  the same 108 px as a selector, which is what made HARMONICS read as a knob
+    //  the user could turn.
     {
-        const std::vector<DeckRowItem> row {
-            { &instrumentLabel,  108, -1,  0, captionHeight, false },
-            { &instrumentBox,      0, -1, captionHeight, controlHeight, true  },
+        constexpr int readoutGap = 12;
+        const auto readoutWidth = juce::jmax (44, (deckRowRight - deckRowLeft
+                                                    - deckTypeColumn - 3 * readoutGap) / 3);
 
-            { &harmonicsLabel,   108, -1,  0, captionHeight, false },
-            { &harmonicsReadout,   0, -1, captionHeight, controlHeight, true  },
-            { &subfundLabel,     108, -1,  0, captionHeight, false },
-            { &subfundReadout,     0, -1, captionHeight, controlHeight, true  },
-            { &antiPhaseLabel,   108, -1,  0, captionHeight, false },
-            { &antiPhaseReadout,   0, -1, captionHeight, controlHeight, true  }
+        const std::vector<DeckRowItem> row {
+            { &instrumentLabel,  deckTypeColumn, -1,  0, captionHeight, false },
+            { &instrumentBox,              0, -1, captionHeight, controlHeight, true  },
+
+            { &harmonicsLabel,  readoutWidth, -1,  0, captionHeight, false },
+            { &harmonicsReadout,           0, -1, captionHeight, controlHeight, true  },
+            { &subfundLabel,    readoutWidth, -1,  0, captionHeight, false },
+            { &subfundReadout,             0, -1, captionHeight, controlHeight, true  },
+            { &antiPhaseLabel,  readoutWidth, -1,  0, captionHeight, false },
+            { &antiPhaseReadout,           0, -1, captionHeight, controlHeight, true  }
         };
 
-        placeDeckRow (row, deck.getX() + 18,
-                      deck.getRight() - deckRightInset,
-                      deckTop (j37panel::DeckBands::switches), 12, true);
+        placeDeckRow (row, deckRowLeft, deckRowRight,
+                      deckTop (j37panel::DeckBands::switches), readoutGap, true);
 
         // The readouts are the only deck text whose width now depends on the
         // panel, so they are the only ones that can run out of room - and they
@@ -2029,16 +2068,11 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         //  after the ring and the minimum gaps is the column - the longest
         //  stock values ellipsise a little sooner on a minimum-width panel and
         //  every window above it is the row it always was.
-        const auto typesRight = deck.getRight() - deckRightInset;
         const auto typesTop = deckTop (j37panel::DeckBands::types);
-        const auto ringSize = deckBandHeight (j37panel::DeckBands::types);
+        oscRing.setBounds (deckTypesRight - deckRingSize, typesTop,
+                           deckRingSize, deckRingSize);
 
-        constexpr int ringGap = 10;
-        oscRing.setBounds (typesRight - ringSize, typesTop, ringSize, ringSize);
-
-        const auto rowLeft = deck.getX() + 18;
-        const auto rowRight = typesRight - ringSize - ringGap;
-        const auto typeColumnWidth = juce::jmax (60, juce::jmin (108, (rowRight - rowLeft - 5 * 14) / 6));
+        const auto typeColumnWidth = deckTypeColumn;
 
         const std::vector<DeckRowItem> row {
             { &tapeTypeLabel,        typeColumnWidth, -1,  0, captionHeight, false },
@@ -2055,7 +2089,7 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
             { &digitalTypeBox,         0, -1, captionHeight, controlHeight, true  }
         };
 
-        placeDeckRow (row, rowLeft, rowRight, typesTop, 14, true);
+        placeDeckRow (row, deckRowLeft, deckRowRight, typesTop, 14, true);
     }
 
     // ---- row 4: TRANSPORT ---------------------------------------------------
@@ -3604,4 +3638,45 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
         }
     }
 #endif
+}
+
+//==============================================================================
+//  RND: another machine, drawn at random.
+//
+//  One normalized draw per parameter is enough for every control type, because
+//  the host's 0..1 domain is the one scale they all share: a choice of three
+//  entries lands on a whole index, a switch on one of its two states, and a knob
+//  anywhere in its travel. Nothing here has to know which is which, which is why
+//  a parameter added to the table tomorrow is randomised without touching this.
+//
+//  THE MONITOR SWITCHES ARE LEFT ALONE. BYPASS would silence the machine the user
+//  is listening to and DELTA would swap the monitor to the difference signal, so
+//  a "randomise" that included them would sometimes look like the plugin had
+//  crashed. They are not part of the sound; every other control is.
+//
+//  Each change is sent with its gesture open, so a host that records automation
+//  sees one edit per control rather than a wall of unclaimed writes.
+//==============================================================================
+void FirstAudioProcessorEditor::randomiseAllParameters()
+{
+    auto& random = juce::Random::getSystemRandom();
+
+    //  The two monitor switches are held by POINTER rather than skipped by id, and
+    //  the loop works on the AudioProcessorParameter the list already hands out:
+    //  Android builds this plugin with RTTI off, so a dynamic_cast there is a build
+    //  failure rather than a slower path, and the base class has no id to compare.
+    auto* bypassParameter = static_cast<juce::AudioProcessorParameter*> (
+        audioProcessor.parameters.getParameter ("bypass"));
+    auto* deltaParameter = static_cast<juce::AudioProcessorParameter*> (
+        audioProcessor.parameters.getParameter ("delta"));
+
+    for (auto* parameter : audioProcessor.getParameters())
+    {
+        if (parameter == nullptr || parameter == bypassParameter || parameter == deltaParameter)
+            continue;
+
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost (random.nextFloat());
+        parameter->endChangeGesture();
+    }
 }

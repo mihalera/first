@@ -116,6 +116,18 @@ namespace
         // what the chain produced. Default ON, matching what earlier builds always did.
         layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "auto_gain", 1 },
                                                                 "Auto Gain", true));
+        // GLUE COMP ON: the machine's two glue compressors, as one switch. They are
+        // part of the machine rather than an insert - the input stage's squeeze is
+        // what keeps the record head inside its headroom, and the output stage's is
+        // what makes a bus of them sit together - so there are sessions where the
+        // whole point is to hear the deck with them switched out. Default ON, which
+        // is the machine every earlier build was.
+        //
+        // Unlike BYPASS this does not ramp the whole engine: the two stages' own
+        // gain reduction is scaled by a smoothed share, so the machine keeps
+        // running and only the squeeze fades out.
+        layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "glue_on", 1 },
+                                                                "Glue Compressors", true));
     }
 
     /** The two equalisers, IN and OUT, each with its three bands and the
@@ -420,9 +432,15 @@ namespace
         //  Default 2, which is the two-track stereo deck every earlier build assumed,
         //  so an existing session loads the machine it was saved with.
         // -------------------------------------------------------------------------
+        //  OFF is appended LAST, like every other model list's (see
+        //  tapeStockNames): the choice index IS the preset ABI, so inserting an
+        //  entry at the front would silently load a different layout into every
+        //  saved session. OFF means the geometry is not modelled at all - no
+        //  width loss, no crosstalk, no spacing delay - which is the reference
+        //  state for hearing what the track layout contributes.
         layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "tracks", 1 },
                                                                 "Modeled Tracks",
-                                                                juce::StringArray { "2", "2+3", "3" },
+                                                                juce::StringArray { "2", "2+3", "3", "Off" },
                                                                 0));
 
         // TONE is the added macro: a crossfade BETWEEN TAPE SETTINGS rather than between
@@ -1262,7 +1280,7 @@ namespace
         // -------------------------------------------------------------------------
         layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "vinyl_generation", 1 },
                                                                 "Generation",
-                                                                juce::StringArray { "Laquer", "Direct", "Printed" },
+                                                                juce::StringArray { "Laquer", "Direct", "Printed", "Off" },
                                                                 0));
 
         // -------------------------------------------------------------------------
@@ -1285,7 +1303,7 @@ namespace
         // -------------------------------------------------------------------------
         layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "vinyl_turntable", 1 },
                                                                 "Turntable",
-                                                                juce::StringArray { "Belt", "Direct", "Idler" },
+                                                                juce::StringArray { "Belt", "Direct", "Idler", "Off" },
                                                                 0));
 
         // -------------------------------------------------------------------------
@@ -1305,7 +1323,7 @@ namespace
         // -------------------------------------------------------------------------
         layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "vinyl_cartridge", 1 },
                                                                 "Cartridge",
-                                                                juce::StringArray { "MM", "MC", "DJ" },
+                                                                juce::StringArray { "MM", "MC", "DJ", "Off" },
                                                                 0));
     }
 
@@ -1599,6 +1617,14 @@ namespace
                                                                 juce::AudioParameterFloatAttributes().withLabel ("%")));
         layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_spectral", 1 },
                                                                 "Spectral Gate",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        // STUTTER: the transport catching and repeating the slice it just played.
+        // It is a rate effect rather than a distortion, so it sits with SPEED and
+        // GRAIN on the PITCH page; one knob, 0 is out of the path, higher is a
+        // shorter slice repeated more times. See Source/DSP/Fx/FxStutter.h.
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_stutter", 1 },
+                                                                "Stutter",
                                                                 percentageRange (0.50f), 0.0f,
                                                                 juce::AudioParameterFloatAttributes().withLabel ("%")));
         layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_speed", 1 },

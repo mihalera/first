@@ -176,8 +176,13 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     // removed 32*scale and trimmed 18*scale off that for the subtitle, so the
     // subtitle actually started at 14*scale - six pixels (scaled) BEFORE the title
     // ended and the two lines printed on top of each other.
-    const auto topBlock = juce::roundToInt (32.0f * textScale);
+    //  A meter with no subtitle gives that band back to the dial. The two bands are
+    //  proportional to the title's own height rather than a fixed 32/18 pair, so
+    //  removing the second line does not leave a hole where it used to be.
     const auto titleHeight = juce::roundToInt (18.0f * textScale);
+    const auto topBlock = subtitle.isEmpty()
+                              ? titleHeight + juce::roundToInt (6.0f * textScale)
+                              : juce::roundToInt (32.0f * textScale);
     auto localBounds = getLocalBounds();
     const auto titleBand = localBounds.removeFromTop (titleHeight);
     const auto subtitleBand = localBounds.removeFromTop (topBlock - titleHeight);
@@ -224,9 +229,12 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     g.setColour (palette.text);
     g.setFont (j37panel::panelFont (10.5f * textScale, juce::Font::bold));
     g.drawText (title, titleBand, juce::Justification::centred, false);
-    g.setColour (palette.secondary);
-    g.setFont (j37panel::panelFont (9.0f * textScale));
-    g.drawText (subtitle, subtitleBand, juce::Justification::centred, false);
+    if (subtitle.isNotEmpty())
+    {
+        g.setColour (palette.secondary);
+        g.setFont (j37panel::panelFont (9.0f * textScale));
+        g.drawText (subtitle, subtitleBand, juce::Justification::centred, false);
+    }
 
     const auto centreX = face.getCentreX();
     // The dial is a half circle sitting on the lower edge of the face area.
