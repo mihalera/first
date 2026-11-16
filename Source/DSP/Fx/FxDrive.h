@@ -60,28 +60,53 @@ private:
 class Fuzz
 {
 public:
-    void prepare (double) noexcept { reset(); }
+    void prepare (double sampleRate) noexcept
+    {
+        dcLeft.setCutoff (18.0f, sampleRate);
+        dcRight.setCutoff (18.0f, sampleRate);
+        reset();
+    }
 
     void reset() noexcept
     {
         leftShaper.reset();
         rightShaper.reset();
+        dcLeft.reset();
+        dcRight.reset();
     }
 
     void process (float& left, float& right, float amount) noexcept
     {
         const auto drive = clamp01 (amount);
         const auto preGain = 1.0f + 60.0f * drive;
-        const auto bias = 0.12f * drive;
-        const auto offset = std::tanh (bias * preGain);
-        const auto postGain = 1.0f / std::sqrt (preGain);
 
-        left = (leftShaper.process (left * preGain + bias * preGain) - offset) * postGain;
-        right = (rightShaper.process (right * preGain + bias * preGain) - offset) * postGain;
+        // The bias lives in the SHAPER's domain, a fraction of the tanh knee, not
+        // in the input's. Scaling it by preGain - which is what this did - put
+        // 0.12 * 61 = 7.3 under every sample at full amount, so the positive half
+        // of the waveform arrived already past +1 and the stage output was a
+        // half-wave rectifier: the positive peak measured 0.000, the RMS fell 6 dB
+        // below the input, and what came out was a thin octave-up buzz rather than
+        // a fuzz. Asymmetry is the point of this curve; losing half the signal is
+        // not.
+        const auto bias = 0.35f * drive;
+        const auto offset = std::tanh (bias);
+
+        // Saturation compresses, so it has to come back up: 1/sqrt(preGain) alone
+        // left the stage 8 dB quieter than its input at full amount, which reads as
+        // "the knob mutes it".
+        const auto postGain = (1.0f + 2.0f * drive) / std::sqrt (preGain);
+
+        // Subtracting the bias's REST value is not the same as removing the mean of
+        // the shaped waveform: an asymmetric curve has a mean of its own, and the
+        // difference is real DC on the bus - 0.126 at full amount, measured. The
+        // high-pass is what takes it out, the same way the wavefolder does.
+        left = dcLeft.highPass ((leftShaper.process (left * preGain + bias) - offset) * postGain);
+        right = dcRight.highPass ((rightShaper.process (right * preGain + bias) - offset) * postGain);
     }
 
 private:
     AdaaTanh leftShaper, rightShaper;
+    OnePole dcLeft, dcRight;
 };
 
 // =============================================================================
@@ -117,25 +142,76 @@ private:
 
 // =============================================================================
 //  Bitcrusher: quantisation to a coarser grid. 16 bits at the bottom of the
-//  knob is transparent enough to leave in the path; 2 bits at the top is the
+//  knob is transparent enough to leave in the path; 4 bits at the top is the
 //  effect.
+//
+//  The grid is measured against the programme's own peak, not against full scale.
+//  A full-scale grid is level dependent in the worst possible way: 2 bits there is
+//  a step of 0.5, so every sample quieter than -12 dBFS rounded to zero and the
+//  stage MUTED real material while a -6 dBFS test tone survived - which is exactly
+//  how this knob was reported ("BITS 1, no sound"). Four bits of a peak-normalised
+//  signal, by contrast, is the crunch the knob promises whatever the level the
+//  machine hands it.
+//
+//  The normalisation is LATCHED per block, and that is the whole trick: a grid
+//  that follows the signal smoothly quantises nothing at all, because every sample
+//  is rounded against a slightly different scale and the steps never line up. Held
+//  for a couple of milliseconds, the grid is real inside the block and moves only
+//  as fast as the programme's own level.
 // =============================================================================
 class Bitcrusher
 {
 public:
-    void prepare (double) noexcept { reset(); }
+    void prepare (double sampleRate) noexcept
+    {
+        const auto rate = sampleRate > 0.0 ? sampleRate : 48000.0;
 
-    void reset() noexcept {}
+        // ~2.7 ms at 48 kHz, and held in samples rather than milliseconds so the
+        // grid is the same shape at every engine rate the path runs at.
+        blockLength = std::max (16, static_cast<int> (std::lround (rate * 0.0027)));
+        reset();
+    }
+
+    void reset() noexcept
+    {
+        peak = 0.0f;
+        blockPeak = 0.0f;
+        counter = 0;
+    }
 
     void process (float& left, float& right, float amount) noexcept
     {
-        const auto bits = 16.0f - 14.0f * clamp01 (amount);
+        const auto depth = clamp01 (amount);
+        const auto bits = 16.0f - 12.0f * depth;
         const auto levels = std::pow (2.0f, bits - 1.0f);
         const auto inverse = 1.0f / levels;
 
-        left = std::round (left * levels) * inverse;
-        right = std::round (right * levels) * inverse;
+        if (counter <= 0)
+        {
+            // A held peak that decays by 10% per block (~38 dB/s), so a passage
+            // that gets quieter gets a finer grid, and one that stops leaves the
+            // grid where it was instead of crawling down onto the noise floor.
+            peak = std::max (blockPeak, peak * 0.9f);
+            blockPeak = 0.0f;
+            counter = blockLength;
+        }
+
+        --counter;
+        blockPeak = std::max (blockPeak, std::max (std::abs (left), std::abs (right)));
+
+        // The floor keeps a silent passage from dividing by its own zero; it is
+        // -80 dBFS, so it quantises nothing anyone can hear.
+        const auto scale = std::max (peak, 1.0e-4f);
+
+        left = std::round (left / scale * levels) * inverse * scale;
+        right = std::round (right / scale * levels) * inverse * scale;
     }
+
+private:
+    int blockLength = 128;
+    int counter = 0;
+    float peak = 0.0f;
+    float blockPeak = 0.0f;
 };
 
 // =============================================================================
