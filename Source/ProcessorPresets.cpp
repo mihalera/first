@@ -492,7 +492,7 @@ bool FirstAudioProcessor::deleteUserPreset (const juce::String& name)
         return false;
 
     const auto deleted = file.deleteFile();
-    if (currentPresetName.equalsIgnoreCase (safeName))
+    if (deleted && currentPresetName.equalsIgnoreCase (safeName))
         markPresetClean ({ });
     return deleted;
 }

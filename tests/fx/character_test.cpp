@@ -262,6 +262,42 @@ namespace
         }
     }
 
+    /** The period of a low-passed copy, in samples: the fundamental's period for a
+        pitched signal, which is what a vocoded output should carry. */
+    double periodOf (const std::vector<float>& signal, float cutoffHz)
+    {
+        constexpr float twoPi = 6.28318530718f;
+        const auto rate = static_cast<float> (sampleRate);
+        const auto coefficient = 1.0f - std::exp (-twoPi * cutoffHz / rate);
+
+        float state = 0.0f, previous = 0.0f;
+        double crossings = 0.0;
+        int sinceCrossing = 0;
+
+        for (const auto sample : signal)
+        {
+            state += coefficient * (sample - state);
+
+            if (previous <= 0.0f && state > 0.0f)
+            {
+                if (sinceCrossing > 0)
+                {
+                    crossings += 1.0;
+                    sinceCrossing = 0;
+                }
+            }
+
+            ++sinceCrossing;
+            previous = state;
+        }
+
+        if (crossings < 1.0)
+            return 0.0;
+
+        // samples per crossing, from the part of the signal that was measured
+        return static_cast<double> (signal.size()) / crossings;
+    }
+
     // ------------------------------------------------------------------
     //  3. VOCODER
     // ------------------------------------------------------------------
@@ -296,6 +332,30 @@ namespace
         check (rmsOf (high) <= 3.0 * rmsOf (highInput),
                "the vocoder lifted a 2 kHz input to " + std::to_string (rmsOf (high))
                    + " RMS");
+
+        // The carrier follows the input's own pitch, so the vocoded signal keeps
+        // the source's intonation instead of always buzzing at 110 Hz: an octave
+        // up in has to come out an octave up.
+        {
+            const auto low = runVocoder (tone (150.0f, 0.5f, 24000), 1.0f);
+            const auto high = runVocoder (tone (300.0f, 0.5f, 24000), 1.0f);
+
+            // The first 50 ms are the tracker settling; measure the steady part.
+            const std::vector<float> lowTail (low.begin() + 2400, low.end());
+            const std::vector<float> highTail (high.begin() + 2400, high.end());
+
+            const auto lowPeriod = periodOf (lowTail, 600.0f);
+            const auto highPeriod = periodOf (highTail, 600.0f);
+            const auto ratio = lowPeriod / std::max (1.0, highPeriod);
+
+            check (ratio >= 1.7 && ratio <= 2.3,
+                   "the vocoder's carrier does not follow the input's pitch: 150 Hz gives a "
+                   "period of " + std::to_string (lowPeriod) + " samples and 300 Hz "
+                       + std::to_string (highPeriod));
+
+            std::printf ("vocoder pitch: 150 Hz period %.1f, 300 Hz period %.1f, ratio %.2f\n",
+                         lowPeriod, highPeriod, ratio);
+        }
 
         // Silence in, silence out: the carrier must be shaped by the input's
         // envelopes and not heard on its own.
