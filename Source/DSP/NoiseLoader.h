@@ -76,8 +76,8 @@ public:
 
     ~NoiseLoader()
     {
-        // The worker is joined before anything it could be writing to is freed.
-        stopWorker();
+        // Workers are joined before anything they could be writing to is freed.
+        stopWorkers();
         retireAll();
     }
 
@@ -123,8 +123,6 @@ public:
         meant. */
     void requestLoad (const juce::File& file)
     {
-        stopWorker();
-
         std::uint64_t requestGeneration = 0;
         {
             const juce::ScopedLock lock (controlLock);
@@ -134,6 +132,10 @@ public:
             lastErrorMessage = {};
         }
 
+        // A superseded read may still be in the OS or decoder. Invalidate it and
+        // request cancellation, but never join it from the message thread.
+        signalWorkersToStop();
+        reapFinishedWorkers();
         startWorker (requestGeneration);
     }
 
@@ -141,17 +143,20 @@ public:
         are freed when the loader is destroyed - not on the audio thread. */
     void clear()
     {
-        stopWorker();
+        {
+            const juce::ScopedLock lock (controlLock);
+            ++generation;
+            pendingFile = juce::File();
+            lastErrorMessage = {};
+            loadingFlag.store (false, std::memory_order_relaxed);
 
-        const juce::ScopedLock lock (controlLock);
-        ++generation;
-        pendingFile = juce::File();
-        lastErrorMessage = {};
-        loadingFlag.store (false, std::memory_order_relaxed);
+            publish (nullptr);
+            sourcePrint.reset();
+            loadedFileNameText = {};
+        }
 
-        publish (nullptr);
-        sourcePrint.reset();
-        loadedFileNameText = {};
+        signalWorkersToStop();
+        reapFinishedWorkers();
     }
 
     //==========================================================================
@@ -200,10 +205,9 @@ public:
 
 private:
     //==========================================================================
-    /** The background worker. One exists at a time, created per request and
-        joined when the next request arrives or the loader dies, so a long
-        decode never blocks the message thread and a superseded request never
-        writes over the newer one. */
+    /** The background worker. Requests may overlap while a superseded read
+        finishes; generation checks discard stale results, and all workers are
+        joined during safe teardown. */
     struct Worker final : public juce::Thread
     {
         Worker (NoiseLoader& ownerIn, juce::File fileIn, std::uint64_t generationIn)
@@ -257,25 +261,43 @@ private:
             file = pendingFile;
         }
 
-        worker = std::make_unique<Worker> (*this, file, requestGeneration);
-        worker->startThread();
+        auto nextWorker = std::make_unique<Worker> (*this, file, requestGeneration);
+        nextWorker->startThread();
+        workers.push_back (std::move (nextWorker));
     }
 
-    void stopWorker()
+    void signalWorkersToStop() noexcept
     {
-        if (worker != nullptr)
-        {
-            // The wait is unbounded on purpose. A bounded one that expires would
-            // destroy a Thread object that is still running, and the decode it is
-            // inside is bounded by the minute-long cap on a print - a file the
-            // size of an album side reads in tens of milliseconds. Waiting is the
-            // honest cost of the one-worker-at-a-time rule; letting it return and
-            // keeping the object alive would need a second list of zombies for no
-            // gain the user could hear.
+        for (auto& worker : workers)
             worker->signalThreadShouldExit();
-            worker->stopThread (-1);
-            worker.reset();
+    }
+
+    // Called only by the control thread. Completed threads are joined promptly;
+    // running superseded workers stay owned until a later reap or destruction.
+    void reapFinishedWorkers()
+    {
+        for (auto worker = workers.begin(); worker != workers.end();)
+        {
+            if (! (*worker)->isThreadRunning())
+            {
+                (*worker)->stopThread (-1);
+                worker = workers.erase (worker);
+            }
+            else
+            {
+                ++worker;
+            }
         }
+    }
+
+    void stopWorkers()
+    {
+        signalWorkersToStop();
+
+        for (auto& worker : workers)
+            worker->stopThread (-1);
+
+        workers.clear();
     }
 
     /** Worker thread. Publishes a decoded print, converted to the engine rate. */
@@ -396,7 +418,9 @@ private:
     bool prepared = false;
     std::uint64_t generation = 0;
 
-    std::unique_ptr<Worker> worker;
+    // The control thread owns worker objects until they finish; retaining them
+    // prevents destroying a JUCE Thread while its run() method is still active.
+    std::vector<std::unique_ptr<Worker>> workers;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NoiseLoader)
 };
