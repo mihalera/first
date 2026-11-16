@@ -172,6 +172,9 @@ jobs:
       # harnesses above: no JUCE, no host, seconds of work.
       - name: Run the saved-state harness
         run: bash tests/state/run.sh
+      # Exercise every registered parameter's type-specific behavior.
+      - name: Run the parameter sweep harness
+        run: bash tests/parameters/run.sh
 
       # The transport - STOP / PLAY / START and the SPINDOWN hold. Both defects
       # this guards were GESTURES, and a gesture is not visible in the source: the

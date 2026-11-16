@@ -20,10 +20,10 @@
 //       range, a clamp in the wrong unit or an interval that does not reach the
 //       end of the range shows up.
 //    4. CHOICES. A choice parameter has at least two options, names that are
-//       non-empty and unique, a default inside the list - and OFF, when it is
-//       offered at all, is LAST. The index is the ABI: a saved session stores the
-//       index, so an option inserted anywhere but the end re-points every session
-//       that used a later one.
+//       non-empty and unique, a default inside the list, and every index reads
+//       back after being selected. Model-list OFF entries are LAST; oversampling
+//       keeps its historical Off index at ZERO. The index is the ABI: a saved
+//       session stores it, so moving an option silently repoints existing sessions.
 //    5. VERSION. Every ParameterID carries version 1. Changing it is how JUCE
 //       re-maps a saved session, and it is not something to do by accident.
 //
@@ -197,14 +197,27 @@ void checkChoice (const juce::RangedAudioParameter& parameter)
            id + ": default index " + std::to_string (defaultIndex) + " is outside 0.."
                + std::to_string (count - 1));
 
-    // OFF is the neutral entry and it lives at the END of the list, because the
-    // index is what a session stores.
+    auto* mutableParameter = const_cast<juce::RangedAudioParameter*> (&parameter);
+    for (int index = 0; index < count; ++index)
+    {
+        mutableParameter->setValue (static_cast<float> (index));
+        check (mutableParameter->getValue() == static_cast<float> (index),
+               id + ": selecting choice " + std::to_string (index) + " read back as "
+                   + std::to_string (mutableParameter->getValue()));
+    }
+    mutableParameter->setValue (static_cast<float> (defaultIndex));
+
+    // Model-list Off entries are appended so existing option indices are stable.
+    // Oversampling predates that convention: Off is the original index zero and
+    // must remain there for saved sessions to retain their meaning.
     for (int index = 0; index < count; ++index)
         if (names[static_cast<std::size_t> (index)] == "Off")
-            check (index == count - 1,
-                   id + ": \"Off\" sits at index " + std::to_string (index) + " of "
-                       + std::to_string (count) + " - it has to be last, or saved sessions "
-                         "re-point at a different option");
+        {
+            const auto expectedIndex = id == "oversampling" ? 0 : count - 1;
+            check (index == expectedIndex,
+                   id + ": \"Off\" sits at index " + std::to_string (index) + ", expected "
+                       + std::to_string (expectedIndex) + " to preserve saved choice indices");
+        }
 }
 } // namespace
 

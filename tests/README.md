@@ -20,6 +20,7 @@ tests/fx/run.sh           # the creative effects rack: 25 stages, the multiband 
 tests/layout/run.sh       # knob geometry on every page, at four panel sizes
 tests/tooltip/run.sh      # the tooltip dwell, at exact millisecond boundaries
 tests/state/run.sh        # session state round trip, and older state files
+tests/parameters/run.sh   # every parameter ID, type, range, default, choice, and legal value
 tests/transport/run.sh    # the transport rig, frame by frame
 tests/pitch/run.sh        # the pitch tracker, the corrector stage, and BOTH of its engines
 tests/phase/run.sh        # the three-band output anti-phase guard, band by band
@@ -139,6 +140,7 @@ shipping header* tests the code the plugin compiles.
 | `layout` | the knob strip arithmetic, the editor's constructor phase order, and the spectrum curve's level mapping | `tests/layout/extract.py` cuts the first two out of `Source/PluginEditor.cpp` + `Source/GUI/`, and `#include`s `Source/GUI/SpectrumMetrics.h` directly |
 | `tooltip` | `j37panel::TipDwell` - the rule that decides when a hint may be shown | `#include`s `Source/GUI/TipDwell.h` as it ships: no extractor, no shim, because the header includes nothing (the JUCE half is `Source/GUI/DwellTooltipWindow.h`) |
 | `state` | the parameter table and the state functions | `tests/state/extract.py`, compiled against `tests/state/juce_stub.*` |
+| `parameters` | every registered parameter's ID, version, name, type, default, range, grid, and every selectable choice | the shipping table and model lists extracted by `tests/state/extract.py`, compiled against `tests/state/juce_stub.*` |
 | `transport` | `TransportRig` and `RepitchStage` | `#include`s the shipping headers from `Source/DSP/` |
 | `pitch` | `PitchTracker`, `RealtimePitchShifter` and `CorrectorStage` | `#include`s the shipping headers from `Source/DSP/`, and builds `pitch_test.cpp` TWICE: once as the plugin ships it, and once with `-DJ37_CORRECTOR_USE_STRETCH=1` and `ThirdParty/signalsmith-stretch` on the include path, which is exactly the pair of switches CMake's option throws. The two binaries assert different promises, and the second one prints the numbers behind that option being OFF |
 | `phase` | `MultibandPhaseGuard` - the crossovers, the six band envelopes and the rotation | `#include`s the shipping header from `Source/DSP/`: no extractor, no replica, because the guard is arithmetic on the two samples it is handed |
