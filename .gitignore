@@ -120,3 +120,5 @@ ghtoken
 .codex/skills/.system/**
 !.codex/prompts/
 !.codex/prompts/**
+ThirdParty/eigen
+build-rel/*

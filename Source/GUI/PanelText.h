@@ -948,8 +948,11 @@ namespace j37panel
         if (id == "fx_fuzz")
             return "FUZZ - the same antialiased curve with far more gain and an "
                    "asymmetric bias, which is where its octave-ish edge comes "
-                   "from. The bias is subtracted back out so it does not put DC on "
-                   "the chain. 0 takes it out of the path.";
+                   "from. The bias sits inside the curve rather than under the "
+                   "signal, so both halves of the waveform survive it, and an 18 Hz "
+                   "high-pass takes the curve's own DC back off the chain. The "
+                   "make-up holds the stage at about the level it was given: a fuzz "
+                   "compresses, it does not go quiet. 0 takes it out of the path.";
         if (id == "fx_wavefolder")
             return "FOLD - a wavefolder: sin(x) as a transfer curve, so past a "
                    "quarter turn the curve turns back on itself. The harmonics it "
@@ -957,9 +960,14 @@ namespace j37panel
                    "different sound and not a stronger drive. 0 takes it out of "
                    "the path.";
         if (id == "fx_bitcrusher")
-            return "BITS - quantisation. Full travel is about 2 bits, the bottom "
-                   "of the knob is 16 and transparent enough to leave in the "
-                   "path. 0 takes it out of the path.";
+            return "BITS - quantisation against the signal's own peak rather than "
+                   "against full scale, so the crunch is the same at any level: "
+                   "quiet material is crushed instead of rounded to silence. The "
+                   "grid is held for about three milliseconds at a time, because a "
+                   "grid that chases the signal quantises nothing, and full travel "
+                   "is 4 bits of that signal while the bottom of the knob is 16 and "
+                   "transparent enough to leave in the path. 0 takes it out of the "
+                   "path.";
         if (id == "fx_rate_crusher")
             return "RATE - sample-and-hold at a fraction of the engine rate: the "
                    "alias-generating half of a bit-crush, kept separate because "
@@ -1028,10 +1036,14 @@ namespace j37panel
                    "rotation from 0.8 Hz, slow rotor, to 3.3 Hz, fast, and the "
                    "depth with it. 0 takes it out of the path.";
         if (id == "fx_vocoder")
-            return "VOCODER - eight bands of the input's own spectrum imposed on "
-                   "a synthesised 110 Hz carrier, because an insert has no second "
-                   "input to take a carrier from. The knob replaces the direct "
-                   "signal with the vocoded one. 0 takes it out of the path.";
+            return "VOCODER - sixteen bands of the input's own spectrum imposed on "
+                   "a synthesised sawtooth carrier, because an insert has no second "
+                   "input to take a carrier from. The carrier's pitch follows the "
+                   "input's own fundamental through a 400 Hz low-pass, so the "
+                   "vocoded signal keeps the source's intonation instead of sitting "
+                   "on one fixed note; with nothing pitched to follow it holds at "
+                   "110 Hz. The knob replaces the direct signal with the vocoded "
+                   "one. 0 takes it out of the path.";
         if (id == "fx_granular")
             return "GRAIN - four overlapping grains of a shared history, each "
                    "windowed so it fades rather than clicks. The knob sets the "

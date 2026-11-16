@@ -398,6 +398,11 @@ inline std::vector<Message> decodePacket (std::string_view bytes, std::string* r
     if (bytes.size() < 16 || bytes.compare (0, 8, "#bundle\0", 8) != 0)
         return messages;
 
+    // The failed single-message attempt above is expected for a bundle. Do not
+    // leave its diagnostic attached to a packet that may decode successfully.
+    if (reason != nullptr)
+        reason->clear();
+
     std::size_t position = 16;
 
     while (position < bytes.size())

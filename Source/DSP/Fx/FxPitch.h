@@ -17,6 +17,7 @@
 #include "FxPrimitives.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <array>
 #include <cmath>
 
@@ -177,6 +178,14 @@ public:
     {
         rate = sampleRate > 0.0 ? sampleRate : 48000.0;
 
+        // The carrier's pitch is taken from the input's own fundamental, so the
+        // vocoded signal keeps the source's intonation instead of sitting on a
+        // fixed 110 Hz. The tracker is a low-passed zero-crossing timer: on a
+        // 400 Hz low-pass the crossings are the fundamental's, which is all a
+        // carrier needs, and it costs two filters and a counter rather than an
+        // autocorrelation over the whole block.
+        pitchFilter.setCutoff (400.0f, rate);
+
         for (int band = 0; band < bands; ++band)
         {
             const auto index = static_cast<std::size_t> (band);
@@ -207,15 +216,22 @@ public:
         carrierPhase = 0.0f;
         inputEnvelope = 0.0f;
         wetEnvelope = 0.0f;
+
+        pitchFilter.reset();
+        pitchPeriod = defaultPeriod();
+        sinceCrossing = 0;
+        previousFiltered = 0.0f;
     }
 
     void process (float& left, float& right, float amount) noexcept
     {
         const auto mix = clamp01 (amount);
 
+        trackPitch (0.5f * (left + right));
+
         // A naive saw: the band filters above remove most of the aliasing, and
         // what is left is part of the vocoder's own character.
-        carrierPhase += 110.0f / static_cast<float> (rate);
+        carrierPhase += 1.0f / std::max (pitchPeriod, 1.0f);
 
         if (carrierPhase >= 1.0f)
             carrierPhase -= 1.0f;
@@ -274,10 +290,50 @@ private:
         return 120.0f * std::pow (40.0f, static_cast<float> (band) / 15.0f);
     }
 
+    /** Keeps `pitchPeriod` on the input's fundamental, in samples. */
+    void trackPitch (float mono) noexcept
+    {
+        const auto filtered = pitchFilter.lowPass (mono);
+
+        if (previousFiltered <= 0.0f && filtered > 0.0f)
+        {
+            if (sinceCrossing > 0)
+            {
+                const auto period = static_cast<float> (sinceCrossing);
+                const auto hertz = static_cast<float> (rate) / period;
+
+                // Only a plausible fundamental moves the carrier. A click, a
+                // consonant or the gap between two notes would otherwise throw the
+                // carrier to an arbitrary pitch for a moment, and the octave the
+                // tracker settles on is exactly what is heard.
+                // Per CROSSING, not per sample: this runs once per period, so a
+                // per-sample time constant would take fifteen seconds to arrive. A
+                // third per crossing averages jitter over a few cycles and lands on
+                // a new note inside a couple of them.
+                if (hertz >= 60.0f && hertz <= 400.0f)
+                    pitchPeriod += 0.35f * (period - pitchPeriod);
+            }
+
+            sinceCrossing = 0;
+        }
+
+        ++sinceCrossing;
+        previousFiltered = filtered;
+    }
+
+    float defaultPeriod() const noexcept { return static_cast<float> (rate) / 110.0f; }
+
     std::array<StateVariableFilter, bands> analysisLeft, analysisRight, carrierBand;
     std::array<EnvelopeFollower, bands> leftEnvelope, rightEnvelope;
     double rate = 48000.0;
     float carrierPhase = 0.0f;
+
+    // The carrier's pitch tracker: a 400 Hz low-pass, the interval between its
+    // positive-going zero crossings, and a 50 ms smoothing of that interval.
+    OnePole pitchFilter;
+    float pitchPeriod = 436.0f;
+    long sinceCrossing = 0;
+    float previousFiltered = 0.0f;
 
     /** The matched makeup gain's two poles: ~20 ms, which follows a phrase rather
         than a cycle. Solved in prepare() from the engine rate, like every other
