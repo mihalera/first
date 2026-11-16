@@ -161,11 +161,17 @@ private:
 //  input produced. The result is the robotic, formant-following sound the effect
 //  is used for, and the AMOUNT is how much of the vocoded signal replaces the
 //  direct one.
+//
+//  Sixteen bands, not eight, and a gentler Q. Eight bands with a Q of 4 left gaps
+//  between them - a band of the carrier's harmonics fell between two analysis
+//  bands often enough that the output was mostly the makeup gain lifting whatever
+//  leaked through, which is the "it just adds noise" report this answers. The
+//  bands overlap now, so the envelope the input imposes is continuous.
 // =============================================================================
 class Vocoder
 {
 public:
-    static constexpr int bands = 8;
+    static constexpr int bands = 16;
 
     void prepare (double sampleRate) noexcept
     {
@@ -176,9 +182,9 @@ public:
             const auto index = static_cast<std::size_t> (band);
             const auto hertz = bandFrequency (band);
 
-            analysisLeft[index].setCutoff (hertz, 4.0f, rate);
-            analysisRight[index].setCutoff (hertz, 4.0f, rate);
-            carrierBand[index].setCutoff (hertz, 4.0f, rate);
+            analysisLeft[index].setCutoff (hertz, 2.0f, rate);
+            analysisRight[index].setCutoff (hertz, 2.0f, rate);
+            carrierBand[index].setCutoff (hertz, 2.0f, rate);
             leftEnvelope[index].setTimes (3.0f, 60.0f, rate);
             rightEnvelope[index].setTimes (3.0f, 60.0f, rate);
         }
@@ -253,7 +259,7 @@ public:
         wetEnvelope += (wetLevel - wetEnvelope) * makeupCoefficient;
 
         const auto makeup = wetEnvelope > 1.0e-5f
-                                ? std::clamp (inputEnvelope / wetEnvelope, 0.0f, 8.0f)
+                                ? std::clamp (inputEnvelope / wetEnvelope, 0.0f, 2.0f)
                                 : 1.0f;
 
         left += (wetLeft * makeup - left) * mix;
@@ -263,7 +269,9 @@ public:
 private:
     static float bandFrequency (int band) noexcept
     {
-        return 180.0f * std::pow (22.0f, static_cast<float> (band) / 7.0f);
+        // 120 Hz to 4.8 kHz across sixteen bands: roughly a third of an octave
+        // apart, which is close enough for the bands to overlap at a Q of 2.
+        return 120.0f * std::pow (40.0f, static_cast<float> (band) / 15.0f);
     }
 
     std::array<StateVariableFilter, bands> analysisLeft, analysisRight, carrierBand;

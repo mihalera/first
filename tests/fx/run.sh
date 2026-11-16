@@ -39,3 +39,11 @@ mkdir -p "${BUILD}"
 "${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}"     "${sanitize_flags[@]}"     -I "$(j37_path source)"     "${HERE}/per_parameter_test.cpp" -o "${BUILD}/per_parameter_test"
 
 "${BUILD}/per_parameter_test"
+
+# The third binary answers the three complaints the first two could not see: the
+# fuzz that rectified, the bitcrusher that muted everything below -12 dBFS, and a
+# vocoder whose output did not follow its input. It measures waveforms and levels
+# rather than occupancy - see the header of character_test.cpp.
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}"     "${sanitize_flags[@]}"     -I "$(j37_path source)"     "${HERE}/character_test.cpp" -o "${BUILD}/character_test"
+
+"${BUILD}/character_test"
