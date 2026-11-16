@@ -138,5 +138,6 @@
   "fx_granular": 0.0,
   "fx_spectral": 0.0,
   "fx_speed": 0.5,
+  "fx_stutter": 0.0,
   "comp_upward": 0.0
 }

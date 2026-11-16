@@ -550,6 +550,12 @@ void FirstAudioProcessor::auditFactoryPresets()
             // between a table that says what it means and one that merely reads
             // right in a diff.
             "osc_note",
+            // GLUE COMP is a property of the MACHINE rather than of a sound, like
+            // bypass and delta: it switches the deck's two compressors in or out,
+            // and a preset that silently turned them back on would fight a session
+            // deliberately running without them. A factory preset leaves the
+            // switch where the user put it.
+            "glue_on",
     };
 
         for (const auto& id : registered)
