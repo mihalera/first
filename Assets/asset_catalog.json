@@ -1420,6 +1420,13 @@
           "family": "parameter",
           "shape": "compressor",
           "tile": 96
+        },
+        {
+          "key": "parameter.fx_stutter",
+          "label": "FX STUTTER",
+          "family": "parameter",
+          "shape": "echo",
+          "tile": 97
         }
       ],
       "tintable": true
