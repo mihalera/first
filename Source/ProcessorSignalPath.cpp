@@ -98,8 +98,22 @@ inline float nextNoise (std::uint32_t& state) noexcept
 inline float configureTrackGeometry (FirstAudioProcessor::TapeBlockState& state,
                                      int tracksIndex, int bleedBufferLength) noexcept
 {
+    //  The three modelled layouts, then OFF - the layout not modelled at all:
+    //  a full-width track per channel with no fringing field and no spacing, so
+    //  the machine keeps its tape floor and loses only what the geometry was
+    //  adding. OFF is the last index (see the note on the parameter) and it is
+    //  written as its own branch rather than as a fourth row of the tables,
+    //  because two of the three numbers it needs are "no term at all".
     static constexpr float tracksWidthScale[3] { 1.00f, 0.94f, 0.82f };
     static constexpr float tracksNoiseScale[3] { 1.00f, 1.06f, 1.22f };
+
+    if (tracksIndex == 3)
+    {
+        state.trackWidthScale = 1.0f;
+        state.trackCrosstalk = 0.0f;
+        state.trackBleedDelaySamples = juce::jlimit (1, bleedBufferLength - 2, 1);
+        return 1.0f;
+    }
 
     state.trackWidthScale = tracksWidthScale[tracksIndex];
     state.trackCrosstalk = j37dsp::kTrackCrosstalk[static_cast<std::size_t> (tracksIndex)];
@@ -1336,6 +1350,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // stated the control would come back an octave down, and the rack would never
     // close, because isActive() reads this target as off-centre.
     fxTargets.speed = fxSpeedParam != nullptr ? fxSpeedParam->load() : 0.5f;
+    // STUTTER is an amount like the rest, and a missing parameter means out of
+    // the path - the machine every session written before it existed was.
+    fxTargets.stutter = fxStutterParam != nullptr ? fxStutterParam->load() : 0.0f;
     fxRack.setTargets (fxTargets);
     const auto autoTuneAmount = autoTuneAmountParam != nullptr ? autoTuneAmountParam->load() : 0.0f;
     state.autoTuneStrength = juce::jlimit (0.0f, 1.0f, autoTuneAmount);
@@ -1394,7 +1411,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     //                 as an echo, which is exactly what track-to-track bleed is.
     // -------------------------------------------------------------------------
     const auto tracksIndex = tracksParam != nullptr
-                                 ? juce::jlimit (0, 2, static_cast<int> (tracksParam->load())) : 0;
+                                 ? juce::jlimit (0, 3, static_cast<int> (tracksParam->load())) : 0;
 
     //       2-track        2+3 (4-track used as 2)     3-track
     //       widest/tightest spacing,       widest spacing,        narrowest tracks,
@@ -1410,6 +1427,11 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // programme-level compensator.
     state.polaritySign = (polarityParam != nullptr && polarityParam->load() >= 0.5f) ? -1.0f : 1.0f;
     state.autoGainEnabled = autoGainParam == nullptr || autoGainParam->load() >= 0.5f;
+    // The two glue compressors, as one switch. A missing parameter (a session
+    // written before the switch existed) means ON, which is the machine those
+    // sessions were made with.
+    glueShareSmoothed.setTargetValue (glueOnParam == nullptr || glueOnParam->load() >= 0.5f
+                                          ? 1.0f : 0.0f);
 
     inputGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (inputDb));
     outputGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (outputDb));
@@ -1734,9 +1756,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         };
         const VinylSetup setup { vinylTypeCached,
             vinylSpeedParam != nullptr ? juce::jlimit (0, 2, static_cast<int> (vinylSpeedParam->load())) : 0,
-            vinylGenerationParam != nullptr ? juce::jlimit (0, 2, static_cast<int> (vinylGenerationParam->load())) : 0,
-            vinylTurntableParam != nullptr ? juce::jlimit (0, 2, static_cast<int> (vinylTurntableParam->load())) : 0,
-            vinylCartridgeParam != nullptr ? juce::jlimit (0, 2, static_cast<int> (vinylCartridgeParam->load())) : 0,
+            vinylGenerationParam != nullptr ? juce::jlimit (0, 3, static_cast<int> (vinylGenerationParam->load())) : 0,
+            vinylTurntableParam != nullptr ? juce::jlimit (0, 3, static_cast<int> (vinylTurntableParam->load())) : 0,
+            vinylCartridgeParam != nullptr ? juce::jlimit (0, 3, static_cast<int> (vinylCartridgeParam->load())) : 0,
             vinylDustParam != nullptr ? vinylDustParam->load() : 0.0f,
             vinylScratchParam != nullptr ? vinylScratchParam->load() : 0.0f,
             vinylWarpParam != nullptr ? vinylWarpParam->load() : 0.0f,
@@ -1888,23 +1910,32 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         const auto cartridgeIndex = values.cartridge;
 
         struct GenerationVoice { float topLoss; float bottomLift; float noise; };
-        static constexpr GenerationVoice generationVoices[3]
+        //  The fourth entry is OFF: a flat pair and no extra noise, so the cut
+        //  contributes nothing to a record that is still being played.
+        static constexpr GenerationVoice generationVoices[4]
         {
             { 0.94f, 1.02f, 1.00f },
             { 1.03f, 1.00f, 0.90f },
             { 0.80f, 1.08f, 1.35f },
+            { 1.00f, 1.00f, 1.00f },
         };
         struct TurntableVoice { float wowScale; float stability; };
-        static constexpr TurntableVoice turntableVoices[3]
+        //  OFF: the platter does not rescale the wander at all, so the disc's
+        //  own speed error is heard exactly as the type set it.
+        static constexpr TurntableVoice turntableVoices[4]
         {
             { 1.10f, 1.15f }, { 0.55f, 0.70f }, { 1.35f, 1.55f },
+            { 1.00f, 1.00f },
         };
         struct CartridgeVoice { float top; float bottom; float noise; float hiss; };
-        static constexpr CartridgeVoice cartridgeVoices[3]
+        //  OFF: a flat pair and no added noise - nothing is reading the groove
+        //  differently from the reference.
+        static constexpr CartridgeVoice cartridgeVoices[4]
         {
             { 0.94f, 1.04f, 1.00f, 1.00f },
             { 1.12f, 0.96f, 1.05f, 1.30f },
             { 1.05f, 1.12f, 1.30f, 1.10f },
+            { 1.00f, 1.00f, 1.00f, 1.00f },
         };
 
         const auto& generation = generationVoices[generationIndex];
@@ -2677,6 +2708,13 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
     //  The blend happens per channel below, where each side's gain is applied,
     //  because the unlinked answer is different for L and R.
     // ------------------------------------------------------------------
+    //  The two glue stages' own switch, as a SHARE of their gain reduction.
+    //  Scaling the reduction (rather than bypassing the stages) is what lets the
+    //  switch be a fade: at 0 the detectors still run, every gain becomes 1.0 and
+    //  both makeups collapse with it, so the machine is exactly the machine with
+    //  the compressors out.
+    const float glueShare = glueShareSmoothed.getCurrentValue();
+
     const float inputEnvelopeDb = inputCompressor.processDetection (
         inputDetectorPower, state.engineSampleRate, state.inputCompressorCoefficients);
     const float linkedReductionDb = juce::jmax (state.inputReductionLimitDb,
@@ -2684,7 +2722,7 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
                                                                      state.inputThresholdDb,
                                                                      state.inputKneeDb,
                                                                      state.inputCompressorRatio));
-    const float inputReductionDb = linkedReductionDb;
+    const float inputReductionDb = linkedReductionDb * glueShare;
     const float linkNow = stLinkSmoothed.getCurrentValue();
 
     // The per-channel reductions, valid only when the control is actually
@@ -2706,7 +2744,7 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         }
     }
 
-    const float inputCompressionGain = juce::Decibels::decibelsToGain (linkedReductionDb);
+    const float inputCompressionGain = juce::Decibels::decibelsToGain (linkedReductionDb * glueShare);
 
     state.inputPeakReductionDb = juce::jmin (state.inputPeakReductionDb, inputReductionDb);
     state.inputEnvelopeActivity = juce::jmax (state.inputEnvelopeActivity,
@@ -2748,7 +2786,7 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         if (linkNow < 0.999f)
         {
             const auto unlinkedGain = juce::Decibels::decibelsToGain (
-                inputPerChannelReductionDb[static_cast<std::size_t> (channel)]);
+                inputPerChannelReductionDb[static_cast<std::size_t> (channel)] * glueShare);
             inputCompressionGainThisChannel = inputCompressionGain
                                             + (unlinkedGain - inputCompressionGain)
                                                   * (1.0f - linkNow);
@@ -3580,11 +3618,13 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
 
     const float envelopeDb = outputCompressor.processDetection (detectorPower, state.engineSampleRate,
                                                                 state.outputCompressorCoefficients);
+    //  The same share the input stage uses. Both stages are one switch, so both
+    //  are scaled by the value read once per sample above the input detector.
     const float reductionDb = juce::jmax (state.outputReductionLimitDb,
                                           softKneeReductionDb (envelopeDb,
                                                                state.outputThresholdDb,
                                                                state.outputKneeDb,
-                                                               state.outputCompressorRatio));
+                                                               state.outputCompressorRatio)) * glueShare;
 
     // The output stage's per-channel detectors, on the same terms as the input
     // stage's: advanced only when ST LINK is actually asking for them, so the
@@ -3639,7 +3679,7 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         for (int channel = 0; channel < state.activeChannels; ++channel)
         {
             const auto unlinkedCompressionGain = juce::Decibels::decibelsToGain (
-                outputPerChannelReductionDb[static_cast<std::size_t> (channel)]);
+                outputPerChannelReductionDb[static_cast<std::size_t> (channel)] * glueShare);
             const auto blended = compressionGain
                                + (unlinkedCompressionGain - compressionGain) * (1.0f - linkNow);
             stageGainPerChannel[static_cast<std::size_t> (channel)] =

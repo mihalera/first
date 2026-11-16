@@ -370,7 +370,9 @@ FirstAudioProcessor::FirstAudioProcessor()
     fxVocoderParam = parameters.getRawParameterValue ("fx_vocoder");
     fxGranularParam = parameters.getRawParameterValue ("fx_granular");
     fxSpectralParam = parameters.getRawParameterValue ("fx_spectral");
+    fxStutterParam = parameters.getRawParameterValue ("fx_stutter");
     fxSpeedParam = parameters.getRawParameterValue ("fx_speed");
+    glueOnParam = parameters.getRawParameterValue ("glue_on");
     compUpwardParam = parameters.getRawParameterValue ("comp_upward");
 
     // Four fixed oversampling engines (off / 2x / 4x / 8x). Each owns its own filter

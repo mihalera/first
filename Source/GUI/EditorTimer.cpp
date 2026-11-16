@@ -442,6 +442,20 @@ void FirstAudioProcessorEditor::timerCallback() {
     // reading twenty-four atomics.
     spectrumBandsDb = telemetry.spectrumBandsDb;
 
+    //  The curve the page draws, from the curve the frame reports: fast up, slow
+    //  down. The raw bands are a measurement per frame, and a band that sits at its
+    //  floor for one frame - a quiet passage, a frame the analyser had not filled -
+    //  used to take the whole line down with it and back up on the next, which is
+    //  exactly the blink the user reported. `displayedSpectrumDb` is what paint()
+    //  reads, so the measurement is still honest, it is just held like a meter.
+    for (std::size_t band = 0; band < displayedSpectrumDb.size(); ++band)
+    {
+        const auto measured = telemetry.spectrumBandsDb[band];
+        auto& shown = displayedSpectrumDb[band];
+        const auto coefficient = measured > shown ? 0.55f : 0.14f;
+        shown += (measured - shown) * coefficient;
+    }
+
     // Only the page that DRAWS the curve is invalidated, and only its own cell: the
     // panel is repainted in bands on purpose, and a whole-window repaint per tick is
     // the cost this file's repaint strategy exists to avoid. shapersSpectrumBounds()

@@ -625,8 +625,13 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     static constexpr std::size_t decorativeOrbCount = 6;
 
     // Header grid dimensions for the two engine-switch rows and language selector.
-    static constexpr int headerColumnCount = 5;
-    static constexpr int headerColumnWidth = 74;
+    //  Six columns rather than five since GLUE COMP and RND joined the rows. The
+    //  cell is sized by the widest caption that still has to fit (POLARITY,
+    //  AUTO GAIN, GLUE COMP) at the panel's 8.5 pt, and 62 is that width: six of
+    //  them plus five gaps is 402 px, which clears the title block by 32 px at
+    //  the 780 px minimum instead of the twelve the old 394 px grid had.
+    static constexpr int headerColumnCount = 6;
+    static constexpr int headerColumnWidth = 62;
     static constexpr int headerColumnGap = 6;
     /** The renderer caption on the brand row, wide enough for the longest form the
         caption can take - "BACKEND  CPU (VULKAN PENDING)" - at its own 8.5 pt, and
@@ -636,6 +641,11 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void timerCallback() override;
     void createDecorativePhysics();
     void applyTheme();
+
+    /** RND's whole body: one normalized draw per parameter, so a choice lands on a
+        whole entry and a switch on one of its two states without this having to
+        know which control is which type. */
+    void randomiseAllParameters();
 
     /** Applies one of j37panel::uiScaleStops and remembers it for this machine.
         The panel's layout is responsive, so a stop is a real window size rather
@@ -1256,8 +1266,17 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // it is a whole-machine switch like the four beside it, and the row's cells are
     // sized by the widest caption in it (POLARITY, AUTO GAIN), so a third short
     // caption costs the row nothing but the cell.
-    juce::ToggleButton oscButton{"OSC"};
+    juce::ToggleButton oscButton{"OSCRing"};
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> oscAttachment;
+    //  GLUE COMP - the machine's two glue compressors, as one switch. It sits with
+    //  the other whole-machine switches in the header, and its cell is the sixth:
+    //  the two are the same kind of thing, not a knob on one stage.
+    juce::ToggleButton glueButton{"GLUE COMP"};
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> glueAttachment;
+    //  RANDOM - every sonic parameter drawn anew. It is a machine-level gesture,
+    //  so it belongs in the header rather than in the preset chain: the preset
+    //  chain says which stored machine you are on, and this says "another one".
+    juce::TextButton randomButton{"RND"};
 
     // The ring the OSC switch belongs to, on the deck's type row - see placeDeck().
     j37panel::OscRing oscRing;
@@ -1413,8 +1432,11 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // Four metering surfaces, arranged two by two:
     //   top row    - the INPUT and OUTPUT level VU meters
     //   bottom row - one gain-reduction meter per glue compressor stage
-    LevelMeter inputMeter{"INPUT", "LEVEL / dBFS"};
-    LevelMeter outputMeter{"OUTPUT", "LEVEL / dBFS"};
+    // The meters are titled INPUT and OUTPUT and nothing else: the second line
+    // used to repeat "LEVEL / dBFS" under both, which said the same thing twice
+    // beside a card whose own heading already reads "dBFS / PEAK + RMS".
+    LevelMeter inputMeter{"INPUT", ""};
+    LevelMeter outputMeter{"OUTPUT", ""};
     CompressorMeter compressorMeterIn{"COMP IN", "after input trim"};
     CompressorMeter compressorMeterOut{"COMP OUT", "before output trim"};
     /** The MIX page's mix bar. A member rather than something paint() draws: it
@@ -1442,6 +1464,17 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // separate atomic per band: the frame is already the channel the audio thread
     // publishes through, and a curve is read as a whole or not at all.
     std::array<float, SpectrumAnalyser::bandCount> spectrumBandsDb{};
+    //  What the MODELS page's curve is DRAWN from. The raw bands arrive at the
+    //  telemetry rate, and a band that reads its floor for a frame in a quiet
+    //  passage took the whole curve down with it - the flicker the user saw. The
+    //  displayed curve rises quickly and falls slowly, so a transient is still
+    //  immediate and a single empty frame cannot collapse the line.
+    std::array<float, SpectrumAnalyser::bandCount> displayedSpectrumDb {
+        [] {
+            std::array<float, SpectrumAnalyser::bandCount> values {};
+            values.fill (-72.0f);
+            return values;
+        }() };
 
     // -----------------------------------------------------------------------
     //  The front panel's theme.

@@ -1135,7 +1135,11 @@ void FirstAudioProcessorEditor::setUpTopSwitches() {
     //  which is what keeps a generator out of a session that never asked for one.
     // ---------------------------------------------------------------------
     oscButton.setClickingTogglesState(true);
-    setTip(oscButton, "OSC - the deck's note generator. ON, the ball falls under "
+    // The caption names the RING rather than the wire protocol: the panel already
+    // says OSC on the parameter sheet's own page, and the header is where the user
+    // asked for the ring's own name.
+    oscButton.setButtonText("OSCRing");
+    setTip(oscButton, "OSCRing - the deck's note generator. ON, the ball falls under "
                       "gravity and bounces around INSIDE the ring on the type row - "
                       "the notes of the selected TONIC and MODE across three "
                       "octaves - and the edge it hits plays that note into the "
@@ -1148,6 +1152,43 @@ void FirstAudioProcessorEditor::setUpTopSwitches() {
     oscAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
         audioProcessor.parameters, "osc_on", oscButton);
     addAndMakeVisible(oscButton);
+
+    // ---------------------------------------------------------------------
+    //  GLUE COMP - the machine's two glue compressors, as one switch.
+    //
+    //  It is in the header with the other whole-machine switches because that
+    //  is what it is: the input stage's squeeze and the output stage's are part
+    //  of the machine, not an insert on one of its pages. OFF leaves both
+    //  detectors running but scales their gain reduction (and both makeups)
+    //  to nothing, so the switch is a fade of the squeeze rather than a jump.
+    // ---------------------------------------------------------------------
+    glueButton.setClickingTogglesState(true);
+    glueButton.setLookAndFeel(&customLookAndFeel);
+    setTip(glueButton, "GLUE COMP - the machine's two glue compressors. ON the "
+                       "input stage keeps the record head inside its headroom "
+                       "and the output stage sits the mix together; OFF both "
+                       "are switched out and the machine runs without their "
+                       "squeeze. The switch is ramped, so turning it off fades "
+                       "the reduction out instead of stepping the level. Both "
+                       "COMP meters read 0 dB with it off.");
+    glueAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        audioProcessor.parameters, "glue_on", glueButton);
+    addAndMakeVisible(glueButton);
+
+    // ---------------------------------------------------------------------
+    //  RND - another machine, drawn at random.
+    // ---------------------------------------------------------------------
+    randomButton.setLookAndFeel(&customLookAndFeel);
+    setTip(randomButton, "RND - draws every sonic control again: knobs anywhere "
+                         "in their travel, type selectors and switches on random "
+                         "entries. BYPASS and DELTA are left alone - they are "
+                         "monitor positions, not part of the sound - so randomising "
+                         "never silences the machine you are listening to. Press "
+                         "it as often as you like; each press is one host "
+                         "parameter change per control, so the host's own undo "
+                         "can step back through it.");
+    randomButton.onClick = [this] { randomiseAllParameters(); };
+    addAndMakeVisible(randomButton);
 }
 
 void FirstAudioProcessorEditor::setUpOversamplingAndInstrument() {
@@ -1221,7 +1262,7 @@ void FirstAudioProcessorEditor::setUpVinylSelectors() {
     };
 
     setUpVinylSelector(vinylGenerationLabel, vinylGenerationBox, "GENERATION",
-                       juce::StringArray{"Laquer", "Direct", "Printed"},
+                       juce::StringArray{"Laquer", "Direct", "Printed", "Off"},
                        "How the record was cut and pressed. LAQUER is the reference "
                        "cut - almost none of the cutter head's own colour, loud and "
                        "clean. DIRECT is a direct-metal master, cleaner still, with "
@@ -1233,7 +1274,7 @@ void FirstAudioProcessorEditor::setUpVinylSelectors() {
                        "vinyl_generation");
 
     setUpVinylSelector(vinylTurntableLabel, vinylTurntableBox, "TURNTABLE",
-                       juce::StringArray{"Belt", "Direct", "Idler"},
+                       juce::StringArray{"Belt", "Direct", "Idler", "Off"},
                        "What drives the platter. BELT is an audiophile belt-drive: "
                        "the elastic belt isolates the motor, so the drive is smooth "
                        "and quiet but marginally less steady. DIRECT is a high-torque "
@@ -1246,7 +1287,7 @@ void FirstAudioProcessorEditor::setUpVinylSelectors() {
                        "vinyl_turntable");
 
     setUpVinylSelector(vinylCartridgeLabel, vinylCartridgeBox, "CARTRIDGE",
-                       juce::StringArray{"MM", "MC", "DJ"},
+                       juce::StringArray{"MM", "MC", "DJ", "Off"},
                        "What reads the groove, and the largest single difference of "
                        "the three selectors. MM is a moving magnet: warm, soft on "
                        "top, broad. MC is a moving coil: more detail, a brighter and "
@@ -1929,7 +1970,11 @@ void FirstAudioProcessorEditor::setUpInlineLists() {
                     "pedal) can be plugged in without driving the box's own core "
                     "into saturation. 0 dB is no pad.");
 
-    setUpInlineList(tracksLabel, tracksBox, "TRACKS", juce::StringArray{"2", "2+3", "3"},
+    //  OFF is the last entry of the list rather than the first, for the reason the
+    //  parameter's own note gives: the choice index is what a saved session and a
+    //  factory preset store, so an entry inserted at the front would renumber
+    //  every layout that already exists.
+    setUpInlineList(tracksLabel, tracksBox, "TRACKS", juce::StringArray{"2", "2+3", "3", "Off"},
                     "The machine's track layout, which is geometry rather than "
                     "taste. 2 is a stereo deck: two tracks each with half the "
                     "tape, the most low end per channel and no adjacent track to "
@@ -1938,7 +1983,8 @@ void FirstAudioProcessorEditor::setUpInlineLists() {
                     "so the widest spacing and the least crosstalk. 3 is a "
                     "three-track deck: narrower tracks, so less low end and a "
                     "higher noise floor for the same tape, with the most bleed "
-                    "between the heads.");
+                    "between the heads. OFF does not model the geometry at all - "
+                    "the reference state for hearing what it contributes.");
 
     const juce::StringArray eqOrderItems{"6 dB/oct",  "12 dB/oct", "18 dB/oct",
                                          "24 dB/oct", "36 dB/oct", "48 dB/oct"};

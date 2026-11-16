@@ -48,6 +48,7 @@
 #include "Fx/FxModulation.h"
 #include "Fx/FxPitch.h"
 #include "Fx/FxPrimitives.h"
+#include "Fx/FxStutter.h"
 
 #include <algorithm>
 #include <cmath>
@@ -83,6 +84,7 @@ struct FxTargets
     float vocoder = 0.0f;
     float granular = 0.0f;
     float spectral = 0.0f;
+    float stutter = 0.0f;
 
     /** SPEED is a rate rather than an amount: half speed, the tape's own speed at
         the middle, twice at the top. Its neutral position is therefore the middle
@@ -103,6 +105,7 @@ public:
         float octaver = 0.0f, pitch = 0.0f, comb = 0.0f, formant = 0.0f, dynamicEq = 0.0f;
         float deEsser = 0.0f, chorus = 0.0f, flanger = 0.0f, phaser = 0.0f, tremolo = 0.0f;
         float vibrato = 0.0f, rotary = 0.0f, vocoder = 0.0f, granular = 0.0f, spectral = 0.0f;
+        float stutter = 0.0f;
     };
 
     /** Called from prepareToPlay with the ENGINE rate - session rate times the
@@ -135,6 +138,7 @@ public:
         vocoder.prepare (rate);
         granular.prepare (rate);
         spectralGate.prepare (rate);
+        stutter.prepare (rate);
         speed.prepare (rate);
 
         // 15 ms of smoothing: fast enough that a knob feels immediate, slow
@@ -171,6 +175,7 @@ public:
         vocoder.reset();
         granular.reset();
         spectralGate.reset();
+        stutter.reset();
         speed.reset();
 
         amounts = Amounts {};
@@ -212,6 +217,7 @@ public:
         step (amounts.vocoder, targets.vocoder);
         step (amounts.granular, targets.granular);
         step (amounts.spectral, targets.spectral);
+        step (amounts.stutter, targets.stutter);
 
         if (amounts.wah > threshold)             wah.process (left, right, amounts.wah);
         if (amounts.antiSpike > threshold)       antiSpike.process (left, right, amounts.antiSpike);
@@ -243,6 +249,7 @@ public:
         if (amounts.vocoder > threshold)         vocoder.process (left, right, amounts.vocoder);
         if (amounts.granular > threshold)        granular.process (left, right, amounts.granular);
         if (amounts.spectral > threshold)        spectralGate.process (left, right, amounts.spectral);
+        if (amounts.stutter > threshold)         stutter.process (left, right, amounts.stutter);
 
         // SPEED is the one control on this panel that is a RATE, not an amount:
         // its middle is the identity (1x) and its zero is half speed, not
@@ -290,6 +297,7 @@ public:
             || stageIsActive (amounts.vocoder, targets.vocoder)
             || stageIsActive (amounts.granular, targets.granular)
             || stageIsActive (amounts.spectral, targets.spectral)
+            || stageIsActive (amounts.stutter, targets.stutter)
             || std::abs (targets.speed - 0.5f) > threshold;
     }
 
@@ -335,6 +343,7 @@ private:
     j37dsp::fx::Vocoder vocoder;
     j37dsp::fx::Granular granular;
     j37dsp::fx::SpectralGate spectralGate;
+    j37dsp::FxStutter stutter;
     j37dsp::fx::Speed speed;
 
     FxTargets targets;

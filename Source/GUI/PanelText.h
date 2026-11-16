@@ -35,7 +35,7 @@
 // error (C2078) instead of a silent out-of-bounds read at run time, and the tab
 // table is checked against this count by a static_assert in setCurrentTab, so a
 // knob that no tab lists is a build error too.
-inline constexpr std::size_t controlCount = 97;
+inline constexpr std::size_t controlCount = 98;
 
 namespace j37panel
 {
@@ -210,7 +210,10 @@ namespace j37panel
         { "fx_granular",     "GRAIN",     0.0,   "PITCH"     },
         { "fx_spectral",     "SPECTRL",   0.0,   "SHAPE"     },
         { "fx_speed",        "SPEED",     0.5,   "PITCH"     },
-        { "comp_upward",     "UPWARD",    0.0,   "COMP"      }
+        { "comp_upward",     "UPWARD",    0.0,   "COMP"      },
+        // The stutter, appended for the same reason as every row above: the tab
+        // table refers to controls by index, so a new stage takes the next one.
+        { "fx_stutter",      "STUTTER",   0.0,   "PITCH"     }
     } };
 
     // A tooltip for EVERY parameter - this is what shows when the user hovers.

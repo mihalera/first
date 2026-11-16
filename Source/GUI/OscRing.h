@@ -482,7 +482,13 @@ public:
             juce::Font::getDefaultMonospacedFontName(),
             j37panel::oscNoteFontHeight (plate),
             juce::Font::bold)));
-        g.setColour (running ? palette.readout : palette.secondary);
+        //  The note is the ring's READOUT, so it is inked like one: the theme's
+        //  accent while the generator runs, and the panel's own text colour when
+        //  the ball is held. It used to take palette.readout, which on the dark
+        //  panels is close enough to the plate behind it that the note all but
+        //  disappeared - the one value the eye is meant to read painted in the
+        //  colour of the surface it sits on.
+        g.setColour (running ? palette.accent : palette.text);
         g.drawText (noteName (noteAt (currentSector)),
                     displayText,
                     juce::Justification::centred, false);
