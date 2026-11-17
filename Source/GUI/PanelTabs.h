@@ -97,9 +97,9 @@ namespace j37panel
     // SETTINGS, and the delay TYPE / RATE / SYNC trio shows on DELAY. They are
     // not knobs - the grid below cannot place them - so their visibility is
     // managed in setCurrentTab beside the knobs'.
-    // The twenty-two pages are grouped into FOUR FAMILIES - TAPE, FX, RACK,
+    // The twenty-three pages are grouped into FOUR FAMILIES - BOX, FX, RACK,
     // SETUP - and no page carries more than one subject, or more than one row of
-    // seven knobs. The families are the four large buttons ABOVE this bar (see
+    // knobs. The families are the four large buttons ABOVE this bar (see
     // setTabFamily); the column in each row below is the page's family, and it
     // is the single source the strip reads. AUTOTUNE and COMP are part of FX,
     // the effects RACK is a family of its own, and SETUP is the last one.
@@ -188,17 +188,17 @@ namespace j37panel
                    "CARTRIDGE re-voice it all from CHARACTER; the FAULTS are on "
                    "RECORD.",
                      3, 0, { 35, 36, 37 } },
-        //  The seven SOURCE knobs alone: the saturation mix IS the page, so the
+        //  The nine SOURCE knobs alone: the saturation mix IS the page, so the
         //  user dialling TAPE up against VALVE is looking at the whole mix and
         //  nothing else. The mix bar in the band under the row shows the same
-        //  seven shares the core is actually running.
-        { "MIX", "The saturation mix: seven SOURCE knobs, one per machine. TAPE, "
-                 "VALVE, CASSETTE, VINYL, AMP, TRANSFORMER and DIGITAL each set "
-                 "that machine's share of the character, and the shares are "
-                 "normalised to sum to 100 percent - so what is dialled is what "
-                 "is heard, and the bar under the row shows the running mix. A "
-                 "machine whose own TYPE is OFF contributes nothing and its "
-                 "share is redistributed among the rest.",
+        //  nine shares the core is actually running.
+        { "MIX", "The saturation mix: nine SOURCE knobs, one per machine. TAPE, "
+                 "VALVE, PENTODE, TRIODE, TRANSISTOR, FOLD, GLASS, TRANSFORMER "
+                 "and DIGITAL each set that machine's share of the character, and "
+                 "the shares are normalised to sum to 100 percent - so what is "
+                 "dialled is what is heard, and the bar under the row shows the "
+                 "running mix. A machine whose own TYPE is OFF contributes "
+                 "nothing and its share is redistributed among the rest.",
                      9, 0, { 10, 11, 12, 13, 14, 15, 16, 17, 18 } },
         //  amp_bias, sag, subfund - everything that BENDS the curve once the
         //  gain stages have pushed it. Three knobs that share one idea (the
@@ -324,7 +324,7 @@ namespace j37panel
         "the machine's own departures from a clean signal",
         "the record's five faults, one page each of its own",
         "the record-playing stage: how much, how rough, how low",
-        "seven machines, seven shares, one character",
+        "nine machines, nine shares, one character",
         "the curve-benders: bias, supply sag, and the octave below",
         "the second head: time, repeats, tone, low cut, damping and where they land",
         "the room: level, size, pre-delay, damping, width and low cut",

@@ -2,7 +2,7 @@
 //  The panel's meters.
 //
 //  The input and output loudness meters, the two glue stages' compressor
-//  meters, and the MIX bar that shows what each of the seven principles is
+//  meters, and the MIX bar that shows what each of the nine principles is
 //  contributing. Moved out of PluginEditor.cpp whole, prose and all: they are
 //  three component classes the editor declares, and none of them is part of
 //  building the panel.
@@ -558,13 +558,13 @@ void FirstAudioProcessorEditor::CompressorMeter::paint (juce::Graphics& g)
 //==============================================================================
 // The MIX page's saturation mix, as hardware rather than as a number.
 //
-// Seven knobs answer "how much did I ask for"; this answers "how much did the
+// Nine knobs answer "how much did I ask for"; this answers "how much did the
 // core get", and after normalisation those are different questions - turning
 // TAPE up from 60 with nothing else up changes nothing audible, because the
 // other shares are scaled to fit around it. So the bar reads the SHARES, not
 // the knob positions, and it reads them the way the panel reads everything else:
-// seven recessed cells, each filled from the bottom in that machine's colour,
-// each still visible at zero so the row always shows all seven.
+// nine recessed cells, each filled from the bottom in that machine's colour,
+// each still visible at zero so the row always shows all nine.
 //
 // The empty mix is drawn as pure tape, the same answer SaturationCore gives -
 // so the bar and the sound can never disagree about what the engine is doing.
@@ -591,7 +591,7 @@ void FirstAudioProcessorEditor::MixBar::paint (juce::Graphics& g)
     // part of the panel rather than as an overlay somebody dropped on it.
 //
     // The right-hand note carries the AMOUNT as well as the share, because the
-    // seven cells always add up to 100 % and a bar that always reads full is a
+    // nine cells always add up to 100 % and a bar that always reads full is a
     // bar that cannot report that every SOURCE knob is at zero. The total is
     // the number that says how hard the stage is running; the shares are the
     // number that says which machines are doing it.
@@ -606,7 +606,7 @@ void FirstAudioProcessorEditor::MixBar::paint (juce::Graphics& g)
                 heading.reduced (1.0f, 0.0f), juce::Justification::centredRight, false);
     g.setColour (palette.secondary);
     g.setFont (j37panel::panelFont (9.0f));
-    g.drawText ("seven machines' shares", heading.reduced (1.0f, 0.0f).reduced (96.0f, 0.0f),
+    g.drawText ("nine machines' shares", heading.reduced (1.0f, 0.0f).reduced (96.0f, 0.0f),
                 juce::Justification::centredRight, false);
 
     // The cells. A 3 px gap reads as the milled groove between two plates, and

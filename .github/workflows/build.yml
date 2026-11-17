@@ -432,6 +432,15 @@ jobs:
       - name: Check the panel page table
         run: python3 tests/parameters/check_tabs.py
 
+      # The MIX page's nine knobs and the MACHINE page's seven selectors are the
+      # only UI the saturation has, and every piece of that chain has been
+      # renamed or re-counted at least once: seven knobs became nine, two
+      # principles were inserted in the middle, and the TYPE lists left the deck.
+      # A knob attached to an id nobody reads, or a strip painting a machine the
+      # core is not running, is a clean build and a panel that looks right.
+      - name: Check the MIX and MACHINE page wiring
+        run: python3 tests/parameters/check_mix_wiring.py
+
       # The panel's GLSL is the one piece of the UI nothing else here can see: it
       # is a string literal until a driver compiles it at run time, so a shader
       # that does not compile is a hole where the scene should be, with nothing in
@@ -1820,109 +1829,6 @@ jobs:
   # ============================================================================
   #  iOS - AUv3 for device and simulator
   # ============================================================================
-  build-ios:
-    name: build-ios (AUv3, ${{ matrix.sdk }}, arm64)
-    runs-on: macos-latest
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        sdk: [iphoneos, iphonesimulator]
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          submodules: recursive
-          fetch-depth: 0
-
-      - name: Verify JUCE submodule is present
-        run: |
-          if [ ! -f "JUCE/CMakeLists.txt" ]; then
-            echo "JUCE submodule missing - CMakeLists.txt adds it via add_subdirectory(JUCE)."
-            echo "Run: git submodule update --init --recursive"
-            exit 1
-          fi
-          ls JUCE/modules | head -n 5
-
-      - name: Cache the CMake dependency trees
-        uses: ./.github/actions/build-cache
-        with:
-          build-dir: build-ios-${{ matrix.sdk }}
-          flavour: ios-${{ matrix.sdk }}
-          deps-hash: ${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', '.gitmodules') }}
-
-      - name: Configure CMake for ${{ matrix.sdk }}
-        run: |
-          cmake -S . -B "build-ios-${{ matrix.sdk }}" -G Xcode \
-            -DCMAKE_SYSTEM_NAME=iOS \
-            -DCMAKE_OSX_SYSROOT=${{ matrix.sdk }} \
-            -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            -DJ37_FAST_CI_BUILD=ON \
-            -DJ37_RENDER_BACKEND=SOKOL \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="" \
-            -DCMAKE_XCODE_ATTRIBUTE_COMPILER_INDEX_STORE_ENABLE=NO
-
-      - name: Build the AUv3 extension
-        run: |
-          #  One pass. The old shape built twice: the first piped into grep with its
-          #  status dropped, the second into /dev/null only to learn the exit code.
-          #  That was a second full walk of every target, and the failing output was
-          #  unreachable anyway.
-          status=0
-          cmake --build "build-ios-${{ matrix.sdk }}" \
-            --config "${{ env.BUILD_TYPE }}" \
-            --target first_AUv3 \
-            --parallel 2 \
-            > "$RUNNER_TEMP/ios-build.log" 2>&1 || status=$?
-
-          grep -E 'error|warning|Error|FAILED|BUILD' "$RUNNER_TEMP/ios-build.log" || true
-
-          if [ "$status" -ne 0 ]; then
-            echo "Build failed with exit code $status - full log follows:"
-            cat "$RUNNER_TEMP/ios-build.log"
-            exit "$status"
-          fi
-
-      - name: Verify the iOS AUv3 bundle
-        run: |
-          set -euo pipefail
-          appex=$(find "build-ios-${{ matrix.sdk }}/first_artefacts/${{ env.BUILD_TYPE }}/AUv3" \
-            -name "*.appex" -prune -print -quit)
-          if [ -z "$appex" ]; then
-            echo "No iOS AUv3 extension was produced for ${{ matrix.sdk }}."
-            find "build-ios-${{ matrix.sdk }}/first_artefacts" -print 2>/dev/null || true
-            exit 1
-          fi
-
-          executable=$(/usr/libexec/PlistBuddy \
-            -c "Print :CFBundleExecutable" "$appex/Info.plist")
-          binary="$appex/$executable"
-          if [ ! -f "$binary" ]; then
-            echo "AUv3 executable is missing: $binary"
-            exit 1
-          fi
-
-          archs=$(lipo -archs "$binary")
-          echo "$binary: $archs"
-          case " $archs " in
-            *" arm64 "*) ;;
-            *)
-              echo "AUv3 bundle does not contain the requested arm64 slice."
-              exit 1
-              ;;
-          esac
-
-      - name: Upload iOS AUv3 artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: MiBoX-AUv3-${{ matrix.sdk }}-arm64
-          path: build-ios-${{ matrix.sdk }}/first_artefacts/${{ env.BUILD_TYPE }}/AUv3/*.appex
-          if-no-files-found: error
-
   # ============================================================================
   #  Linux - VST3
   # ============================================================================

@@ -3,7 +3,7 @@
 /*
     The tape stage's drive arithmetic, as one named unit.
 
-    The saturation CURVE itself is Source/DSP/SaturationCore.h - seven weighted
+    The saturation CURVE itself is Source/DSP/SaturationCore.h - nine weighted
     shapes with their own voices, sag envelope and amp voicing. What stayed inline
     in the engine was everything that decides how HARD the curve is asked to work:
     the drive the record head sees, the magnetic curve's own two arguments, the

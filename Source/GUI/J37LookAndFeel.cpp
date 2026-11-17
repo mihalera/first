@@ -117,7 +117,7 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     // when the machine is working.
     const auto hovered = slider.isMouseOver() || slider.isMouseButtonDown();
 
-    // Which principle this knob IS, if it is one of the seven SOURCE controls.
+    // Which principle this knob IS, if it is one of the nine SOURCE controls.
     // The editor registers each SOURCE slider against its machine where the
     // knobs are built (see J37LookAndFeel::registerPrincipleKnob), so the knob
     // carries its own identity rather than this paint routine holding a second
@@ -310,7 +310,7 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     //  Every term is drawn from the palette, so metal reads as steel, charcoal
     //  as bakelite and ivory as brass without a second drawing path - the only
     //  thing that is not palette-driven is the accent, and that is the one thing
-    //  that is SUPPOSED to differ between knobs (the seven principles).
+    //  that is SUPPOSED to differ between knobs (the nine principles).
     //----------------------------------------------------------------------
     const auto collarRadius = metrics.collar;
 

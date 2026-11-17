@@ -21,7 +21,7 @@
 #include <juce_box2d/juce_box2d.h>
 #include <juce_opengl/juce_opengl.h>
 
-// The panel's paint kit, its page table and the seven principles it paints with
+// The panel's paint kit, its page table and the nine principles it paints with
 // live in Source/GUI/PanelPaint.h and Source/GUI/PanelTabs.h, and they arrive
 // here: the classes below count the principles, draw with the palettes and are
 // handed the theme the palettes select on, so the header of the panel's paint
@@ -121,7 +121,7 @@ class J37LookAndFeel final : public juce::LookAndFeel_V4 {
         state.initialised = true;
     }
 
-    /** Registers which of the seven SOURCE knobs a slider IS, so drawRotarySlider
+    /** Registers which of the nine SOURCE knobs a slider IS, so drawRotarySlider
         can paint that machine's arc, its tracer and its indicator in that
         machine's own colour instead of the panel's single accent.
 
@@ -129,7 +129,7 @@ class J37LookAndFeel final : public juce::LookAndFeel_V4 {
         this class draws every control on the panel and is handed nothing but the
         slider it is drawing - the paint routine has no access to the editor's
         array, and JUCE 9's Component carries no property bag to hang an index on.
-        Seven pointers and a seven-step walk: no allocation at paint time, and the
+        Nine pointers and a nine-step walk: no allocation at paint time, and the
         same answer whether the knob is drawn from the mixer or from a repaint
         nobody asked for. */
     void registerPrincipleKnob(juce::Slider &slider, int principle) noexcept {
@@ -137,7 +137,7 @@ class J37LookAndFeel final : public juce::LookAndFeel_V4 {
             principleKnobs[static_cast<std::size_t>(principle)] = &slider;
     }
 
-    /** The principle this slider IS, or -1 when it is not one of the seven. */
+    /** The principle this slider IS, or -1 when it is not one of the nine. */
     int principleOf(juce::Slider &slider) const noexcept {
         for (int p = 0; p < principleCount; ++p)
             if (principleKnobs[static_cast<std::size_t>(p)] == &slider)
@@ -512,7 +512,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
 
     /** The saturation mix, read as a strip: one recessed cell per principle,
         each filled from the bottom by that machine's share of the NORMALISED
-        mix. Seven knobs show what was dialled; this shows what the core is
+        mix. Nine knobs show what was dialled; this shows what the core is
         actually running, which after normalisation is a different thing - and
         it shows it in the panel's own material rather than as a number to
         read. Lives in the member band under the MIX page's two rows. */
@@ -520,10 +520,10 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
       public:
         MixBar() = default;
 
-        /** The seven shares, already normalised by the caller to the same sum
+        /** The nine shares, already normalised by the caller to the same sum
             the core normalises to, in principleColour's order - plus the TOTAL
             those shares were normalised FROM, which is how hard the saturation
-            is actually running. The seven cells always read 100 % between them,
+            is actually running. The nine cells always read 100 % between them,
             so without the total the strip would claim the mix is full even with
             every SOURCE knob at zero. */
         void setShares(const std::array<float, principleCount> &newShares, float newTotal);
@@ -536,7 +536,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
         void paint(juce::Graphics &) override;
 
       private:
-        std::array<float, principleCount> shares{1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+        std::array<float, principleCount> shares{1.0f};
         float total = 1.0f; ///< the sum the shares were normalised FROM: the saturation amount
         bool darkTheme = false;
     };
@@ -600,8 +600,8 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
         bool compressorTab = false;
     };
 
-    // Ninety-seven controls, split across twenty-two tab pages of at most one row
-    // of seven, in signal-flow order: consecutive slices of one chain, read
+    // One hundred controls, split across twenty-three tab pages of at most one
+    // row, in signal-flow order: consecutive slices of one chain, read
     // left to right. The page map lives in tabSpecs in the .cpp, and the three
     // large family buttons above the bar (TAPE / FX / SETUP) group those
     // pages.
@@ -1391,8 +1391,8 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     juce::TextButton tabFamilyFxButton{"FX"};
     juce::TextButton tabFamilyRackButton{"RACK"};
     juce::TextButton tabFamilySetupButton{"SETUP"};
-    // Twenty-two pages under four large families (TAPE / FX / RACK / SETUP) - the
-    // page is one subject and at most one row of seven knobs: IN EQ alone carried
+    // Twenty-three pages under four large families (BOX / FX / RACK / SETUP) - the
+    // page is one subject and at most one row of knobs: IN EQ alone carried
     // six band knobs and three corner controls, DRIVE GAIN seven plus the DI
     // pad, and a page that scrolls is a page nobody dials. SETUP is always the
     // last family, because the engine switches are not part of the sound.
