@@ -46,6 +46,14 @@
 // =============================================================================
 #include "juce_stub.h"
 
+// <array> and <atomic> explicitly: the extracted preamble declares the model
+// name tables as std::array and the processor stand-in below holds
+// std::atomic members, and whether the headers already included here happen to
+// pull those in is a property of the TOOLCHAIN, not of this harness - it did on
+// the machine this was written on and not on the CI runner, where
+// mark_preset_clean.inc failed on an incomplete std::atomic<float>.
+#include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdio>
 #include <map>
