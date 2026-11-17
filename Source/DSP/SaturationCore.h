@@ -593,13 +593,28 @@ struct SaturationCore
 
     bool ampOff = false;
 
+    // AMP BIAS: the amp stage's DC operating point, 0..1 with 0.5 neutral. Set
+    // once per block from the smoothed control (ProcessorSignalPath feeds it
+    // from ampBiasSmoothed); shapeAmp reads it per sample. Kept here with the
+    // amp's own voice members because it re-voices the same curve.
+    float ampBiasAmount = 0.5f;
+
+    void setAmpBiasAmount (float amount) noexcept
+    {
+        ampBiasAmount = juce::jlimit (0.0f, 1.0f, amount);
+    }
+
     float shapeAmp (float x, float drive, float asymmetry) noexcept
     {
         // A small, fast bias drift: a high-gain stage's operating point moves
         // quickly with the signal because the gain makes even a small shift
-        // audible.
-        ampBiasState += (x - ampBiasState) * 0.002f;
-        const float biased = x + asymmetry * 0.18f + ampBiasState * 0.10f;
+        // audible. AMP BIAS owns how much of that movement there is: cold
+        // leaves the stage parked at its own zero (tight, crossover-shaped),
+        // hot lets the operating point chase the signal (fat, compressed).
+        // 0.5 is the neutral centre the table promises, so the multipliers
+        // below are written to land on the historical constants there.
+        ampBiasState += (x - ampBiasState) * (0.001f + ampBiasAmount * 0.002f);
+        const float biased = x + asymmetry * 0.18f + ampBiasState * (0.02f + ampBiasAmount * 0.16f);
 
         // Stage one: high gain, hard clip. The slope is much steeper than tape's
         // so the knee arrives early, and the type sets how much steeper.

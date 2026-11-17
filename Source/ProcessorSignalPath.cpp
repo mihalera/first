@@ -2977,6 +2977,11 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         saturation.setTransformerVoice (transformerTypeCached);
         saturation.setDigitalVoice (digitalTypeCached);
 
+        // AMP BIAS lands with the amp's own voice members: the smoothed control
+        // was ramped per block at the top of the frame, and the curve reads it
+        // per sample inside shapeAmp.
+        saturation.setAmpBiasAmount (ampBiasSmoothed.getCurrentValue());
+
         // Sag: the supply envelope. The two coefficients are BLOCK-RATE
         // constants (see where they are built, above the loop) - rebuilding
         // them here cost two std::exp per sample per channel for values that

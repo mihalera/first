@@ -1081,6 +1081,27 @@ if(J37_BUILD_TESTS)
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
     add_test(NAME processor_boundaries COMMAND j37_processor_boundary_tests)
+
+    #  Parameter audible harness. One unique rendered-audio test per parameter,
+    #  driven through the real processor's processBlock the way a host calls it.
+    #  Same include surface as the boundary harness above, for the same reason.
+    add_executable(j37_parameter_audio_tests tests/parameter_audio.cpp)
+    set_property(TARGET j37_parameter_audio_tests PROPERTY CXX_SCAN_FOR_MODULES OFF)
+    target_compile_definitions(j37_parameter_audio_tests PRIVATE
+        JucePlugin_Name="MiBoX"
+        JucePlugin_IsSynth=0
+        JucePlugin_IsMidiEffect=0
+        JucePlugin_PreferredChannelConfigurations=0)
+    target_include_directories(j37_parameter_audio_tests PRIVATE
+        Source
+        "${J37_GENERATED_SOURCES_DIR}"
+        "${CMAKE_CURRENT_BINARY_DIR}/generated"
+        $<TARGET_PROPERTY:first,INCLUDE_DIRECTORIES>)
+    target_link_libraries(j37_parameter_audio_tests PRIVATE
+        first
+        juce::juce_recommended_config_flags
+        juce::juce_recommended_warning_flags)
+    add_test(NAME parameter_audio COMMAND j37_parameter_audio_tests)
 endif()
 
 # ------------------------------------------------------------------------------

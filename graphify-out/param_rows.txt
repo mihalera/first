@@ -1,0 +1,149 @@
+  0 input                  Float  Input                    :: range(minInputDb, maxInputDb, 0.1f) default 0.0f unit 'dB'
+  1 output                 Float  Output                   :: range(minInputDb, maxInputDb, 0.1f) default 0.0f unit 'dB'
+  2 bypass                 Bool   Bypass                   :: default false
+  3 delta                  Bool   Delta Listen             :: default false
+  4 polarity               Bool   Polarity Invert          :: default false
+  5 auto_gain              Bool   Auto Gain                :: default true
+  6 glue_on                Bool   Glue Compressors         :: default true
+  7 in_low                 Float  In EQ Low                :: rangepercentageRange(?) default 0.0f unit ''
+  8 in_mid                 Float  In EQ Mid                :: rangepercentageRange(?) default 0.0f unit ''
+  9 in_high                Float  In EQ High               :: rangepercentageRange(?) default 0.0f unit ''
+ 10 out_low                Float  Out EQ Low               :: rangepercentageRange(?) default 0.0f unit ''
+ 11 out_mid                Float  Out EQ Mid               :: rangepercentageRange(?) default 0.0f unit ''
+ 12 out_high               Float  Out EQ High              :: rangepercentageRange(?) default 0.0f unit ''
+ 13 in_hp_freq             Float  In EQ HP Freq            :: rangepercentageRange(?) default 20.0f unit 'Hz'
+ 14 in_lp_freq             Float  In EQ LP Freq            :: rangepercentageRange(?) default 20000.0f unit 'Hz'
+ 15 in_hp_on               Bool   In EQ HP On              :: default true
+ 16 in_lp_on               Bool   In EQ LP On              :: default true
+ 17 in_eq_order            Choice In EQ Order              :: choices [6 dB/oct | 12 dB/oct | 18 dB/oct | 24 dB/oct | 36 dB/oct | 48 dB/oct] defaultIdx ?
+ 18 in_eq_q                Float  In EQ Q                  :: rangepercentageRange(?) default 0.7f unit 'Q'
+ 19 out_hp_freq            Float  Out EQ HP Freq           :: rangepercentageRange(?) default 20.0f unit 'Hz'
+ 20 out_lp_freq            Float  Out EQ LP Freq           :: rangepercentageRange(?) default 20000.0f unit 'Hz'
+ 21 out_hp_on              Bool   Out EQ HP On             :: default true
+ 22 out_lp_on              Bool   Out EQ LP On             :: default true
+ 23 out_eq_order           Choice Out EQ Order             :: choices [6 dB/oct | 12 dB/oct | 18 dB/oct | 24 dB/oct | 36 dB/oct | 48 dB/oct] defaultIdx ?
+ 24 out_eq_q               Float  Out EQ Q                 :: rangepercentageRange(?) default 0.7f unit 'Q'
+ 25 subfund                Float  Sub-Fundamental          :: range(0.0f, 1.0f, 0.001f) default 0.0f unit '%'
+ 26 stereo_width           Float  Stereo Width             :: range(0.0f, 1.0f, 0.001f) default 0.5f unit '%'
+ 27 anti_phase_guard       Bool   Anti-Phase Guard         :: default true
+ 28 tape_type              Choice Tape Type                :: choices [] defaultIdx ?
+ 29 speed                  Choice Speed                    :: choices [7.5 ips | 15 ips | 30 ips] defaultIdx ?
+ 30 instrument             Choice Instrument               :: choices [Master Bus | Vocal | Bass | Guitar | Piano | Drums] defaultIdx ?
+ 31 drive                  Float  Drive                    :: rangepercentageRange(0.45f) default 0.30f unit '%'
+ 32 bias                   Float  Bias                     :: rangepercentageRange(0.40f) default 0.42f unit '%'
+ 33 oversampling           Choice Oversampling             :: choices [Off | 2x | 4x | 8x] defaultIdx ?
+ 34 tone                   Float  Brightness               :: rangepercentageRange(0.50f) default 0.50f unit '%'
+ 35 wow                    Float  Wow                      :: rangepercentageRange(0.35f) default 0.14f unit '%'
+ 36 flutter                Float  Flutter                  :: rangepercentageRange(0.35f) default 0.18f unit '%'
+ 37 mix                    Float  Mix                      :: range(0.0f, 100.0f, 0.1f) default 50.0f unit '%'
+ 38 tracks                 Choice Modeled Tracks           :: choices [2 | 2+3 | 3 | Off] defaultIdx ?
+ 39 character              Float  Tone                     :: rangepercentageRange(0.50f) default 0.50f unit '%'
+ 40 delay_time             Float  Delay                    :: range(0.0f, 250.0f, 0.1f) default 0.0f unit 'ms'
+ 41 delay_feedback         Float  Delay Level              :: rangepercentageRange(0.40f) default 0.0f unit '%'
+ 42 delay_pingpong         Float  Ping-Pong                :: rangepercentageRange(0.50f) default 0.0f unit '%'
+ 43 delay_tone             Float  Delay Tone               :: rangepercentageRange(0.50f) default 0.50f unit '%'
+ 44 delay_lowcut           Float  Delay Low Cut            :: range(20.0f, 500.0f, 1.0f) default 80.0f unit 'Hz'
+ 45 delay_damp             Float  Delay Damping            :: rangepercentageRange(0.50f) default 0.0f unit '%'
+ 46 st_offset              Float  ST Offset                :: range(-500.0f, 500.0f, 1.0f) default 0.0f unit 'us'
+ 47 noise                  Float  Noise Mix                :: rangepercentageRange(0.50f) default 0.50f unit '%'
+ 48 noise_lvl              Float  Noise Level              :: rangepercentageRange(0.50f) default 1.0f unit '%'
+ 49 transport              Choice Transport                :: choices [Stop | Play | Start] defaultIdx ?
+ 50 spindown               Bool   Spindown                 :: default false
+ 51 ui_sounds              Bool   UI Sounds                :: default false
+ 52 osc_on                 Bool   OSC                      :: default false
+ 53 tuning_tonic           Choice Tonic                    :: choices [C | C# | D | D# | E | F | F# | G | G# | A | A# | B] defaultIdx ?
+ 54 tuning_mode            Choice Mode                     :: choices [Chromatic | Major | Minor | Dorian | Pentatonic Major | Pentatonic Minor] defaultIdx ?
+ 55 autotune_amount        Float  Auto Tune Amount         :: range(0.0f, 1.0f, 0.001f) default ? unit ''
+ 56 autotune_speed         Float  Auto Tune Speed          :: rangepercentageRange(0.50f) default 0.50f unit '%'
+ 57 autotune_tolerance     Float  Auto Tune Tolerance      :: range(0.0f, 50.0f, 0.5f) default 10.0f unit 'ct'
+ 58 autotune_gate          Float  Auto Tune Gate           :: rangepercentageRange(0.50f) default 0.50f unit '%'
+ 59 autotune_range         Float  Auto Tune Range          :: range(1.0f, 12.0f, 1.0f) default 1.0f unit 'st'
+ 60 autotune_octave        Float  Auto Tune Octave         :: range(-1.0f, 1.0f, 1.0f) default 0.0f unit 'oct'
+ 61 comp_threshold         Float  Compressor Threshold     :: range(-60.0f, 0.0f, 0.1f) default ? unit ''
+ 62 comp_ratio             Float  Compressor Ratio         :: range(1.0f, 20.0f, 0.1f) default ? unit ''
+ 63 comp_attack            Float  Compressor Attack        :: range(0.1f, 100.0f, 0.1f) default ? unit ''
+ 64 comp_release           Float  Compressor Release       :: range(10.0f, 1000.0f, 1.0f) default ? unit ''
+ 65 comp_makeup            Float  Compressor Makeup        :: range(0.0f, 24.0f, 0.1f) default ? unit ''
+ 66 comp_mix               Float  Compressor Mix           :: rangepercentageRange(0.50f) default 0.0f unit '%'
+ 67 language               Choice Language                 :: choices [English | \xd0\xa3\xd0\xba\xd1\x80\xd0\xb0\xd1\x97\xd0\xbd\xd1\x81\xd1\x8c\xd0\xba\xd0\xb0] defaultIdx ?
+ 68 tape_source            Float  Tape                     :: rangepercentageRange(0.50f) default 1.0f unit '%'
+ 69 vinyl_source           Float  Vinyl                    :: rangepercentageRange(0.50f) default 0.0f unit '%'
+ 70 cassette_source        Float  Cassette                 :: rangepercentageRange(0.50f) default 0.0f unit '%'
+ 71 digital_source         Float  Digital                  :: rangepercentageRange(0.50f) default 0.0f unit '%'
+ 72 amp_source             Float  Amp                      :: rangepercentageRange(0.50f) default 0.0f unit '%'
+ 73 valve_source           Float  Valve                    :: rangepercentageRange(0.50f) default 0.0f unit '%'
+ 74 transformer_source     Float  Transformer              :: rangepercentageRange(0.50f) default 0.0f unit '%'
+ 75 sag                    Float  Sag                      :: rangepercentageRange(0.50f) default 0.0f unit '%'
+ 76 presence               Float  Presence                 :: rangepercentageRange(0.50f) default 0.50f unit '%'
+ 77 cabinet                Float  Cabinet                  :: rangepercentageRange(0.50f) default 0.0f unit '%'
+ 78 amp_bias               Float  Amp Bias                 :: rangepercentageRange(0.50f) default 0.50f unit '%'
+ 79 preamp                 Float  Preamp                   :: rangepercentageRange(0.45f) default 0.0f unit '%'
+ 80 di                     Float  DI                       :: rangepercentageRange(0.45f) default 0.0f unit '%'
+ 81 di_load                Float  DI Load                  :: rangepercentageRange(0.45f) default 0.0f unit '%'
+ 82 di_transformer         Float  DI XFMR                  :: rangepercentageRange(0.45f) default 0.0f unit '%'
+ 83 di_pad                 Choice DI Pad                   :: choices [0 dB | -10 dB | -20 dB | -30 dB] defaultIdx ?
+ 84 flux                   Float  Flux                     :: rangepercentageRange(0.50f) default 0.50f unit '%'
+ 85 wear                   Float  Wear                     :: rangepercentageRange(0.50f) default 0.0f unit '%'
+ 86 mechanics              Float  Mechanics                :: rangepercentageRange(0.50f) default 0.0f unit '%'
+ 87 reverb                 Float  Reverb                   :: rangepercentageRange(0.45f) default 0.0f unit '%'
+ 88 reverb_size            Float  Reverb Size              :: rangepercentageRange(0.50f) default 0.40f unit '%'
+ 89 reverb_predelay        Float  Reverb Pre-Delay         :: range(0.0f, 100.0f, 0.1f) default 20.0f unit 'ms'
+ 90 reverb_damp            Float  Reverb Damping           :: rangepercentageRange(0.50f) default 0.45f unit '%'
+ 91 reverb_width           Float  Reverb Width             :: range(0.0f, 2.0f, 0.001f) default 1.0f unit 'x'
+ 92 reverb_lowcut          Float  Reverb Low Cut           :: range(20.0f, 500.0f, 1.0f, 0.35f) default 120.0f unit 'Hz'
+ 93 delay_type             Choice Delay Type               :: choices [Tape | BBD | Modern] defaultIdx ?
+ 94 distortion             Float  Distortion               :: rangepercentageRange(0.45f) default 0.0f unit '%'
+ 95 modern_mode            Bool   Modern                   :: default false
+ 96 lofi_mode              Bool   Lo-Fi                    :: default false
+ 97 vinyl                  Float  Vinyl                    :: rangepercentageRange(0.45f) default 0.0f unit '%'
+ 98 vinyl_crackle          Float  Crackle                  :: rangepercentageRange(0.45f) default 0.5f unit '%'
+ 99 vinyl_rumble           Float  Rumble                   :: rangepercentageRange(0.45f) default 0.35f unit '%'
+100 vinyl_speed            Choice Vinyl Speed              :: choices [33 RPM | 45 RPM | 78 RPM] defaultIdx ?
+101 vinyl_dust             Float  Dust                     :: rangepercentageRange(0.45f) default 0.0f unit '%'
+102 vinyl_scratch          Float  Scratch                  :: rangepercentageRange(0.45f) default 0.0f unit '%'
+103 vinyl_warp             Float  Warp                     :: rangepercentageRange(0.45f) default 0.0f unit '%'
+104 vinyl_electrical       Float  Electrical               :: rangepercentageRange(0.45f) default 0.0f unit '%'
+105 vinyl_clicks           Float  Clicks                   :: rangepercentageRange(0.45f) default 0.0f unit '%'
+106 vinyl_generation       Choice Generation               :: choices [Laquer | Direct | Printed | Off] defaultIdx ?
+107 vinyl_turntable        Choice Turntable                :: choices [Belt | Direct | Idler | Off] defaultIdx ?
+108 vinyl_cartridge        Choice Cartridge                :: choices [MM | MC | DJ | Off] defaultIdx ?
+109 valve_type             Choice Valve Type               :: choices [] defaultIdx ?
+110 amp_type               Choice Amp Type                 :: choices [] defaultIdx ?
+111 transformer_type       Choice Transformer Type         :: choices [] defaultIdx ?
+112 digital_type           Choice Digital Type             :: choices [] defaultIdx ?
+113 vinyl_type             Choice Vinyl Type               :: choices [] defaultIdx ?
+114 st_link                Float  ST Link                  :: rangepercentageRange(0.50f) default 1.0f unit '%'
+115 delay_sync             Bool   Delay Sync               :: default false
+116 delay_rate             Choice Delay Rate               :: choices [1/1 | 1/2 | 1/4 | 1/8 | 1/16 | 1/4 T | 1/8 T | 1/4 D] defaultIdx ?
+117 transient_attack       Float  Transient Attack         :: range(-1.0f, 1.0f, 0.001f) default ? unit ''
+118 transient_sustain      Float  Transient Sustain        :: range(-1.0f, 1.0f, 0.001f) default ? unit ''
+119 transient_mix          Float  Transient Mix            :: rangepercentageRange(0.50f) default 0.0f unit '%'
+120 neural_mix             Float  Neural Mix               :: rangepercentageRange(0.50f) default 0.0f unit '%'
+121 ir_mix                 Float  IR Mix                   :: rangepercentageRange(0.50f) default 0.0f unit '%'
+122 fx_wah                 Float  Wah                      :: rangepercentageRange(0.50f) default 0.0f unit '%'
+123 fx_anti_spike          Float  Anti-Spike               :: rangepercentageRange(0.50f) default 0.0f unit '%'
+124 fx_gate                Float  Gate                     :: rangepercentageRange(0.50f) default 0.0f unit '%'
+125 fx_overdrive           Float  Overdrive                :: rangepercentageRange(0.50f) default 0.0f unit '%'
+126 fx_fuzz                Float  Fuzz                     :: rangepercentageRange(0.50f) default 0.0f unit '%'
+127 fx_wavefolder          Float  Wavefolder               :: rangepercentageRange(0.50f) default 0.0f unit '%'
+128 fx_bitcrusher          Float  Bitcrusher               :: rangepercentageRange(0.50f) default 0.0f unit '%'
+129 fx_rate_crusher        Float  Rate Crusher             :: rangepercentageRange(0.50f) default 0.0f unit '%'
+130 fx_ring_mod            Float  Ring Mod                 :: rangepercentageRange(0.50f) default 0.0f unit '%'
+131 fx_octaver             Float  Octaver                  :: rangepercentageRange(0.50f) default 0.0f unit '%'
+132 fx_pitch               Float  Pitch Shift              :: rangepercentageRange(0.50f) default 0.0f unit '%'
+133 fx_comb                Float  Comb                     :: rangepercentageRange(0.50f) default 0.0f unit '%'
+134 fx_formant             Float  Formant                  :: rangepercentageRange(0.50f) default 0.0f unit '%'
+135 fx_dynamic_eq          Float  Dynamic EQ               :: rangepercentageRange(0.50f) default 0.0f unit '%'
+136 fx_de_esser            Float  De-Esser                 :: rangepercentageRange(0.50f) default 0.0f unit '%'
+137 fx_chorus              Float  Chorus                   :: rangepercentageRange(0.50f) default 0.0f unit '%'
+138 fx_flanger             Float  Flanger                  :: rangepercentageRange(0.50f) default 0.0f unit '%'
+139 fx_phaser              Float  Phaser                   :: rangepercentageRange(0.50f) default 0.0f unit '%'
+140 fx_tremolo             Float  Tremolo                  :: rangepercentageRange(0.50f) default 0.0f unit '%'
+141 fx_vibrato             Float  Vibrato                  :: rangepercentageRange(0.50f) default 0.0f unit '%'
+142 fx_rotary              Float  Rotary                   :: rangepercentageRange(0.50f) default 0.0f unit '%'
+143 fx_vocoder             Float  Vocoder                  :: rangepercentageRange(0.50f) default 0.0f unit '%'
+144 fx_granular            Float  Granular                 :: rangepercentageRange(0.50f) default 0.0f unit '%'
+145 fx_spectral            Float  Spectral Gate            :: rangepercentageRange(0.50f) default 0.0f unit '%'
+146 fx_stutter             Float  Stutter                  :: rangepercentageRange(0.50f) default 0.0f unit '%'
+147 fx_speed               Float  Speed                    :: rangepercentageRange(0.50f) default 0.5f unit '%'
+148 comp_upward            Float  Upward                   :: rangepercentageRange(0.50f) default 0.0f unit '%'
