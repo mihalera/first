@@ -264,7 +264,7 @@ endif()
 CPMAddPackage(
     NAME chowdsp_utils
     GITHUB_REPOSITORY Chowdhury-DSP/chowdsp_utils
-    GIT_TAG v2.4.0
+    GIT_TAG master
     EXCLUDE_FROM_ALL YES
     SYSTEM YES
     OPTIONS
@@ -283,7 +283,7 @@ CPMAddPackage(
 CPMAddPackage(
     NAME melatonin_inspector
     GITHUB_REPOSITORY sudara/melatonin_inspector
-    GIT_TAG 9c483f865854d83fe9873e1c20e3fd772f695f80
+    GIT_TAG main
     SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/melatonin_inspector"
     EXCLUDE_FROM_ALL YES
     SYSTEM YES)
@@ -295,7 +295,7 @@ CPMAddPackage(
 CPMAddPackage(
     NAME melatonin_blur
     GITHUB_REPOSITORY sudara/melatonin_blur
-    GIT_TAG v1.4
+    GIT_TAG main
     SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/melatonin_blur"
     EXCLUDE_FROM_ALL YES
     SYSTEM YES)
@@ -315,7 +315,7 @@ CPMAddPackage(
 CPMAddPackage(
     NAME foleys_gui_magic
     GITHUB_REPOSITORY ffAudio/foleys_gui_magic
-    GIT_TAG d53d998e2bc3fb3ca394f1ee5b0c2f3886a67331
+    GIT_TAG main
     SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/foleys_gui_magic"
     SOURCE_SUBDIR modules
     EXCLUDE_FROM_ALL YES
@@ -350,7 +350,7 @@ CPMAddPackage(
 CPMAddPackage(
     NAME clap-juce-extensions
     GITHUB_REPOSITORY free-audio/clap-juce-extensions
-    GIT_TAG 3837f4a6ed2ab0ba46aba69ae5b7041c7c64ce74
+    GIT_TAG main
     EXCLUDE_FROM_ALL YES
     SYSTEM YES)
 
@@ -366,7 +366,7 @@ if(NOT TARGET xsimd)
 CPMAddPackage(
     NAME xsimd
     GITHUB_REPOSITORY xtensor-stack/xsimd
-    GIT_TAG 14.3.0
+    GIT_TAG master
     EXCLUDE_FROM_ALL YES
     SYSTEM YES
     OPTIONS
@@ -395,7 +395,7 @@ if(NOT TARGET signalsmith-stretch)
 CPMAddPackage(
     NAME signalsmith-dsp
     GITHUB_REPOSITORY Signalsmith-Audio/signalsmith-stretch
-    GIT_TAG 1.4.0
+    GIT_TAG main
     DOWNLOAD_ONLY YES)
 
 #  signalsmith-linear: since the plugin's sources started including the
@@ -418,7 +418,7 @@ CPMAddPackage(
 CPMAddPackage(
     NAME signalsmith-linear
     GITHUB_REPOSITORY Signalsmith-Audio/linear
-    GIT_TAG 0.6.6
+    GIT_TAG main
     # ...inside the stretch checkout, because the stretch header sits at that
     # checkout's ROOT (not under include/), so the quoted include resolves
     # against the checkout root as the base directory.
@@ -438,7 +438,7 @@ if(NOT TARGET pocketfft)
 CPMAddPackage(
     NAME pocketfft
     GITHUB_REPOSITORY mreineck/pocketfft
-    GIT_TAG 4d865cba24359b05b37da4e75aee24498c3b78e7
+    GIT_TAG cpp
     DOWNLOAD_ONLY YES)
 
 j37_declare_header_only_library(pocketfft "${pocketfft_SOURCE_DIR}")
@@ -478,7 +478,7 @@ if(NOT TARGET nlohmann_json)
 CPMAddPackage(
     NAME nlohmann_json
     GITHUB_REPOSITORY nlohmann/json
-    GIT_TAG v3.12.0
+    GIT_TAG develop
     DOWNLOAD_ONLY YES)
 
 j37_declare_header_only_library(nlohmann_json "${nlohmann_json_SOURCE_DIR}/single_include")
@@ -548,7 +548,7 @@ if(J37_NAMCORE)
         CPMAddPackage(
             NAME namcore
             GITHUB_REPOSITORY sdatkinson/NeuralAmpModelerCore
-            GIT_TAG d3189ed482ded880c128bf312941266c4fa5ceec   # the v0.6.0 tag
+            GIT_TAG main
             DOWNLOAD_ONLY YES)
         set(J37_NAMCORE_ROOT "${namcore_SOURCE_DIR}")
     endif()
@@ -559,7 +559,7 @@ if(J37_NAMCORE)
         CPMAddPackage(
             NAME eigen
             GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
-            GIT_TAG bc3b39870ecb690a623a3f49149a358b95c5781d   # 3.5.0, NAM Core's pin
+            GIT_TAG master
             DOWNLOAD_ONLY YES)
         set(J37_EIGEN_ROOT "${eigen_SOURCE_DIR}")
     endif()
@@ -662,7 +662,7 @@ if(NOT TARGET farbot)
 CPMAddPackage(
     NAME farbot
     GITHUB_REPOSITORY hogliux/farbot
-    GIT_TAG 7a4c5d6199768bfc9c2fa5a4f53dfdbbedfbfcd7
+    GIT_TAG master
     DOWNLOAD_ONLY YES)
 
 j37_declare_header_only_library(farbot "${farbot_SOURCE_DIR}/include")
@@ -676,7 +676,7 @@ endif ()
 CPMAddPackage(
     NAME dywapitchtrack
     GITHUB_REPOSITORY hzeller/pitch-hero
-    GIT_TAG a05bef4b9941d19d4721ceaf2cb50ab12a764629
+    GIT_TAG master
     DOWNLOAD_ONLY YES)
 
 j37_declare_header_only_library(dywapitchtrack "${dywapitchtrack_SOURCE_DIR}")
@@ -719,7 +719,7 @@ endif()
 CPMAddPackage(
     NAME imgui
     GITHUB_REPOSITORY ocornut/imgui
-    GIT_TAG v1.93.0
+    GIT_TAG master
     DOWNLOAD_ONLY YES)
 
 if(NOT TARGET imgui)
@@ -745,7 +745,7 @@ endif()
 CPMAddPackage(
     NAME iPlug2
     GITHUB_REPOSITORY iPlug2/iPlug2
-    GIT_TAG 953fc2c26966d348f270bccb4e881d72d2caeb56
+    GIT_TAG master
     DOWNLOAD_ONLY YES)
 
 # ChowCentaur - Chowdhury's Centaur overdrive (the modelled Klon KS-12). A JUCE
@@ -755,7 +755,7 @@ CPMAddPackage(
 CPMAddPackage(
     NAME chowcentaur
     GITHUB_REPOSITORY AviateAudio/ChowDSP_ChowCentaur
-    GIT_TAG 2c0414f3c81089247f1c295b1b1be922410a1fb2
+    GIT_TAG main
     DOWNLOAD_ONLY YES)
 
 # VCV Prototype - VCVRack/VCV-Prototype, the source of VCV's scriptable
@@ -780,11 +780,12 @@ CPMAddPackage(
 # Aubio - aubio/aubio, the C library for audio labelling: pitch (YIN/YINFFT),
 # onset, tempo and beat tracking. Its sources #include a GENERATED config.h and
 # expect waf/autoconf to produce it, so the bare checkout does not compile.
+
 CPMAddPackage(
-    NAME aubio
-    GITHUB_REPOSITORY aubio/aubio
-    GIT_TAG ad5cf975aed08cc4562dd008cf9f83b12b82ffb8
-    DOWNLOAD_ONLY YES)
+    NAME aubio-ledfx
+    GITHUB_REPOSITORY LedFx/aubio-ledfx
+    GIT_TAG main
+    DOWNLOAD_ONLY YES)    
 
 # ==============================================================================
 #  FFT libraries. Three are linked in so the engine can adopt whichever the
@@ -798,7 +799,7 @@ CPMAddPackage(
 CPMAddPackage(
     NAME kissfft
     GITHUB_REPOSITORY mborgerding/kissfft
-    GIT_TAG 131.2.0
+    GIT_TAG master
     EXCLUDE_FROM_ALL YES
     SYSTEM YES
     OPTIONS
@@ -815,7 +816,7 @@ CPMAddPackage(
 CPMAddPackage(
     NAME pffft
     GITHUB_REPOSITORY marton78/pffft
-    GIT_TAG efc1dd2de6c3562fc464f905d37d9281f08a20dd
+    GIT_TAG master
     EXCLUDE_FROM_ALL YES
     SYSTEM YES
     OPTIONS
@@ -839,7 +840,7 @@ CPMAddPackage(
 CPMAddPackage(
     NAME readerwriterqueue
     GITHUB_REPOSITORY cameron314/readerwriterqueue
-    GIT_TAG v1.0.7
+    GIT_TAG master
     EXCLUDE_FROM_ALL YES
     SYSTEM YES)
 
@@ -851,7 +852,7 @@ CPMAddPackage(
 CPMAddPackage(
     NAME yasio
     GITHUB_REPOSITORY yasio/yasio
-    GIT_TAG v4.4.1
+    GIT_TAG dev
     EXCLUDE_FROM_ALL YES
     SYSTEM YES
     OPTIONS
@@ -884,7 +885,7 @@ if(NOT TARGET RTNeural)
 CPMAddPackage(
     NAME RTNeural
     GITHUB_REPOSITORY jatinchowdhury18/RTNeural
-    GIT_TAG 95c3c0f987a6fe903e7eec71e797405dbed7caf7
+    GIT_TAG main
     EXCLUDE_FROM_ALL YES
     SYSTEM YES
     OPTIONS
@@ -940,7 +941,7 @@ else()
     CPMAddPackage(
         NAME dr_libs
         GITHUB_REPOSITORY mackron/dr_libs
-        GIT_TAG wav-0.14.5
+        GIT_TAG wav-0.14.7
         DOWNLOAD_ONLY YES)
 
     j37_declare_header_only_library(dr_libs "${dr_libs_SOURCE_DIR}")
@@ -983,7 +984,7 @@ endif()
 CPMAddPackage(
     NAME sndfile
     GITHUB_REPOSITORY libsndfile/libsndfile
-    GIT_TAG 396a715daeae7316f047ee220b364ab983b66df4
+    GIT_TAG master
     EXCLUDE_FROM_ALL YES
     SYSTEM YES
     OPTIONS
@@ -1176,7 +1177,7 @@ endif()
 CPMAddPackage(
     NAME q_dsp
     GITHUB_REPOSITORY cycfi/q
-    GIT_TAG v1.5.4
+    GIT_TAG master
     DOWNLOAD_ONLY YES)
 
 j37_declare_header_only_library(q_dsp "${q_dsp_SOURCE_DIR}/q_lib/include")
@@ -1197,7 +1198,7 @@ j37_declare_header_only_library(q_dsp "${q_dsp_SOURCE_DIR}/q_lib/include")
 CPMAddPackage(
     NAME cycfi_infra
     GITHUB_REPOSITORY cycfi/infra
-    GIT_TAG 2024_MAY
+    GIT_TAG master
     DOWNLOAD_ONLY YES)
 
 j37_declare_header_only_library(cycfi_infra "${cycfi_infra_SOURCE_DIR}/include")
@@ -1286,7 +1287,7 @@ if(NOT TARGET glm)
 CPMAddPackage(
     NAME glm
     GITHUB_REPOSITORY g-truc/glm
-    GIT_TAG 1.0.3
+    GIT_TAG master
     DOWNLOAD_ONLY YES)
 
 j37_declare_header_only_library(glm "${glm_SOURCE_DIR}")
@@ -1371,7 +1372,7 @@ function(j37_setup_graphics_backend target)
         CPMAddPackage(
             NAME bgfx
             GITHUB_REPOSITORY bkaradzic/bgfx.cmake
-            GIT_TAG 82f885c710b98a4b4f4df40cc234a3cb702f4846
+            GIT_TAG master
             GIT_SUBMODULES_RECURSE YES)
 
         if(NOT TARGET bgfx)
@@ -1391,7 +1392,7 @@ function(j37_setup_graphics_backend target)
         CPMAddPackage(
             NAME wgpu_native_source
             GITHUB_REPOSITORY gfx-rs/wgpu-native
-            GIT_TAG 589e6caa4e9fa5596f601e82ca5d3937a1afc829
+            GIT_TAG thunk
             GIT_SUBMODULES_RECURSE YES
             DOWNLOAD_ONLY YES)
 
@@ -1450,7 +1451,7 @@ function(j37_setup_graphics_backend target)
         CPMAddPackage(
             NAME dawn
             GITHUB_REPOSITORY google/dawn
-            GIT_TAG 33c3c120f59556d027a776c3bf5cc0ab2fc77312)
+            GIT_TAG main)
 
         if(NOT TARGET dawn::webgpu_dawn)
             message(FATAL_ERROR "Dawn did not define the expected 'dawn::webgpu_dawn' target")
