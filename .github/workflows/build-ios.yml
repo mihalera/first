@@ -8,10 +8,6 @@ name: Build JUCE Plugin (iOS)
 # still build for iOS" by this one; each can be re-run without the other.
 
 on:
-  push:
-    branches: ["main", "master"]
-  pull_request:
-    branches: ["main", "master"]
   workflow_dispatch:
 
 permissions:
