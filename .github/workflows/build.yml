@@ -1829,16 +1829,19 @@ jobs:
   # ============================================================================
   #  iOS - AUv3 for device and simulator
   # ============================================================================
-  build-ios:
-    name: build-ios (AUv3, ${{ matrix.sdk }}, arm64)
+  # The two iOS destinations are two jobs, not two rows of one matrix: they share
+  # the same steps, so the steps are written once and anchored, but a queued
+  # simulator runner no longer delays the device build's result and each one can
+  # be re-run on its own. The check names are unchanged - they still say which
+  # SDK built, because that is the only thing that differs.
+  build-ios-device:
+    name: build-ios (AUv3, iphoneos, arm64)
     runs-on: macos-latest
     timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        sdk: [iphoneos, iphonesimulator]
+    env:
+      IOS_SDK: iphoneos
 
-    steps:
+    steps: &ios-steps
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
@@ -1857,15 +1860,15 @@ jobs:
       - name: Cache the CMake dependency trees
         uses: ./.github/actions/build-cache
         with:
-          build-dir: build-ios-${{ matrix.sdk }}
-          flavour: ios-${{ matrix.sdk }}
+          build-dir: build-ios-${{ env.IOS_SDK }}
+          flavour: ios-${{ env.IOS_SDK }}
           deps-hash: ${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', '.gitmodules') }}
 
-      - name: Configure CMake for ${{ matrix.sdk }}
+      - name: Configure CMake for ${{ env.IOS_SDK }}
         run: |
-          cmake -S . -B "build-ios-${{ matrix.sdk }}" -G Xcode \
+          cmake -S . -B "build-ios-${{ env.IOS_SDK }}" -G Xcode \
             -DCMAKE_SYSTEM_NAME=iOS \
-            -DCMAKE_OSX_SYSROOT=${{ matrix.sdk }} \
+            -DCMAKE_OSX_SYSROOT=${{ env.IOS_SDK }} \
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
             -DJ37_FAST_CI_BUILD=ON \
@@ -1882,7 +1885,7 @@ jobs:
           #  That was a second full walk of every target, and the failing output was
           #  unreachable anyway.
           status=0
-          cmake --build "build-ios-${{ matrix.sdk }}" \
+          cmake --build "build-ios-${{ env.IOS_SDK }}" \
             --config "${{ env.BUILD_TYPE }}" \
             --target first_AUv3 \
             --parallel 2 \
@@ -1899,11 +1902,11 @@ jobs:
       - name: Verify the iOS AUv3 bundle
         run: |
           set -euo pipefail
-          appex=$(find "build-ios-${{ matrix.sdk }}/first_artefacts/${{ env.BUILD_TYPE }}/AUv3" \
+          appex=$(find "build-ios-${{ env.IOS_SDK }}/first_artefacts/${{ env.BUILD_TYPE }}/AUv3" \
             -name "*.appex" -prune -print -quit)
           if [ -z "$appex" ]; then
-            echo "No iOS AUv3 extension was produced for ${{ matrix.sdk }}."
-            find "build-ios-${{ matrix.sdk }}/first_artefacts" -print 2>/dev/null || true
+            echo "No iOS AUv3 extension was produced for ${{ env.IOS_SDK }}."
+            find "build-ios-${{ env.IOS_SDK }}/first_artefacts" -print 2>/dev/null || true
             exit 1
           fi
 
@@ -1928,9 +1931,18 @@ jobs:
       - name: Upload iOS AUv3 artifact
         uses: actions/upload-artifact@v7
         with:
-          name: MiBoX-AUv3-${{ matrix.sdk }}-arm64
-          path: build-ios-${{ matrix.sdk }}/first_artefacts/${{ env.BUILD_TYPE }}/AUv3/*.appex
+          name: MiBoX-AUv3-${{ env.IOS_SDK }}-arm64
+          path: build-ios-${{ env.IOS_SDK }}/first_artefacts/${{ env.BUILD_TYPE }}/AUv3/*.appex
           if-no-files-found: error
+
+  build-ios-simulator:
+    name: build-ios (AUv3, iphonesimulator, arm64)
+    runs-on: macos-latest
+    timeout-minutes: 90
+    env:
+      IOS_SDK: iphonesimulator
+
+    steps: *ios-steps
 
   # ============================================================================
   #  Linux - VST3
