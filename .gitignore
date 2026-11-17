@@ -122,3 +122,4 @@ ghtoken
 !.codex/prompts/**
 ThirdParty/eigen
 build-rel/*
+ThirdParty/*
