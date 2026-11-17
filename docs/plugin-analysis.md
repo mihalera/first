@@ -44,7 +44,7 @@ The largest files, and what they are:
 | 1,325 | `Source/PluginProcessor.cpp` | the lifecycle only, now |
 | 1,303 | `Source/PluginEditor.h` | the editor's widget declarations |
 | 1,213 | `Source/GUI/J37LookAndFeel.cpp` | two look-and-feels and the text arithmetic they share |
-| 1,000 | `Source/DSP/SaturationCore.h` | six principles, four type lists, and the normalisation |
+| 1,000 | `Source/DSP/SaturationCore.h` | nine principles, five type lists, and the normalisation |
 
 `Source/DSP/` holds **26 headers** and `Source/GUI/` **26 files**. Four years of
 "the file is too long to read" work has already been done here (see

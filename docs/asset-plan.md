@@ -34,8 +34,8 @@ a bright feature reads as a stain rather than as material.
 | `brand_mark.png` | 256 × 256 | The signature: a reel seen at a slight angle, a monogram, or a drawn wordmark. It is read as a maker's mark, so it should survive being 16 px wide. | The title bar of the standalone, the USER THEME window's header, the brand strip in the header |
 | `window_icon.png` | 64 × 64 | The same mark reduced to a square icon. Two tones only. | Explorer, taskbar, Alt-Tab, the title bar of every product window |
 | `panel_materials.png` | 3072 × 256 (6 × 512 × 256) | Six materials in `ThemeChoice` order: ivory paper, charcoal bakelite, brushed steel, anodized graphite, white enamel, neutral fibre. Directional grain, no features. | Under the whole panel, per theme |
-| `ui_icons.png` | 512 × 832 (99 glyphs) | The page and workflow glyphs: TAPE, FX, RACK, SETUP families, transport keys, preset workflow (SAVE, DEL, A/B, UNDO, REDO), file loaders. | The tab bar, the preset chain, the file buttons |
-| `principle_icons.png` | 448 × 64 (7 glyphs) | TAPE, VALVE, CASSETTE, VINYL, AMP, TRANSFORMER, DIGITAL - one idea each, one stroke weight. | The MIX bar's seven cells |
+| `ui_icons.png` | 512 × 832 (104 glyphs) | The page and workflow glyphs: BOX, FX, RACK, SETUP families, transport keys, preset workflow (SAVE, DEL, A/B, UNDO, REDO), file loaders. | The tab bar, the preset chain, the file buttons |
+| `principle_icons.png` | 576 × 64 (9 glyphs) | TAPE, VALVE, PENTODE, TRIODE, TRANSISTOR, FOLD, GLASS, TRANSFORMER, DIGITAL - one idea each, one stroke weight. | The MIX bar's nine cells |
 
 If only one row of that table gets drawn, draw `brand_mark` and `window_icon`: they
 are the two the operating system shows when the plugin is not even open.
@@ -45,7 +45,7 @@ are the two the operating system shows when the plugin is not even open.
 | Slot | Size | What to draw | Where it shows |
 | --- | --- | --- | --- |
 | `parameter_glyphs.png` | 512 × 576 (71 glyphs, `controlSpecs` order) | One mark per knob: a tape reel for SPEED, a waveform for DRIVE, a magnet for BIAS, a VU needle for MIX, an ear for WIDTH. Flat, 1.5 px stroke, 32 px grid. | Above every knob, replacing the text caption where an icon reads faster |
-| `machine_models.png` | 512 × 512 (57 glyphs) | The model lists: one silhouetted object per tape stock, valve, amp, transformer, digital converter and vinyl pressing, including the new `Off` entries (an empty reel, a socket with nothing in it). | The type selectors' rows and their tooltips |
+| `machine_models.png` | 512 × 512 (52 glyphs) | The model lists: one silhouetted object per tape stock, valve, transformer, digital converter and vinyl pressing, including the `Off` entries (an empty reel, a socket with nothing in it). | The type selectors' rows and their tooltips |
 | `meter_status.png` | 512 × 256 (32 glyphs) | Small status marks for peak, RMS, LUFS, VU, phase, clipping, latency and CPU. | The LEVELS card, the status pill |
 | `hardware_details.png` | 256 × 256 (16 details) | Screws, washers, vents, label plates, jacks, scales, seams, reels, lamps. | Panel corners, the deck's edges, the fixing points |
 

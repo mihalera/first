@@ -296,6 +296,23 @@ void ValueTree::addChild (const ValueTree& child, int index)
         data->children.insert (data->children.begin() + index, child);
 }
 
+void ValueTree::removeChild (const ValueTree& child, void* undoManager)
+{
+    (void) undoManager;
+
+    if (data == nullptr || ! child.isValid())
+        return;
+
+    for (auto it = data->children.begin(); it != data->children.end(); ++it)
+    {
+        if (it->isEquivalentTo (child))
+        {
+            data->children.erase (it);
+            return;
+        }
+    }
+}
+
 void ValueTree::removeAllChildren()
 {
     if (data != nullptr)

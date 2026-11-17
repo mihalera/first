@@ -266,7 +266,6 @@ def main() -> int:
         model_sets = [
             ("tape", REPO / "Source" / "PluginProcessor.h", "tapeStockNames"),
             ("valve", REPO / "Source" / "DSP" / "SaturationCore.h", "valveTypeNames"),
-            ("amp", REPO / "Source" / "DSP" / "SaturationCore.h", "ampTypeNames"),
             ("transformer", REPO / "Source" / "DSP" / "SaturationCore.h", "transformerTypeNames"),
             ("digital", REPO / "Source" / "DSP" / "SaturationCore.h", "digitalTypeNames"),
             ("vinyl", REPO / "Source" / "PluginProcessor.h", "vinylTypeNames"),

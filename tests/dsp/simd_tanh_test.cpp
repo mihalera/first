@@ -82,18 +82,18 @@ std::string format2 (const char* pattern, double a, double b)
  #define J37_EXPECT_XSIMD 0
 #endif
 
-// The seven principles, in the order setWeights takes their amounts, plus the
+// The nine principles, in the order setWeights takes their amounts, plus the
 // name each one's digest line carries.
 struct Principle
 {
     const char* name;
-    int which;   // index into setWeights' seven arguments
+    int which;   // index into setWeights' nine arguments
 };
 
-const std::array<Principle, 7> kPrinciples {{
-    { "tape",        0 }, { "valve",       1 }, { "cassette",    2 },
-    { "vinyl",       3 }, { "amp",         4 }, { "transformer", 5 },
-    { "digital",     6 }
+const std::array<Principle, 9> kPrinciples {{
+    { "tape",        0 }, { "valve",       1 }, { "pentode",     2 },
+    { "triode",      3 }, { "transistor",  4 }, { "fold",        5 },
+    { "glass",       6 }, { "transformer", 7 }, { "digital",     8 }
 }};
 
 // The drive argument as the engine runs it: 0 to SaturationCore::shaperDriveRange.
@@ -128,10 +128,11 @@ void printDigest()
         {
             SaturationCore core;
 
-            std::array<float, 7> weights {};
+            std::array<float, 9> weights {};
             weights[static_cast<std::size_t> (principle.which)] = 1.0f;
             core.setWeights (weights[0], weights[1], weights[2], weights[3],
-                             weights[4], weights[5], weights[6]);
+                             weights[4], weights[5], weights[6], weights[7],
+                             weights[8]);
 
             for (std::size_t i = 0; i < values.size(); ++i)
             {

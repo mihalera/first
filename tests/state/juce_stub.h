@@ -194,6 +194,7 @@ public:
     ValueTree getChild (int index) const;
     ValueTree getChildWithProperty (const String& name, const var& value) const;
     void addChild (const ValueTree& child, int index);
+    void removeChild (const ValueTree& child, void* undoManager);
     void removeAllChildren();
 
     std::unique_ptr<XmlElement> createXml() const;

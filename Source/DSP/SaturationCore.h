@@ -51,20 +51,6 @@ static_assert (j37model::namesAreComplete (valveTypeNames),
 
 inline juce::StringArray valveTypeNameList() { return j37model::toStringArray (valveTypeNames); }
 
-// -- AMP ---------------------------------------------------------------------
-inline constexpr int ampTypeCount = 7;
-
-inline constexpr std::array<const char*, ampTypeCount> ampTypeNames
-{
-    "Fender Blackface", "Marshall Plexi", "Vox AC30", "Hiwatt DR103", "Mesa Recto", "Matchless HC30",
-    "Off"   // see the note on tapeStockNames: OFF is appended, never inserted
-};
-
-static_assert (j37model::namesAreComplete (ampTypeNames),
-               "ampTypeCount and ampTypeNames must describe the same number of amp types");
-
-inline juce::StringArray ampTypeNameList() { return j37model::toStringArray (ampTypeNames); }
-
 // -- TRANSFORMER ---------------------------------------------------------------
 inline constexpr int transformerTypeCount = 6;
 
@@ -95,69 +81,88 @@ inline juce::StringArray digitalTypeNameList() { return j37model::toStringArray 
 
 //==============================================================================
 /**
-    The seven saturation principles, and the mix that combines them.
+    The nine saturation principles, and the mix that combines them.
 
-    A tape machine is ONE of the ways analogue electronics bend a signal, and the
-    plugin was built around that one curve. The seven below are the distinct
-    mechanisms a real signal chain uses, and they are genuinely different shapes
-    rather than seven settings of one:
+    A tape machine is ONE of the ways electronics bend a signal, and the plugin
+    was built around that one curve. The nine below are the distinct mechanisms a
+    real signal chain uses, and they are genuinely different shapes rather than
+    nine settings of one:
 
-      TAPE       - magnetic hysteresis: a MEMORY term, because the medium's state
-                   depends on where it has been. Gentle at low level, and the
-                   asymmetry is what makes the even harmonics.
-      VALVE      - thermionic: a soft, strongly ASYMMETRIC knee with a wide
-                   transition. Even-dominant, and it compresses rather than clips,
-                   so it thickens before it distorts.
-      CASSETTE   - narrow-gauge, low-bias ferric: a HARD, early knee with a very
-                   limited headroom and a pronounced low-frequency bump. The
-                   "everything is louder and smaller" character.
-      VINYL      - a cutting lathe's tracing distortion: a soft, second-order
-                   power-law knee plus a small drift of the groove's own
-                   operating point. The gentlest of the seven.
-      AMP        - a guitar amplifier's input stage: a high-gain, nearly symmetric
-                   cascade that clips HARD and generates strong odd harmonics. It
-                   is the one that bites.
+      TAPE        - magnetic hysteresis: a MEMORY term, because the medium's state
+                    depends on where it has been. Gentle at low level, and the
+                    asymmetry is what makes the even harmonics.
+      VALVE       - thermionic: a soft, strongly ASYMMETRIC knee with a wide
+                    transition. Even-dominant, and it compresses rather than
+                    clips, so it thickens before it distorts.
+      PENTODE     - a sharp-cutoff pentode: the knee arrives early and the curve
+                    is close to symmetric, so it is odd-dominant and hard-edged
+                    where the valve is soft. The "tight" end of a valve amp.
+      TRIODE     - a low-mu triode: the softest knee here and the most even
+                    content, because the stage's operating point moves with the
+                    programme. Warm at any level, and never sharp.
+      TRANSISTOR  - a germanium stage: asymmetric conduction with a crossover
+                    notch around zero, so it adds even harmonics and a grain the
+                    valve curves do not have.
+      FOLD        - a wavefolder: the signal is driven into a sine-shaped
+                    transfer curve and folds back on itself. Odd-dominant and
+                    level-dependent in the way only a folder is.
+      GLASS       - a pure second-order term, and that is the whole curve:
+                    y = x + a*x^2 with the offset the term creates removed.
+                    It adds the SECOND harmonic and nothing else - no third, no
+                    fifth, no edge.
       TRANSFORMER - core saturation with a flux memory: the core lags whatever
-                   drives it, and its asymmetry arrives only once the core is
-                   properly loaded.
-      DIGITAL    - the converter's stop: transparent and bit-exact below full
-                   scale, hard above it, with no memory and no bias to drift.
+                    drives it, and its asymmetry arrives only once the core is
+                    properly loaded.
+      DIGITAL     - the converter's stop: transparent and bit-exact below full
+                    scale, hard above it, with no memory and no bias to drift.
 
     Mixing them is not a gimmick: a real chain is exactly this. A guitar goes
-    into an amp (AMP), the amp into a desk and a tape machine (TAPE), a valve
-    compressor or a valve preamp somewhere in the path (VALVE), and the whole
-    thing may end up on a cassette (CASSETTE) or a cut record (VINYL). The
-    seven SOURCE knobs set each mechanism's share of the mix, and the default
-    sits on tape because that is what the plugin is calibrated around.
+    into an amp (PENTODE or TRIODE), through a pedal's folder (FOLD) or a
+    germanium stage (TRANSISTOR), into a desk and a tape machine (TAPE), a valve
+    compressor somewhere in the path (VALVE), and the whole thing may end up on
+    a converter (DIGITAL). The nine SOURCE knobs set each mechanism's share of
+    the mix, and the default sits on tape because that is what the plugin is
+    calibrated around.
 
     Every curve is normalised to unity slope at the origin, exactly like
     magneticHysteresis, so the mix cannot change the level - only the shape.
     That property is what makes the controls usable: moving them changes the
     harmonics, not the gain, and the DRIVE control keeps its own meaning.
+    GLASS is the one curve whose unity slope is only approached above its DC
+    blocker's corner - the blocker is what removes the offset a squared term
+    leaves behind, and it is documented at shapeGlass.
+
+    (CASSETTE, VINYL and AMP were retired here: the cassette was a narrow-gauge
+    TAPE, the vinyl a gentler TAPE with a lathe's knee, and the amp's cascade is
+    what PENTODE and TRIODE now describe as two separate stages. Saved states
+    and presets that named them are folded onto TAPE and VALVE by
+    migrateStateFormat, which documents the mapping.)
 */
 struct SaturationCore
 {
     // -----------------------------------------------------------------------
-    //  Weights. These are set once per block from the seven SOURCE controls:
+    //  Weights. These are set once per block from the nine SOURCE controls:
     //  each is its own amount knob, so a user dials the machines they want by
-    //  name rather than steering a sweep. They are kept normalised so the seven
+    //  name rather than steering a sweep. They are kept normalised so the nine
     //  always sum to 1 and the mix is a true crossfade rather than a stack.
     // -----------------------------------------------------------------------
     float tapeWeight = 1.0f;
     float valveWeight = 0.0f;
-    float cassetteWeight = 0.0f;
-    float vinylWeight = 0.0f;
-    float ampWeight = 0.0f;
+    float pentodeWeight = 0.0f;
+    float triodeWeight = 0.0f;
+    float transistorWeight = 0.0f;
+    float foldWeight = 0.0f;
+    float glassWeight = 0.0f;
     float transformerWeight = 0.0f;
     float digitalWeight = 0.0f;
 
-    //  ...and the AMOUNT they asked for before they were normalised. The seven
+    //  ...and the AMOUNT they asked for before they were normalised. The nine
     //  above answer WHICH machines; this answers HOW MUCH, and it is the
     //  crossfade depth process() applies to the whole blend. See setWeights for
     //  why it cannot be recovered from the shares.
     float saturationAmount = 1.0f;
 
-    /** Sets all seven weights DIRECTLY from the seven SOURCE knobs: a knob is
+    /** Sets all nine weights DIRECTLY from the nine SOURCE knobs: a knob is
         its principle's share, so TAPE 60 / VALVE 40 reads on the panel exactly
         as it sounds. Shares are normalised to sum to 1; a principle whose own
         model list is OFF has its share redistributed by the normalisation
@@ -166,18 +171,21 @@ struct SaturationCore
         behind one sweep position and one spread; the user asked for names.)
         The amounts arrive already smoothed - every SOURCE knob is read once
         per block and fed to its own smoother - so the SET is what makes all
-        seven live at once, and the normalisation below is what keeps the mix
+        nine live at once, and the normalisation below is what keeps the mix
         level-stable while amounts move.
     */
-    void setWeights (float tapeAmount, float valveAmount, float cassetteAmount,
-                     float vinylAmount, float ampAmount, float transformerAmount,
+    void setWeights (float tapeAmount, float valveAmount, float pentodeAmount,
+                     float triodeAmount, float transistorAmount, float foldAmount,
+                     float glassAmount, float transformerAmount,
                      float digitalAmount) noexcept
     {
         tapeWeight        = juce::jlimit (0.0f, 1.0f, tapeAmount);
         valveWeight       = juce::jlimit (0.0f, 1.0f, valveAmount);
-        cassetteWeight    = juce::jlimit (0.0f, 1.0f, cassetteAmount);
-        vinylWeight       = juce::jlimit (0.0f, 1.0f, vinylAmount);
-        ampWeight         = juce::jlimit (0.0f, 1.0f, ampAmount);
+        pentodeWeight     = juce::jlimit (0.0f, 1.0f, pentodeAmount);
+        triodeWeight      = juce::jlimit (0.0f, 1.0f, triodeAmount);
+        transistorWeight  = juce::jlimit (0.0f, 1.0f, transistorAmount);
+        foldWeight        = juce::jlimit (0.0f, 1.0f, foldAmount);
+        glassWeight       = juce::jlimit (0.0f, 1.0f, glassAmount);
         transformerWeight = juce::jlimit (0.0f, 1.0f, transformerAmount);
         digitalWeight     = juce::jlimit (0.0f, 1.0f, digitalAmount);
 
@@ -186,32 +194,29 @@ struct SaturationCore
         // switching a machine off re-weights the rest to cover it, so the mix
         // holds its degree of saturation and only the character changes.
         if (valveOff)       valveWeight = 0.0f;
-        if (ampOff)         ampWeight = 0.0f;
         if (transformerOff) transformerWeight = 0.0f;
         if (digitalOff)     digitalWeight = 0.0f;
         if (tapeOff)        tapeWeight = 0.0f;
 
-        const auto sum = tapeWeight + valveWeight + cassetteWeight + vinylWeight
-                               + ampWeight + transformerWeight + digitalWeight;
+        const auto sum = tapeWeight + valveWeight + pentodeWeight + triodeWeight
+                               + transistorWeight + foldWeight + glassWeight
+                               + transformerWeight + digitalWeight;
 
         // HOW MUCH saturation, kept separate from WHICH machines.
         //
-        // The normalisation below answers the second question - the seven
+        // The normalisation below answers the second question - the nine
         // numbers always become shares that sum to one, so the MIX page's bar
         // always reads 100 % whatever the knobs say. That was the whole point
-        // of shares, and it had a consequence nobody intended: the seven SOURCE
-        // knobs said NOTHING about how hard the stage worked. Turn all seven
-        // down to nothing and the shares still summed to one, so the core ran
-        // at full strength on whichever machine was nominally leading - the
-        // panel's own minimum setting saturated exactly as hard as its maximum,
-        // and the smallest move of any one knob re-weighted all seven at once.
-        // That is what "the sound changes far too much, even at the smallest
-        // settings" was measuring.
+        // of shares, and it had a consequence nobody intended: the SOURCE knobs
+        // said NOTHING about how hard the stage worked. Turn all of them down to
+        // nothing and the shares still summed to one, so the core ran at full
+        // strength on whichever machine was nominally leading - the panel's own
+        // minimum setting saturated exactly as hard as its maximum.
         //
         // So the sum is kept, and it drives the drive: one machine at half is
         // now half the saturation with a pure-tape character, rather than a
         // full-strength stage wearing a tape label. Saturation reaches its
-        // ceiling once the seven together add up to one, which is where the
+        // ceiling once the nine together add up to one, which is where the
         // Default preset already lives (TAPE alone at 1.0), so every existing
         // session and every factory preset that uses one machine sounds exactly
         // as it did - only the region BELOW full strength, which nothing
@@ -224,9 +229,11 @@ struct SaturationCore
         {
             tapeWeight /= sum;
             valveWeight /= sum;
-            cassetteWeight /= sum;
-            vinylWeight /= sum;
-            ampWeight /= sum;
+            pentodeWeight /= sum;
+            triodeWeight /= sum;
+            transistorWeight /= sum;
+            foldWeight /= sum;
+            glassWeight /= sum;
             transformerWeight /= sum;
             digitalWeight /= sum;
         }
@@ -238,8 +245,8 @@ struct SaturationCore
             // curve a drive of nothing and the core returns its input
             // bit-for-bit. The shares here describe a mix that is not playing.
             tapeWeight = 1.0f;
-            valveWeight = cassetteWeight = vinylWeight = ampWeight = transformerWeight
-                        = digitalWeight = 0.0f;
+            valveWeight = pentodeWeight = triodeWeight = transistorWeight = foldWeight
+                        = glassWeight = transformerWeight = digitalWeight = 0.0f;
         }
     }
 
@@ -256,9 +263,10 @@ struct SaturationCore
     // -----------------------------------------------------------------------
     float tapeMemory = 0.0f;
     float valveBiasState = 0.0f;
-    float ampBiasState = 0.0f;
-    float cassetteBiasState = 0.0f;
-    float vinylBiasState = 0.0f;
+    float pentodeBiasState = 0.0f;
+    float triodeBiasState = 0.0f;
+    float transistorBiasState = 0.0f;
+    float glassDrift = 0.0f;
     float transformerFlux = 0.0f;
     float digitalHold = 0.0f;
 
@@ -266,15 +274,16 @@ struct SaturationCore
     {
         tapeMemory = 0.0f;
         valveBiasState = 0.0f;
-        ampBiasState = 0.0f;
-        cassetteBiasState = 0.0f;
-        vinylBiasState = 0.0f;
+        pentodeBiasState = 0.0f;
+        triodeBiasState = 0.0f;
+        transistorBiasState = 0.0f;
+        glassDrift = 0.0f;
         transformerFlux = 0.0f;
         digitalHold = 0.0f;
     }
 
     // (The old blend/shape sweep body was removed with the controls that drove
-    //  it: the seven SOURCE knobs now speak to setWeights above directly.)
+    //  it: the nine SOURCE knobs now speak to setWeights above directly.)
 
     /** True when nothing is contributing, so the caller can skip the whole core.
 
@@ -415,188 +424,22 @@ struct SaturationCore
     }
 
     /**
-        CASSETTE - narrow gauge, low bias, hard early knee.
+        PENTODE - a sharp-cutoff small-signal pentode.
 
-        A cassette is not "tape but worse": it is a different mechanism. The
-        narrow track and low bias current mean the medium saturates far earlier
-        and much more abruptly, so the curve has a tight linear region and then a
-        hard corner. That is the "everything is louder and smaller" character, and
-        it is what this models.
-
-        The corner is a smoothstep rather than a tanh: a polynomial transition
-        that reaches its asymptote quickly instead of approaching it
-        exponentially, which is exactly the difference in feel between the two.
+        The tight end of a valve amp: the knee arrives early because the stage
+        has gain to spare, and the curve is close to symmetric, so the odd
+        orders dominate and the sound is hard-edged where shapeValve is soft.
+        A small bias term keeps a trace of even content rather than a pure odd
+        series, which would read as a fuzz.
     */
-    float shapeCassette (float x, float drive, float asymmetry) noexcept
-    {
-        // A small bias drift again, but much faster than the valve's - a cassette's
-        // low bias means the operating point moves with the programme far more.
-        cassetteBiasState += (x - cassetteBiasState) * 0.004f;
-        const float biased = x + asymmetry * 0.5f + cassetteBiasState * 0.15f;
-
-        // The knee: at drive 0 it is at 0.9 (a wide, fairly clean region), and it
-        // closes fast as drive rises, which is the cassette's defining behaviour.
-        const float knee = juce::jlimit (0.12f, 0.95f, 0.9f - drive * 0.75f);
-
-        const float magnitude = std::abs (biased);
-        const float sign = biased < 0.0f ? -1.0f : 1.0f;
-
-        float shaped;
-        float engaged = 0.0f;
-        if (magnitude <= knee)
-        {
-            // Linear region, scaled so the slope is unity: y = x.
-            shaped = biased;
-        }
-        else
-        {
-            // Above the knee the curve walks to the asymptote over a short span.
-            const float overshoot = juce::jmin (1.0f, (magnitude - knee) / juce::jmax (0.05f, knee));
-            const auto eased = overshoot * overshoot * (3.0f - 2.0f * overshoot); // smoothstep
-            shaped = sign * (knee + eased * (1.0f - knee));
-            engaged = overshoot;
-        }
-
-        // The cassette's low-frequency bump: the head bump and the narrow track
-        // both lift the bottom end, and it is part of the character rather than an
-        // artefact. Applied as a level-dependent term so it only shows under drive.
-        //
-        // Gated on `engaged`, so that it only shows under drive IN FACT. Ungated
-        // the bump multiplied the linear region as well, and since it is a gain on
-        // the curve that made this the one principle whose slope at the origin was
-        // not 1 - 1.27 at full drive, measured - so crossfading the cassette in
-        // changed the level as well as the character, which is the one thing this
-        // blend is not allowed to do. Below the knee the term is now exactly zero.
-        const float bump = 1.0f + drive * 0.12f * engaged
-                             * (1.0f - juce::jmin (1.0f, std::abs (shaped)));
-
-        const float out = shaped * bump;
-
-        // Zero-point correction, same rule as the others.
-        const float atZero = [&]
-        {
-            const float z = asymmetry * 0.5f;
-            const float m = std::abs (z);
-            const float s = z < 0.0f ? -1.0f : 1.0f;
-            if (m <= knee) return z;
-            const float o = juce::jmin (1.0f, (m - knee) / juce::jmax (0.05f, knee));
-            const float e = o * o * (3.0f - 2.0f * o);
-            return s * (knee + e * (1.0f - knee));
-        }();
-        // The signal path above, walked again for the correction, bump and its gate
-        // included. Correcting for a bump the curve no longer applies would leave
-        // the pedestal in instead of removing it.
-        const auto atZeroEngaged = [&]
-        {
-            const float z = asymmetry * 0.5f;
-            if (std::abs (z) <= knee)
-                return 0.0f;
-            return juce::jmin (1.0f, (std::abs (z) - knee) / juce::jmax (0.05f, knee));
-        }();
-        const float atZeroBumped = atZero * (1.0f + drive * 0.12f * atZeroEngaged
-                                             * (1.0f - juce::jmin (1.0f, std::abs (atZero))));
-
-        return out - atZeroBumped;
-    }
-
-    /**
-        VINYL - a cutting lathe's tracing distortion.
-
-        The seventh SOURCE. A lathe does not cut what it is fed: the stylus has
-        a finite radius, so on tight curvature (high frequencies at high level)
-        the groove's radius is larger than the signal asks and the replay stylus
-        traces a rounded-off path - second-order, level-dependent, the gentlest
-        of the seven. That is why vinyl at moderate levels reads as smooth
-        rather than bent. The curve: a soft power-law knee (softer than the
-        cassette's corner, gentler than the amp's clip) plus a small bias drift
-        - the groove's own operating point moves with the programme, like the
-        valve's but faster.
-    */
-    float shapeVinyl (float x, float drive, float asymmetry) noexcept
-    {
-        // The groove's operating point drifts with the programme - between the
-        // valve's slow thermal drift and the cassette's fast one, which is the
-        // order a real cutter head's feedback loop settles in.
-        vinylBiasState += (x - vinylBiasState) * 0.0015f;
-        const float biased = x + asymmetry * 0.35f + vinylBiasState * 0.12f;
-
-        // The tracing knee: at drive 0 it sits at 1.05 (above full scale - the
-        // lathe passes the programme untouched) and closes as drive rises, but
-        // never as far as the cassette's 0.12 floor: a cutter is a precision
-        // device, and its knee is soft.
-        const float knee = juce::jlimit (0.25f, 1.05f, 1.05f - drive * 0.55f);
-
-        const float magnitude = std::abs (biased);
-        const float sign = biased < 0.0f ? -1.0f : 1.0f;
-
-        float shaped;
-        if (magnitude <= knee)
-        {
-            shaped = biased;   // linear region, unity slope: y = x.
-        }
-        else
-        {
-            // Above the knee the curve walks to its asymptote on a POWER law
-            // (n = 2.5) rather than the cassette's smoothstep: a tracing radius
-            // rounds an overshoot progressively, not on a polynomial schedule.
-            const float overshoot = juce::jmin (1.0f,
-                                                (magnitude - knee) / juce::jmax (0.08f, knee));
-            const float eased = std::pow (overshoot, 2.5f);
-            shaped = sign * (knee + eased * (1.0f - knee));
-        }
-
-        // Zero-point correction, the same rule every curve here follows: the
-        // signal path walked again at zero input, so zero in means zero out.
-        const float atZero = [&]
-        {
-            const float z = asymmetry * 0.35f;
-            const float m = std::abs (z);
-            if (m <= knee) return z;
-            const float o = juce::jmin (1.0f, (m - knee) / juce::jmax (0.08f, knee));
-            const float e = std::pow (o, 2.5f);
-            return (z < 0.0f ? -1.0f : 1.0f) * (knee + e * (1.0f - knee));
-        }();
-
-        return shaped - atZero;
-    }
-
-    /**
-        AMP - a guitar amplifier's input stage.
-
-        The one that bites. A high-gain valve input clips HARD and nearly
-        symmetrically, which is why a distorted guitar is odd-harmonic dominant
-        and reads as aggressive rather than warm. The asymmetry here is small on
-        purpose: that is the difference between an amp and a valve preamp.
-
-        The second stage is what gives it the "cascade" character - two gain
-        stages in series compress twice, so the curve is flatter in the middle
-        than a single stage of the same total gain.
-    */
-    // The amp family's voice, from AMP TYPE. gain1/gain2 move the two cascade
-    // gains apart - a tweed is loose in stage one, a recto slams in stage two.
-    float ampGain1 = 4.5f;
-    float ampGain2 = 1.2f;
-
-    void setAmpVoice (int type) noexcept
-    {
-        // OFF: see setValveVoice for what OFF means on a principle's own model
-        // list - the principle is removed, not merely turned down.
-        ampOff = (type >= ampTypeCount - 1);
-        if (ampOff)
-            return;
-
-        static constexpr float g1[6] = { 3.2f, 4.8f, 3.8f, 4.0f, 5.6f, 4.2f };
-        static constexpr float g2[6] = { 1.0f, 1.4f, 1.1f, 1.3f, 1.6f, 1.2f };
-        ampGain1 = g1[type];
-        ampGain2 = g2[type];
-    }
-
-    bool ampOff = false;
-
-    // AMP BIAS: the amp stage's DC operating point, 0..1 with 0.5 neutral. Set
-    // once per block from the smoothed control (ProcessorSignalPath feeds it
-    // from ampBiasSmoothed); shapeAmp reads it per sample. Kept here with the
-    // amp's own voice members because it re-voices the same curve.
+    // AMP BIAS: the valve-amp stages' DC operating point, 0..1 with 0.5 neutral.
+    //
+    // It used to belong to shapeAmp alone. That curve is gone - the amp's
+    // cascade is what PENTODE and TRIODE now describe - but the CONTROL is still
+    // on the panel and still means what its name says, so it biases the two
+    // curves that replaced it. Nothing else in the plugin gates it: it works
+    // whatever NAM model may or may not be loaded, because it is a property of
+    // the saturation stage rather than of a loaded file.
     float ampBiasAmount = 0.5f;
 
     void setAmpBiasAmount (float amount) noexcept
@@ -604,38 +447,165 @@ struct SaturationCore
         ampBiasAmount = juce::jlimit (0.0f, 1.0f, amount);
     }
 
-    float shapeAmp (float x, float drive, float asymmetry) noexcept
+    /** AMP BIAS as a bias offset, in signal units: zero at the 0.5 centre. */
+    float ampBiasOffset() const noexcept { return (ampBiasAmount - 0.5f) * 0.10f; }
+
+    float shapePentode (float x, float drive, float asymmetry) noexcept
     {
-        // A small, fast bias drift: a high-gain stage's operating point moves
-        // quickly with the signal because the gain makes even a small shift
-        // audible. AMP BIAS owns how much of that movement there is: cold
-        // leaves the stage parked at its own zero (tight, crossover-shaped),
-        // hot lets the operating point chase the signal (fat, compressed).
-        // 0.5 is the neutral centre the table promises, so the multipliers
-        // below are written to land on the historical constants there.
-        ampBiasState += (x - ampBiasState) * (0.001f + ampBiasAmount * 0.002f);
-        const float biased = x + asymmetry * 0.18f + ampBiasState * (0.02f + ampBiasAmount * 0.16f);
+        const float biased = x + asymmetry * 0.10f + ampBiasOffset();
 
-        // Stage one: high gain, hard clip. The slope is much steeper than tape's
-        // so the knee arrives early, and the type sets how much steeper.
-        const float slope1 = 1.0f + drive * ampGain1;
-        const float stage1 = j37Tanh (biased * slope1) / slope1;
+        // The steepest slope of any analogue curve here: a pentode clips early.
+        const float slope = 1.0f + drive * 3.2f;
+        const float shaped = j37Tanh (biased * slope) / slope;
 
-        // Stage two: the cascade. A second, gentler stage applied to the first
-        // stage's output, which is what flattens the middle of the curve.
-        const float slope2 = 1.0f + drive * ampGain2;
-        const float stage2 = j37Tanh (stage1 * slope2) / slope2;
+        // Zero-point correction, the rule every curve here follows.
+        const float atZero = j37Tanh ((asymmetry * 0.10f + ampBiasOffset()) * slope) / slope;
+        return shaped - atZero;
+    }
 
-        // Hard-clipped stages are nearly symmetric, so the asymmetry term is
-        // small - just enough to keep some even content rather than a pure odd
-        // series, which would read as a fuzz rather than an amp.
-        const float asymmetryTerm = asymmetry * 0.20f * stage2 * stage2;
+    /**
+        TRIODE - a low-mu triode, the softest knee here.
 
-        const float s1Zero = j37Tanh ((asymmetry * 0.18f) * slope1) / slope1;
-        const float s2Zero = j37Tanh (s1Zero * slope2) / slope2;
-        const float asymmetryAtZero = asymmetry * 0.20f * s2Zero * s2Zero;
+        Where the pentode is tight, the triode is loose: its curve compresses
+        across the widest range of any of these, and its operating point drifts
+        with the programme, which is where the even content comes from. Warm at
+        any level and never sharp - the opposite pairing to PENTODE, and the
+        reason both exist.
+    */
+    float triodeColdness = 0.40f;
+    float triodeSag      = 0.55f;
 
-        return (stage2 - s2Zero) - (asymmetryTerm - asymmetryAtZero);
+    float shapeTriode (float x, float drive, float asymmetry) noexcept
+    {
+        // A slower drift than the valve's: a low-mu stage's bias is set by a
+        // large cathode resistor, so the operating point moves gently.
+        triodeBiasState += (x - triodeBiasState) * (0.00025f + 0.0005f * triodeSag);
+        const float driftingBias = asymmetry
+                                 + triodeBiasState * 0.20f
+                                 - triodeColdness * 0.020f
+                                 + ampBiasOffset() * 1.5f;
+
+        const float biased = x + driftingBias;
+
+        // The gentlest slope of the three valve-family curves: it bends late and
+        // keeps bending.
+        const float slope = 1.0f + drive * 0.9f;
+        const float soft = j37Tanh (biased * slope) / slope;
+
+        // The even content is carried by the squared term, as on the valve, but
+        // stronger: this is the warm curve.
+        const float asymmetryTerm = driftingBias * 0.85f * soft * soft;
+
+        const float softAtZero = j37Tanh (driftingBias * slope) / slope;
+        const float asymmetryAtZero = driftingBias * 0.85f * softAtZero * softAtZero;
+
+        return (soft - softAtZero) - (asymmetryTerm - asymmetryAtZero);
+    }
+
+    /**
+        TRANSISTOR - a germanium stage.
+
+        Asymmetric conduction plus a crossover notch around zero: the two halves
+        of the waveform are not handed over evenly, which puts even content into
+        the output and a grain on the low orders that the valve curves do not
+        have. The notch is what separates it from shapeValve - a valve has a
+        bias point, a germanium stage has a dead band around it.
+    */
+    float shapeTransistor (float x, float drive, float asymmetry) noexcept
+    {
+        transistorBiasState += (x - transistorBiasState) * 0.002f;
+        const float biased = x + asymmetry * 0.22f + transistorBiasState * 0.10f;
+
+        // The crossover notch: a soft dead band that closes as the drive rises,
+        // because a harder-driven stage crosses it faster. Written as a
+        // smoothstep so the slope at the origin stays 1 - a hard subtraction
+        // would give the curve a kink that no amplifier has.
+        const float notch = 0.06f / (1.0f + drive * 3.0f);
+        const float magnitude = std::abs (biased);
+        const float eased = magnitude / (magnitude + notch);
+        const float shifted = (biased < 0.0f ? -1.0f : 1.0f) * magnitude * eased;
+
+        // The conduction asymmetry: the slope differs between the halves, which
+        // is the even content.
+        const float slopePos = 1.0f + drive * 2.0f;
+        const float slopeNeg = 1.0f + drive * 2.6f;
+        const float slope = shifted < 0.0f ? slopeNeg : slopePos;
+        const float shaped = j37Tanh (shifted * slope) / slope;
+
+        // The squared term carries the rest of the even series, and the zero
+        // correction takes its pedestal back off.
+        const float asymmetryTerm = asymmetry * 0.30f * shaped * shaped;
+        const float z = asymmetry * 0.22f;
+        const float zEased = std::abs (z) / (std::abs (z) + notch);
+        const float zShifted = (z < 0.0f ? -1.0f : 1.0f) * std::abs (z) * zEased;
+        const float zSlope = zShifted < 0.0f ? slopeNeg : slopePos;
+        const float zShaped = j37Tanh (zShifted * zSlope) / zSlope;
+        const float asymmetryAtZero = asymmetry * 0.30f * zShaped * zShaped;
+
+        return (shaped - zShaped) - (asymmetryTerm - asymmetryAtZero);
+    }
+
+    /**
+        FOLD - a wavefolder.
+
+        The one curve here that is not a saturation in the strict sense: it does
+        not approach a ceiling, it turns back. The transfer function is a sine,
+        so once the driven signal passes a quarter of the sine's period it folds
+        instead of flattening, and the odd series that produces is much richer
+        than any tanh's. Normalised by its own slope so the origin still reads 1.
+    */
+    float shapeFold (float x, float drive, float asymmetry) noexcept
+    {
+        const auto load = juce::jlimit (0.0f, shaperDriveRange, drive) / shaperDriveRange;
+
+        // The fold gain. At zero drive it is 1 and the curve is close to the
+        // identity over the signal's own range; the more drive, the more times
+        // the signal wraps.
+        const float foldGain = 1.0f + load * 3.6f;
+
+        // The asymmetry walks the fold's own centre, so the two halves wrap at
+        // different points - which is where the even content comes from. It is
+        // applied BEFORE the fold, because a folder's bias is part of its input.
+        const float biased = x + asymmetry * 0.25f;
+
+        const float folded = std::sin (biased * foldGain) / foldGain;
+        const float atZero = std::sin ((asymmetry * 0.25f) * foldGain) / foldGain;
+
+        return folded - atZero;
+    }
+
+    /**
+        GLASS - second harmonic only.
+
+        The whole curve is y = x + a*x^2, and that is deliberate: a square term
+        produces the second harmonic and NOTHING else, so this is the one model
+        here with no odd content at all - no third, no fifth, no edge. It is the
+        curve for "add body without adding dirt".
+
+        A squared term also leaves a level-dependent OFFSET (the mean of x^2 is
+        not zero), which would shift the mix's operating point as the source
+        knob moves. The one-pole below is a DC blocker at a few hertz: it removes
+        that offset and nothing else. It is state, like the tape's memory, so
+        process() resets it when the glass share leaves the mix - otherwise the
+        first sample back would be corrected against a stale mean.
+
+        Slope at the origin is 1 above the blocker's corner, which is the band
+        the mix is auditioned in.
+    */
+    static constexpr float glassDcPole = 0.0004f;   // ~7 Hz at 48 kHz
+
+    float shapeGlass (float x, float drive, float asymmetry) noexcept
+    {
+        (void) asymmetry;   // a square term has no bias to apply: it is symmetric
+
+        const auto load = juce::jlimit (0.0f, shaperDriveRange, drive) / shaperDriveRange;
+        const float quadratic = 0.08f + load * 0.60f;
+
+        const float shaped = x + quadratic * x * x;
+
+        // The DC blocker, and the whole of this curve's state.
+        glassDrift += (shaped - glassDrift) * glassDcPole;
+        return shaped - glassDrift;
     }
 
     // The core's time constant, as a per-sample one-pole coefficient. It is a
@@ -713,7 +683,7 @@ struct SaturationCore
         const float air  = x - core;      // the part the winding never carried
 
         // The core's own bend, and the one place this curve deliberately is NOT
-        // like its neighbours. A cassette has a hard corner, a converter has a
+        // like its neighbours. A pentode has a hard corner, a converter has a
         // hard stop; a transformer has neither. Iron this size goes into
         // saturation gradually and keeps compressing, so the curve is a soft
         // compressor with no knee at all - which is exactly why so much
@@ -896,7 +866,7 @@ struct SaturationCore
     /**
         Runs the mix. `drive` and `asymmetry` are the same arguments the tape
         shaper has always taken, so the existing controls keep their meaning;
-        the weighting is only what the seven SOURCE knobs set.
+        the weighting is only what the nine SOURCE knobs set.
     */
     float process (float x, float drive, float asymmetry) noexcept
     {
@@ -911,14 +881,28 @@ struct SaturationCore
         if (valveWeight > 1.0e-4f)
             out += shapeValve (x, drive, asymmetry) * valveWeight;
 
-        if (cassetteWeight > 1.0e-4f)
-            out += shapeCassette (x, drive, asymmetry) * cassetteWeight;
+        if (pentodeWeight > 1.0e-4f)
+            out += shapePentode (x, drive, asymmetry) * pentodeWeight;
 
-        if (vinylWeight > 1.0e-4f)
-            out += shapeVinyl (x, drive, asymmetry) * vinylWeight;
+        if (triodeWeight > 1.0e-4f)
+            out += shapeTriode (x, drive, asymmetry) * triodeWeight;
 
-        if (ampWeight > 1.0e-4f)
-            out += shapeAmp (x, drive, asymmetry) * ampWeight;
+        if (transistorWeight > 1.0e-4f)
+            out += shapeTransistor (x, drive, asymmetry) * transistorWeight;
+
+        if (foldWeight > 1.0e-4f)
+            out += shapeFold (x, drive, asymmetry) * foldWeight;
+
+        if (glassWeight > 1.0e-4f)
+        {
+            out += shapeGlass (x, drive, asymmetry) * glassWeight;
+        }
+        else if (std::abs (glassDrift) > 1.0e-9f)
+        {
+            // The blocker's mean is stale once glass leaves the blend: without
+            // this the first sample back would be corrected against it.
+            glassDrift = 0.0f;
+        }
 
         if (transformerWeight > 1.0e-4f)
         {
@@ -941,9 +925,7 @@ struct SaturationCore
         {
             // Release the converter's held code when BLEND has left the digital
             // end. shapeDigital is not called there, so without this the hold
-            // would keep whatever it last saw and the first sample back on the
-            // digital side of the sweep would be mixed toward a stale value from
-            // whenever the control was last there.
+            // would keep whatever it last saw.
             digitalHold = 0.0f;
         }
 
@@ -955,7 +937,7 @@ struct SaturationCore
         // controls how HARD the knee is, not whether there is one. Multiplying
         // it down cannot reach "straight", so a part at a twentieth of the
         // amount would still be a saturator, just a gentle one, and the bottom
-        // of the seven SOURCE knobs would keep colouring the signal no matter
+        // of the nine SOURCE knobs would keep colouring the signal no matter
         // how far down it was turned.
         //
         // Fading the blend against the input does reach it: at zero it is the

@@ -33,9 +33,8 @@
 //  groups are called in the order the parameters were declared in and the order
 //  is part of what a host's parameter index addresses.
 //
-//  What is deliberately NOT restated: the six model-list choice names
-//  (tape_type, valve_type, amp_type, transformer_type, digital_type,
-//  vinyl_type). They are single-sourced in the headers and arrive here through
+//  What is deliberately NOT restated: the five model-list choice names
+//  (tape_type, valve_type, transformer_type, digital_type, vinyl_type). They are single-sourced in the headers and arrive here through
 //  the extracted table; restating them would be the second copy that already
 //  drifted once. Their rows pin the count and the default index, and the sweep
 //  holds their Off-last convention.
@@ -265,15 +264,18 @@ constexpr Expect uniqueExpectations[] =
     // -- addLanguageControl -----------------------------------------------------
     { "language", 'C', "Language", 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, "", 2, languageOptions },
 
-    // -- addSaturationMixControls: the seven SOURCE knobs -----------------------
+    // -- addSaturationMixControls: the nine SOURCE knobs -----------------------
     { "tape_source", 'F', "Tape", 1.0f, 0.0f, 1.0f, 0.001f, 0.50f, "%", 0, noOptions },
-    { "vinyl_source", 'F', "Vinyl", 0.0f, 0.0f, 1.0f, 0.001f, 0.50f, "%", 0, noOptions },
-    { "cassette_source", 'F', "Cassette", 0.0f, 0.0f, 1.0f, 0.001f, 0.50f, "%", 0, noOptions },
-    { "digital_source", 'F', "Digital", 0.0f, 0.0f, 1.0f, 0.001f, 0.50f, "%", 0, noOptions },
-    { "amp_source", 'F', "Amp", 0.0f, 0.0f, 1.0f, 0.001f, 0.50f, "%", 0, noOptions },
     { "valve_source", 'F', "Valve", 0.0f, 0.0f, 1.0f, 0.001f, 0.50f, "%", 0, noOptions },
+    { "pentode_source", 'F', "Pentode", 0.0f, 0.0f, 1.0f, 0.001f, 0.50f, "%", 0, noOptions },
+    { "triode_source", 'F', "Triode", 0.0f, 0.0f, 1.0f, 0.001f, 0.50f, "%", 0, noOptions },
+    { "transistor_source", 'F', "Transistor", 0.0f, 0.0f, 1.0f, 0.001f, 0.50f, "%", 0,
+      noOptions },
+    { "fold_source", 'F', "Fold", 0.0f, 0.0f, 1.0f, 0.001f, 0.50f, "%", 0, noOptions },
+    { "glass_source", 'F', "Glass", 0.0f, 0.0f, 1.0f, 0.001f, 0.50f, "%", 0, noOptions },
     { "transformer_source", 'F', "Transformer", 0.0f, 0.0f, 1.0f, 0.001f, 0.50f, "%", 0,
       noOptions },
+    { "digital_source", 'F', "Digital", 0.0f, 0.0f, 1.0f, 0.001f, 0.50f, "%", 0, noOptions },
 
     // -- addAmpVoicingControls --------------------------------------------------
     { "sag", 'F', "Sag", 0.0f, 0.0f, 1.0f, 0.001f, 0.50f, "%", 0, noOptions },
@@ -330,7 +332,6 @@ constexpr Expect uniqueExpectations[] =
 
     // -- addTypeSwitchControls: the five model lists ----------------------------
     { "valve_type", 'C', "Valve Type", 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, "", 7, noOptions },
-    { "amp_type", 'C', "Amp Type", 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, "", 7, noOptions },
     { "transformer_type", 'C', "Transformer Type", 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, "", 6, noOptions },
     { "digital_type", 'C', "Digital Type", 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, "", 6, noOptions },
     { "vinyl_type", 'C', "Vinyl Type", 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, "", 7, noOptions },

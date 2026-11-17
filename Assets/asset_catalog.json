@@ -11,725 +11,732 @@
       "height": 832,
       "items": [
         {
-          "key": "tab.machine",
-          "label": "MACHINE",
+          "key": "tab.basic",
+          "label": "BASIC",
           "family": "navigation",
           "shape": "reel",
           "tile": 0
+        },
+        {
+          "key": "tab.machine",
+          "label": "MACHINE",
+          "family": "navigation",
+          "shape": "knob",
+          "tile": 1
         },
         {
           "key": "tab.front_end",
           "label": "FRONT END",
           "family": "navigation",
           "shape": "input",
-          "tile": 1
+          "tile": 2
         },
         {
           "key": "tab.saturation",
           "label": "SATURATION",
           "family": "navigation",
           "shape": "wave",
-          "tile": 2
+          "tile": 3
         },
         {
           "key": "tab.character",
           "label": "CHARACTER",
           "family": "navigation",
           "shape": "knob",
-          "tile": 3
+          "tile": 4
         },
         {
           "key": "tab.noise",
           "label": "NOISE",
           "family": "navigation",
           "shape": "wobble",
-          "tile": 4
+          "tile": 5
         },
         {
           "key": "tab.record",
           "label": "RECORD",
           "family": "navigation",
           "shape": "vinyl",
-          "tile": 5
+          "tile": 6
         },
         {
           "key": "tab.vinyl",
           "label": "VINYL",
           "family": "navigation",
           "shape": "vinyl",
-          "tile": 6
+          "tile": 7
         },
         {
           "key": "tab.mix",
           "label": "MIX",
           "family": "navigation",
           "shape": "sliders",
-          "tile": 7
+          "tile": 8
         },
         {
           "key": "tab.subfund",
           "label": "SUBFUND",
           "family": "navigation",
           "shape": "octave",
-          "tile": 8
+          "tile": 9
         },
         {
           "key": "tab.delay",
           "label": "DELAY",
           "family": "navigation",
           "shape": "echo",
-          "tile": 9
+          "tile": 10
         },
         {
           "key": "tab.reverb",
           "label": "REVERB",
           "family": "navigation",
           "shape": "room",
-          "tile": 10
+          "tile": 11
         },
         {
           "key": "tab.dyn",
           "label": "DYN",
           "family": "navigation",
           "shape": "envelope",
-          "tile": 11
+          "tile": 12
         },
         {
           "key": "tab.out_eq",
           "label": "OUT EQ",
           "family": "navigation",
           "shape": "eq",
-          "tile": 12
+          "tile": 13
         },
         {
           "key": "tab.in_eq",
           "label": "IN EQ",
           "family": "navigation",
           "shape": "eq",
-          "tile": 13
+          "tile": 14
         },
         {
           "key": "tab.models",
           "label": "MODELS",
           "family": "navigation",
           "shape": "chip",
-          "tile": 14
+          "tile": 15
         },
         {
           "key": "tab.settings",
           "label": "SETTINGS",
           "family": "navigation",
           "shape": "gear",
-          "tile": 15
+          "tile": 16
         },
         {
           "key": "tab.autotune",
           "label": "AUTOTUNE",
           "family": "navigation",
           "shape": "note",
-          "tile": 16
+          "tile": 17
         },
         {
           "key": "tab.comp",
           "label": "COMP",
           "family": "navigation",
           "shape": "compressor",
-          "tile": 17
+          "tile": 18
         },
         {
           "key": "tab.drive",
           "label": "DRIVE",
           "family": "navigation",
           "shape": "wave",
-          "tile": 18
+          "tile": 19
         },
         {
           "key": "tab.shape",
           "label": "SHAPE",
           "family": "navigation",
           "shape": "filter",
-          "tile": 19
+          "tile": 20
         },
         {
           "key": "tab.motion",
           "label": "MOTION",
           "family": "navigation",
           "shape": "sine",
-          "tile": 20
+          "tile": 21
         },
         {
           "key": "tab.pitch",
           "label": "PITCH",
           "family": "navigation",
           "shape": "note",
-          "tile": 21
+          "tile": 22
         },
         {
           "key": "family.tape",
           "label": "Tape family",
           "family": "navigation",
           "shape": "reel",
-          "tile": 22
+          "tile": 23
         },
         {
           "key": "family.fx",
           "label": "Effects family",
           "family": "navigation",
           "shape": "echo",
-          "tile": 23
+          "tile": 24
         },
         {
           "key": "family.setup",
           "label": "Setup family",
           "family": "navigation",
           "shape": "gear",
-          "tile": 24
+          "tile": 25
         },
         {
           "key": "family.menu",
           "label": "Menu",
           "family": "navigation",
           "shape": "menu",
-          "tile": 25
+          "tile": 26
         },
         {
           "key": "family.back",
           "label": "Back",
           "family": "navigation",
           "shape": "back",
-          "tile": 26
+          "tile": 27
         },
         {
           "key": "family.close",
           "label": "Close",
           "family": "navigation",
           "shape": "close",
-          "tile": 27
+          "tile": 28
         },
         {
           "key": "family.expand",
           "label": "Expand",
           "family": "navigation",
           "shape": "expand",
-          "tile": 28
+          "tile": 29
         },
         {
           "key": "family.collapse",
           "label": "Collapse",
           "family": "navigation",
           "shape": "collapse",
-          "tile": 29
+          "tile": 30
         },
         {
           "key": "switch.bypass",
           "label": "Bypass",
           "family": "controls",
           "shape": "switch",
-          "tile": 30
+          "tile": 31
         },
         {
           "key": "switch.delta",
           "label": "Delta monitor",
           "family": "controls",
           "shape": "delta",
-          "tile": 31
+          "tile": 32
         },
         {
           "key": "switch.polarity",
           "label": "Polarity",
           "family": "controls",
           "shape": "phase",
-          "tile": 32
+          "tile": 33
         },
         {
           "key": "switch.auto_gain",
           "label": "Auto gain",
           "family": "controls",
           "shape": "level",
-          "tile": 33
+          "tile": 34
         },
         {
           "key": "switch.sync",
           "label": "Tempo sync",
           "family": "controls",
           "shape": "sync",
-          "tile": 34
+          "tile": 35
         },
         {
           "key": "switch.tempo",
           "label": "Tempo",
           "family": "controls",
           "shape": "metronome",
-          "tile": 35
+          "tile": 36
         },
         {
           "key": "switch.oversampling",
           "label": "Oversampling",
           "family": "controls",
           "shape": "steps",
-          "tile": 36
+          "tile": 37
         },
         {
           "key": "switch.lofi",
           "label": "Lo-Fi",
           "family": "controls",
           "shape": "cassette",
-          "tile": 37
+          "tile": 38
         },
         {
           "key": "switch.modern",
           "label": "Modern",
           "family": "controls",
           "shape": "digital",
-          "tile": 38
+          "tile": 39
         },
         {
           "key": "switch.theme",
           "label": "Theme",
           "family": "controls",
           "shape": "sunmoon",
-          "tile": 39
+          "tile": 40
         },
         {
           "key": "switch.language",
           "label": "Language",
           "family": "controls",
           "shape": "globe",
-          "tile": 40
+          "tile": 41
         },
         {
           "key": "switch.renderer",
           "label": "Renderer",
           "family": "controls",
           "shape": "screen",
-          "tile": 41
+          "tile": 42
         },
         {
           "key": "workflow.preset",
           "label": "Preset",
           "family": "presets",
           "shape": "file",
-          "tile": 42
+          "tile": 43
         },
         {
           "key": "workflow.save",
           "label": "Save",
           "family": "presets",
           "shape": "save",
-          "tile": 43
+          "tile": 44
         },
         {
           "key": "workflow.delete",
           "label": "Delete",
           "family": "presets",
           "shape": "trash",
-          "tile": 44
+          "tile": 45
         },
         {
           "key": "workflow.import",
           "label": "Import",
           "family": "presets",
           "shape": "import",
-          "tile": 45
+          "tile": 46
         },
         {
           "key": "workflow.export",
           "label": "Export",
           "family": "presets",
           "shape": "export",
-          "tile": 46
+          "tile": 47
         },
         {
           "key": "workflow.undo",
           "label": "Undo",
           "family": "presets",
           "shape": "undo",
-          "tile": 47
+          "tile": 48
         },
         {
           "key": "workflow.redo",
           "label": "Redo",
           "family": "presets",
           "shape": "redo",
-          "tile": 48
+          "tile": 49
         },
         {
           "key": "workflow.compare",
           "label": "Compare",
           "family": "presets",
           "shape": "compare",
-          "tile": 49
+          "tile": 50
         },
         {
           "key": "workflow.copy_a",
           "label": "Copy to A",
           "family": "presets",
           "shape": "copy",
-          "tile": 50
+          "tile": 51
         },
         {
           "key": "workflow.copy_b",
           "label": "Copy to B",
           "family": "presets",
           "shape": "copy",
-          "tile": 51
+          "tile": 52
         },
         {
           "key": "workflow.slot_a",
           "label": "Slot A",
           "family": "presets",
           "shape": "slot_a",
-          "tile": 52
+          "tile": 53
         },
         {
           "key": "workflow.slot_b",
           "label": "Slot B",
           "family": "presets",
           "shape": "slot_b",
-          "tile": 53
+          "tile": 54
         },
         {
           "key": "workflow.favorite",
           "label": "Favorite",
           "family": "presets",
           "shape": "star",
-          "tile": 54
+          "tile": 55
         },
         {
           "key": "workflow.search",
           "label": "Search",
           "family": "presets",
           "shape": "search",
-          "tile": 55
+          "tile": 56
         },
         {
           "key": "workflow.randomize",
           "label": "Randomize",
           "family": "presets",
           "shape": "dice",
-          "tile": 56
+          "tile": 57
         },
         {
           "key": "workflow.reset",
           "label": "Reset",
           "family": "presets",
           "shape": "reset",
-          "tile": 57
+          "tile": 58
         },
         {
           "key": "files.model",
           "label": "Neural model",
           "family": "files",
           "shape": "chip",
-          "tile": 58
+          "tile": 59
         },
         {
           "key": "files.impulse",
           "label": "Impulse response",
           "family": "files",
           "shape": "wave_file",
-          "tile": 59
+          "tile": 60
         },
         {
           "key": "files.browse",
           "label": "Browse",
           "family": "files",
           "shape": "folder",
-          "tile": 60
+          "tile": 61
         },
         {
           "key": "files.load",
           "label": "Load",
           "family": "files",
           "shape": "import",
-          "tile": 61
+          "tile": 62
         },
         {
           "key": "files.unload",
           "label": "Unload",
           "family": "files",
           "shape": "eject",
-          "tile": 62
+          "tile": 63
         },
         {
           "key": "files.drop",
           "label": "Drop file",
           "family": "files",
           "shape": "download",
-          "tile": 63
+          "tile": 64
         },
         {
           "key": "files.ready",
           "label": "File ready",
           "family": "files",
           "shape": "check",
-          "tile": 64
+          "tile": 65
         },
         {
           "key": "files.missing",
           "label": "File missing",
           "family": "files",
           "shape": "missing",
-          "tile": 65
+          "tile": 66
         },
         {
           "key": "status.active",
           "label": "Active",
           "family": "status",
           "shape": "check",
-          "tile": 66
+          "tile": 67
         },
         {
           "key": "status.inactive",
           "label": "Inactive",
           "family": "status",
           "shape": "circle",
-          "tile": 67
+          "tile": 68
         },
         {
           "key": "status.warning",
           "label": "Warning",
           "family": "status",
           "shape": "warning",
-          "tile": 68
+          "tile": 69
         },
         {
           "key": "status.error",
           "label": "Error",
           "family": "status",
           "shape": "error",
-          "tile": 69
+          "tile": 70
         },
         {
           "key": "status.success",
           "label": "Success",
           "family": "status",
           "shape": "check",
-          "tile": 70
+          "tile": 71
         },
         {
           "key": "status.clipped",
           "label": "Clipped",
           "family": "status",
           "shape": "clip",
-          "tile": 71
+          "tile": 72
         },
         {
           "key": "status.silence",
           "label": "No signal",
           "family": "status",
           "shape": "silence",
-          "tile": 72
+          "tile": 73
         },
         {
           "key": "status.signal",
           "label": "Signal",
           "family": "status",
           "shape": "wave",
-          "tile": 73
+          "tile": 74
         },
         {
           "key": "status.automation",
           "label": "Automated",
           "family": "status",
           "shape": "automation",
-          "tile": 74
+          "tile": 75
         },
         {
           "key": "status.modified",
           "label": "Modified",
           "family": "status",
           "shape": "asterisk",
-          "tile": 75
+          "tile": 76
         },
         {
           "key": "status.default",
           "label": "Default",
           "family": "status",
           "shape": "reset",
-          "tile": 76
+          "tile": 77
         },
         {
           "key": "status.locked",
           "label": "Locked",
           "family": "status",
           "shape": "lock",
-          "tile": 77
+          "tile": 78
         },
         {
           "key": "status.cpu",
           "label": "CPU",
           "family": "status",
           "shape": "cpu",
-          "tile": 78
+          "tile": 79
         },
         {
           "key": "status.latency",
           "label": "Latency",
           "family": "status",
           "shape": "latency",
-          "tile": 79
+          "tile": 80
         },
         {
           "key": "status.mono",
           "label": "Mono",
           "family": "status",
           "shape": "mono",
-          "tile": 80
+          "tile": 81
         },
         {
           "key": "status.stereo",
           "label": "Stereo",
           "family": "status",
           "shape": "stereo",
-          "tile": 81
+          "tile": 82
         },
         {
           "key": "audio.input",
           "label": "Input",
           "family": "audio",
           "shape": "input",
-          "tile": 82
+          "tile": 83
         },
         {
           "key": "audio.output",
           "label": "Output",
           "family": "audio",
           "shape": "output",
-          "tile": 83
+          "tile": 84
         },
         {
           "key": "audio.left",
           "label": "Left channel",
           "family": "audio",
           "shape": "left",
-          "tile": 84
+          "tile": 85
         },
         {
           "key": "audio.right",
           "label": "Right channel",
           "family": "audio",
           "shape": "right",
-          "tile": 85
+          "tile": 86
         },
         {
           "key": "audio.phase_normal",
           "label": "Normal phase",
           "family": "audio",
           "shape": "phase",
-          "tile": 86
+          "tile": 87
         },
         {
           "key": "audio.phase_inverted",
           "label": "Inverted phase",
           "family": "audio",
           "shape": "phase_inverted",
-          "tile": 87
+          "tile": 88
         },
         {
           "key": "audio.peak",
           "label": "Peak",
           "family": "audio",
           "shape": "peak",
-          "tile": 88
+          "tile": 89
         },
         {
           "key": "audio.rms",
           "label": "RMS",
           "family": "audio",
           "shape": "rms",
-          "tile": 89
+          "tile": 90
         },
         {
           "key": "audio.lufs",
           "label": "LUFS",
           "family": "audio",
           "shape": "lufs",
-          "tile": 90
+          "tile": 91
         },
         {
           "key": "audio.vu",
           "label": "VU",
           "family": "audio",
           "shape": "vu",
-          "tile": 91
+          "tile": 92
         },
         {
           "key": "audio.limiter",
           "label": "Limiter",
           "family": "audio",
           "shape": "limiter",
-          "tile": 92
+          "tile": 93
         },
         {
           "key": "audio.width",
           "label": "Stereo width",
           "family": "audio",
           "shape": "stereo",
-          "tile": 93
+          "tile": 94
         },
         {
           "key": "platform.windows",
           "label": "Windows",
           "family": "platform",
           "shape": "windows",
-          "tile": 94
+          "tile": 95
         },
         {
           "key": "platform.macos",
           "label": "macOS",
           "family": "platform",
           "shape": "macos",
-          "tile": 95
+          "tile": 96
         },
         {
           "key": "platform.linux",
           "label": "Linux",
           "family": "platform",
           "shape": "linux",
-          "tile": 96
+          "tile": 97
         },
         {
           "key": "platform.android",
           "label": "Android",
           "family": "platform",
           "shape": "android",
-          "tile": 97
+          "tile": 98
         },
         {
           "key": "platform.vst3",
           "label": "VST3",
           "family": "platform",
           "shape": "plugin",
-          "tile": 98
+          "tile": 99
         },
         {
           "key": "platform.au",
           "label": "Audio Unit",
           "family": "platform",
           "shape": "plugin",
-          "tile": 99
+          "tile": 100
         },
         {
           "key": "platform.auv3",
           "label": "Audio Unit v3",
           "family": "platform",
           "shape": "plugin",
-          "tile": 100
+          "tile": 101
         },
         {
           "key": "platform.standalone",
           "label": "Standalone",
           "family": "platform",
           "shape": "screen",
-          "tile": 101
+          "tile": 102
         },
         {
           "key": "platform.help",
           "label": "Help",
           "family": "platform",
           "shape": "help",
-          "tile": 102
+          "tile": 103
         }
       ],
       "tintable": true
@@ -827,606 +834,620 @@
           "tile": 11
         },
         {
-          "key": "parameter.cassette_source",
-          "label": "CASSETTE SOURCE",
+          "key": "parameter.pentode_source",
+          "label": "PENTODE SOURCE",
           "family": "parameter",
-          "shape": "cassette",
+          "shape": "valve",
           "tile": 12
         },
         {
-          "key": "parameter.vinyl_source",
-          "label": "VINYL SOURCE",
+          "key": "parameter.triode_source",
+          "label": "TRIODE SOURCE",
           "family": "parameter",
-          "shape": "vinyl",
+          "shape": "valve",
           "tile": 13
         },
         {
-          "key": "parameter.amp_source",
-          "label": "AMP SOURCE",
+          "key": "parameter.transistor_source",
+          "label": "TRANSISTOR SOURCE",
           "family": "parameter",
-          "shape": "amp",
+          "shape": "chip",
           "tile": 14
+        },
+        {
+          "key": "parameter.fold_source",
+          "label": "FOLD SOURCE",
+          "family": "parameter",
+          "shape": "wave",
+          "tile": 15
+        },
+        {
+          "key": "parameter.glass_source",
+          "label": "GLASS SOURCE",
+          "family": "parameter",
+          "shape": "spark",
+          "tile": 16
         },
         {
           "key": "parameter.transformer_source",
           "label": "TRANSFORMER SOURCE",
           "family": "parameter",
           "shape": "transformer",
-          "tile": 15
+          "tile": 17
         },
         {
           "key": "parameter.digital_source",
           "label": "DIGITAL SOURCE",
           "family": "parameter",
           "shape": "digital",
-          "tile": 16
+          "tile": 18
         },
         {
           "key": "parameter.amp_bias",
           "label": "AMP BIAS",
           "family": "parameter",
           "shape": "magnet",
-          "tile": 17
+          "tile": 19
         },
         {
           "key": "parameter.sag",
           "label": "SAG",
           "family": "parameter",
           "shape": "envelope",
-          "tile": 18
+          "tile": 20
         },
         {
           "key": "parameter.presence",
           "label": "PRESENCE",
           "family": "parameter",
           "shape": "spark",
-          "tile": 19
+          "tile": 21
         },
         {
           "key": "parameter.cabinet",
           "label": "CABINET",
           "family": "parameter",
           "shape": "speaker",
-          "tile": 20
+          "tile": 22
         },
         {
           "key": "parameter.delay_time",
           "label": "DELAY TIME",
           "family": "parameter",
           "shape": "clock",
-          "tile": 21
+          "tile": 23
         },
         {
           "key": "parameter.delay_feedback",
           "label": "DELAY FEEDBACK",
           "family": "parameter",
           "shape": "echo",
-          "tile": 22
+          "tile": 24
         },
         {
           "key": "parameter.st_offset",
           "label": "ST OFFSET",
           "family": "parameter",
           "shape": "stereo",
-          "tile": 23
+          "tile": 25
         },
         {
           "key": "parameter.noise",
           "label": "NOISE",
           "family": "parameter",
           "shape": "noise",
-          "tile": 24
+          "tile": 26
         },
         {
           "key": "parameter.subfund",
           "label": "SUBFUND",
           "family": "parameter",
           "shape": "octave",
-          "tile": 25
+          "tile": 27
         },
         {
           "key": "parameter.preamp",
           "label": "PREAMP",
           "family": "parameter",
           "shape": "input",
-          "tile": 26
+          "tile": 28
         },
         {
           "key": "parameter.distortion",
           "label": "DISTORTION",
           "family": "parameter",
           "shape": "wave",
-          "tile": 27
+          "tile": 29
         },
         {
           "key": "parameter.flux",
           "label": "FLUX",
           "family": "parameter",
           "shape": "magnet",
-          "tile": 28
+          "tile": 30
         },
         {
           "key": "parameter.wear",
           "label": "WEAR",
           "family": "parameter",
           "shape": "scratch",
-          "tile": 29
+          "tile": 31
         },
         {
           "key": "parameter.mechanics",
           "label": "MECHANICS",
           "family": "parameter",
           "shape": "gear",
-          "tile": 30
+          "tile": 32
         },
         {
           "key": "parameter.reverb",
           "label": "REVERB",
           "family": "parameter",
           "shape": "room",
-          "tile": 31
+          "tile": 33
         },
         {
           "key": "parameter.reverb_size",
           "label": "REVERB SIZE",
           "family": "parameter",
           "shape": "room",
-          "tile": 32
+          "tile": 34
         },
         {
           "key": "parameter.vinyl",
           "label": "VINYL",
           "family": "parameter",
           "shape": "vinyl",
-          "tile": 33
+          "tile": 35
         },
         {
           "key": "parameter.vinyl_crackle",
           "label": "VINYL CRACKLE",
           "family": "parameter",
           "shape": "noise",
-          "tile": 34
+          "tile": 36
         },
         {
           "key": "parameter.vinyl_rumble",
           "label": "VINYL RUMBLE",
           "family": "parameter",
           "shape": "wobble",
-          "tile": 35
+          "tile": 37
         },
         {
           "key": "parameter.noise_lvl",
           "label": "NOISE LVL",
           "family": "parameter",
           "shape": "level",
-          "tile": 36
+          "tile": 38
         },
         {
           "key": "parameter.st_link",
           "label": "ST LINK",
           "family": "parameter",
           "shape": "link",
-          "tile": 37
+          "tile": 39
         },
         {
           "key": "parameter.vinyl_dust",
           "label": "VINYL DUST",
           "family": "parameter",
           "shape": "dust",
-          "tile": 38
+          "tile": 40
         },
         {
           "key": "parameter.vinyl_scratch",
           "label": "VINYL SCRATCH",
           "family": "parameter",
           "shape": "scratch",
-          "tile": 39
+          "tile": 41
         },
         {
           "key": "parameter.vinyl_warp",
           "label": "VINYL WARP",
           "family": "parameter",
           "shape": "wobble",
-          "tile": 40
+          "tile": 42
         },
         {
           "key": "parameter.vinyl_electrical",
           "label": "VINYL ELECTRICAL",
           "family": "parameter",
           "shape": "spark",
-          "tile": 41
+          "tile": 43
         },
         {
           "key": "parameter.vinyl_clicks",
           "label": "VINYL CLICKS",
           "family": "parameter",
           "shape": "pulse",
-          "tile": 42
+          "tile": 44
         },
         {
           "key": "parameter.in_low",
           "label": "IN LOW",
           "family": "parameter",
           "shape": "eq_low",
-          "tile": 43
+          "tile": 45
         },
         {
           "key": "parameter.in_mid",
           "label": "IN MID",
           "family": "parameter",
           "shape": "eq_mid",
-          "tile": 44
+          "tile": 46
         },
         {
           "key": "parameter.in_high",
           "label": "IN HIGH",
           "family": "parameter",
           "shape": "eq_high",
-          "tile": 45
+          "tile": 47
         },
         {
           "key": "parameter.out_low",
           "label": "OUT LOW",
           "family": "parameter",
           "shape": "eq_low",
-          "tile": 46
+          "tile": 48
         },
         {
           "key": "parameter.out_mid",
           "label": "OUT MID",
           "family": "parameter",
           "shape": "eq_mid",
-          "tile": 47
+          "tile": 49
         },
         {
           "key": "parameter.out_high",
           "label": "OUT HIGH",
           "family": "parameter",
           "shape": "eq_high",
-          "tile": 48
+          "tile": 50
         },
         {
           "key": "parameter.di",
           "label": "DI",
           "family": "parameter",
           "shape": "input",
-          "tile": 49
+          "tile": 51
         },
         {
           "key": "parameter.di_load",
           "label": "DI LOAD",
           "family": "parameter",
           "shape": "coil",
-          "tile": 50
+          "tile": 52
         },
         {
           "key": "parameter.di_transformer",
           "label": "DI TRANSFORMER",
           "family": "parameter",
           "shape": "transformer",
-          "tile": 51
+          "tile": 53
         },
         {
           "key": "parameter.in_hp_freq",
           "label": "IN HP FREQ",
           "family": "parameter",
           "shape": "filter",
-          "tile": 52
+          "tile": 54
         },
         {
           "key": "parameter.in_lp_freq",
           "label": "IN LP FREQ",
           "family": "parameter",
           "shape": "filter",
-          "tile": 53
+          "tile": 55
         },
         {
           "key": "parameter.in_eq_q",
           "label": "IN EQ Q",
           "family": "parameter",
           "shape": "eq_mid",
-          "tile": 54
+          "tile": 56
         },
         {
           "key": "parameter.out_hp_freq",
           "label": "OUT HP FREQ",
           "family": "parameter",
           "shape": "filter",
-          "tile": 55
+          "tile": 57
         },
         {
           "key": "parameter.out_lp_freq",
           "label": "OUT LP FREQ",
           "family": "parameter",
           "shape": "filter",
-          "tile": 56
+          "tile": 58
         },
         {
           "key": "parameter.out_eq_q",
           "label": "OUT EQ Q",
           "family": "parameter",
           "shape": "eq_mid",
-          "tile": 57
+          "tile": 59
         },
         {
           "key": "parameter.delay_pingpong",
           "label": "DELAY PINGPONG",
           "family": "parameter",
           "shape": "pingpong",
-          "tile": 58
+          "tile": 60
         },
         {
           "key": "parameter.transient_attack",
           "label": "TRANSIENT ATTACK",
           "family": "parameter",
           "shape": "envelope",
-          "tile": 59
+          "tile": 61
         },
         {
           "key": "parameter.transient_sustain",
           "label": "TRANSIENT SUSTAIN",
           "family": "parameter",
           "shape": "envelope",
-          "tile": 60
+          "tile": 62
         },
         {
           "key": "parameter.transient_mix",
           "label": "TRANSIENT MIX",
           "family": "parameter",
           "shape": "sliders",
-          "tile": 61
+          "tile": 63
         },
         {
           "key": "parameter.neural_mix",
           "label": "NEURAL MIX",
           "family": "parameter",
           "shape": "chip",
-          "tile": 62
+          "tile": 64
         },
         {
           "key": "parameter.ir_mix",
           "label": "IR MIX",
           "family": "parameter",
           "shape": "wave_file",
-          "tile": 63
+          "tile": 65
         },
         {
           "key": "parameter.reverb_predelay",
           "label": "REVERB PREDELAY",
           "family": "parameter",
           "shape": "clock",
-          "tile": 64
+          "tile": 66
         },
         {
           "key": "parameter.reverb_damp",
           "label": "REVERB DAMP",
           "family": "parameter",
           "shape": "filter",
-          "tile": 65
+          "tile": 67
         },
         {
           "key": "parameter.reverb_width",
           "label": "REVERB WIDTH",
           "family": "parameter",
           "shape": "stereo",
-          "tile": 66
+          "tile": 68
         },
         {
           "key": "parameter.delay_tone",
           "label": "DELAY TONE",
           "family": "parameter",
           "shape": "eq",
-          "tile": 67
+          "tile": 69
         },
         {
           "key": "parameter.delay_lowcut",
           "label": "DELAY LOWCUT",
           "family": "parameter",
           "shape": "filter",
-          "tile": 68
+          "tile": 70
         },
         {
           "key": "parameter.delay_damp",
           "label": "DELAY DAMP",
           "family": "parameter",
           "shape": "filter",
-          "tile": 69
+          "tile": 71
         },
         {
           "key": "parameter.reverb_lowcut",
           "label": "REVERB LOWCUT",
           "family": "parameter",
           "shape": "filter",
-          "tile": 70
+          "tile": 72
         },
         {
           "key": "parameter.fx_wah",
           "label": "FX WAH",
           "family": "parameter",
           "shape": "filter",
-          "tile": 71
+          "tile": 73
         },
         {
           "key": "parameter.fx_anti_spike",
           "label": "FX ANTI SPIKE",
           "family": "parameter",
           "shape": "pulse",
-          "tile": 72
+          "tile": 74
         },
         {
           "key": "parameter.fx_gate",
           "label": "FX GATE",
           "family": "parameter",
           "shape": "silence",
-          "tile": 73
+          "tile": 75
         },
         {
           "key": "parameter.fx_overdrive",
           "label": "FX OVERDRIVE",
           "family": "parameter",
           "shape": "wave",
-          "tile": 74
+          "tile": 76
         },
         {
           "key": "parameter.fx_fuzz",
           "label": "FX FUZZ",
           "family": "parameter",
           "shape": "wave",
-          "tile": 75
+          "tile": 77
         },
         {
           "key": "parameter.fx_wavefolder",
           "label": "FX WAVEFOLDER",
           "family": "parameter",
           "shape": "wave",
-          "tile": 76
+          "tile": 78
         },
         {
           "key": "parameter.fx_bitcrusher",
           "label": "FX BITCRUSHER",
           "family": "parameter",
           "shape": "steps",
-          "tile": 77
+          "tile": 79
         },
         {
           "key": "parameter.fx_rate_crusher",
           "label": "FX RATE CRUSHER",
           "family": "parameter",
           "shape": "pulse",
-          "tile": 78
+          "tile": 80
         },
         {
           "key": "parameter.fx_ring_mod",
           "label": "FX RING MOD",
           "family": "parameter",
           "shape": "sine",
-          "tile": 79
+          "tile": 81
         },
         {
           "key": "parameter.fx_octaver",
           "label": "FX OCTAVER",
           "family": "parameter",
           "shape": "octave",
-          "tile": 80
+          "tile": 82
         },
         {
           "key": "parameter.fx_pitch",
           "label": "FX PITCH",
           "family": "parameter",
           "shape": "note",
-          "tile": 81
+          "tile": 83
         },
         {
           "key": "parameter.fx_comb",
           "label": "FX COMB",
           "family": "parameter",
           "shape": "filter",
-          "tile": 82
+          "tile": 84
         },
         {
           "key": "parameter.fx_formant",
           "label": "FX FORMANT",
           "family": "parameter",
           "shape": "eq_mid",
-          "tile": 83
+          "tile": 85
         },
         {
           "key": "parameter.fx_dynamic_eq",
           "label": "FX DYNAMIC EQ",
           "family": "parameter",
           "shape": "eq",
-          "tile": 84
+          "tile": 86
         },
         {
           "key": "parameter.fx_de_esser",
           "label": "FX DE ESSER",
           "family": "parameter",
           "shape": "filter",
-          "tile": 85
+          "tile": 87
         },
         {
           "key": "parameter.fx_chorus",
           "label": "FX CHORUS",
           "family": "parameter",
           "shape": "stereo",
-          "tile": 86
+          "tile": 88
         },
         {
           "key": "parameter.fx_flanger",
           "label": "FX FLANGER",
           "family": "parameter",
           "shape": "wobble",
-          "tile": 87
+          "tile": 89
         },
         {
           "key": "parameter.fx_phaser",
           "label": "FX PHASER",
           "family": "parameter",
           "shape": "phase",
-          "tile": 88
+          "tile": 90
         },
         {
           "key": "parameter.fx_tremolo",
           "label": "FX TREMOLO",
           "family": "parameter",
           "shape": "envelope",
-          "tile": 89
+          "tile": 91
         },
         {
           "key": "parameter.fx_vibrato",
           "label": "FX VIBRATO",
           "family": "parameter",
           "shape": "wobble",
-          "tile": 90
+          "tile": 92
         },
         {
           "key": "parameter.fx_rotary",
           "label": "FX ROTARY",
           "family": "parameter",
           "shape": "reel",
-          "tile": 91
+          "tile": 93
         },
         {
           "key": "parameter.fx_vocoder",
           "label": "FX VOCODER",
           "family": "parameter",
           "shape": "chip",
-          "tile": 92
+          "tile": 94
         },
         {
           "key": "parameter.fx_granular",
           "label": "FX GRANULAR",
           "family": "parameter",
           "shape": "spark",
-          "tile": 93
+          "tile": 95
         },
         {
           "key": "parameter.fx_spectral",
           "label": "FX SPECTRAL",
           "family": "parameter",
           "shape": "eq_high",
-          "tile": 94
+          "tile": 96
         },
         {
           "key": "parameter.fx_speed",
           "label": "FX SPEED",
           "family": "parameter",
           "shape": "clock",
-          "tile": 95
+          "tile": 97
         },
         {
           "key": "parameter.comp_upward",
           "label": "COMP UPWARD",
           "family": "parameter",
           "shape": "compressor",
-          "tile": 96
+          "tile": 98
         },
         {
           "key": "parameter.fx_stutter",
           "label": "FX STUTTER",
           "family": "parameter",
           "shape": "echo",
-          "tile": 97
+          "tile": 99
         }
       ],
       "tintable": true
@@ -1600,68 +1621,12 @@
           "tile": 19
         },
         {
-          "key": "model.amp.fender_blackface",
-          "label": "Fender Blackface",
-          "family": "amp",
-          "shape": "amp",
-          "variant": 0,
-          "tile": 20
-        },
-        {
-          "key": "model.amp.marshall_plexi",
-          "label": "Marshall Plexi",
-          "family": "amp",
-          "shape": "amp",
-          "variant": 1,
-          "tile": 21
-        },
-        {
-          "key": "model.amp.vox_ac30",
-          "label": "Vox AC30",
-          "family": "amp",
-          "shape": "amp",
-          "variant": 2,
-          "tile": 22
-        },
-        {
-          "key": "model.amp.hiwatt_dr103",
-          "label": "Hiwatt DR103",
-          "family": "amp",
-          "shape": "amp",
-          "variant": 3,
-          "tile": 23
-        },
-        {
-          "key": "model.amp.mesa_recto",
-          "label": "Mesa Recto",
-          "family": "amp",
-          "shape": "amp",
-          "variant": 4,
-          "tile": 24
-        },
-        {
-          "key": "model.amp.matchless_hc30",
-          "label": "Matchless HC30",
-          "family": "amp",
-          "shape": "amp",
-          "variant": 5,
-          "tile": 25
-        },
-        {
-          "key": "model.amp.off",
-          "label": "Off",
-          "family": "amp",
-          "shape": "off",
-          "variant": 6,
-          "tile": 26
-        },
-        {
           "key": "model.transformer.jensen_jt_11p",
           "label": "Jensen JT-11P",
           "family": "transformer",
           "shape": "transformer",
           "variant": 0,
-          "tile": 27
+          "tile": 20
         },
         {
           "key": "model.transformer.cinemag_cm_7510",
@@ -1669,7 +1634,7 @@
           "family": "transformer",
           "shape": "transformer",
           "variant": 1,
-          "tile": 28
+          "tile": 21
         },
         {
           "key": "model.transformer.lundahl_ll1544",
@@ -1677,7 +1642,7 @@
           "family": "transformer",
           "shape": "transformer",
           "variant": 2,
-          "tile": 29
+          "tile": 22
         },
         {
           "key": "model.transformer.oep_a262",
@@ -1685,7 +1650,7 @@
           "family": "transformer",
           "shape": "transformer",
           "variant": 3,
-          "tile": 30
+          "tile": 23
         },
         {
           "key": "model.transformer.sowter_4381",
@@ -1693,7 +1658,7 @@
           "family": "transformer",
           "shape": "transformer",
           "variant": 4,
-          "tile": 31
+          "tile": 24
         },
         {
           "key": "model.transformer.off",
@@ -1701,7 +1666,7 @@
           "family": "transformer",
           "shape": "off",
           "variant": 5,
-          "tile": 32
+          "tile": 25
         },
         {
           "key": "model.digital.16_bit",
@@ -1709,7 +1674,7 @@
           "family": "digital",
           "shape": "digital",
           "variant": 0,
-          "tile": 33
+          "tile": 26
         },
         {
           "key": "model.digital.12_bit",
@@ -1717,7 +1682,7 @@
           "family": "digital",
           "shape": "digital",
           "variant": 1,
-          "tile": 34
+          "tile": 27
         },
         {
           "key": "model.digital.8_bit",
@@ -1725,7 +1690,7 @@
           "family": "digital",
           "shape": "digital",
           "variant": 2,
-          "tile": 35
+          "tile": 28
         },
         {
           "key": "model.digital.bit_crush",
@@ -1733,7 +1698,7 @@
           "family": "digital",
           "shape": "digital",
           "variant": 3,
-          "tile": 36
+          "tile": 29
         },
         {
           "key": "model.digital.sample_hold",
@@ -1741,7 +1706,7 @@
           "family": "digital",
           "shape": "digital",
           "variant": 4,
-          "tile": 37
+          "tile": 30
         },
         {
           "key": "model.digital.off",
@@ -1749,7 +1714,7 @@
           "family": "digital",
           "shape": "off",
           "variant": 5,
-          "tile": 38
+          "tile": 31
         },
         {
           "key": "model.vinyl.standard_lp",
@@ -1757,7 +1722,7 @@
           "family": "vinyl",
           "shape": "vinyl",
           "variant": 0,
-          "tile": 39
+          "tile": 32
         },
         {
           "key": "model.vinyl.single",
@@ -1765,7 +1730,7 @@
           "family": "vinyl",
           "shape": "vinyl",
           "variant": 1,
-          "tile": 40
+          "tile": 33
         },
         {
           "key": "model.vinyl.shellac_78",
@@ -1773,7 +1738,7 @@
           "family": "vinyl",
           "shape": "vinyl",
           "variant": 2,
-          "tile": 41
+          "tile": 34
         },
         {
           "key": "model.vinyl.worn_classic",
@@ -1781,7 +1746,7 @@
           "family": "vinyl",
           "shape": "vinyl",
           "variant": 3,
-          "tile": 42
+          "tile": 35
         },
         {
           "key": "model.vinyl.dubplate",
@@ -1789,7 +1754,7 @@
           "family": "vinyl",
           "shape": "vinyl",
           "variant": 4,
-          "tile": 43
+          "tile": 36
         },
         {
           "key": "model.vinyl.half_speed_master",
@@ -1797,7 +1762,7 @@
           "family": "vinyl",
           "shape": "vinyl",
           "variant": 5,
-          "tile": 44
+          "tile": 37
         },
         {
           "key": "model.vinyl.off",
@@ -1805,84 +1770,98 @@
           "family": "vinyl",
           "shape": "off",
           "variant": 6,
-          "tile": 45
+          "tile": 38
         },
         {
           "key": "model.principle.tape",
           "label": "Tape",
           "family": "model",
           "shape": "reel",
-          "tile": 46
+          "tile": 39
         },
         {
           "key": "model.principle.valve",
           "label": "Valve",
           "family": "model",
           "shape": "valve",
-          "tile": 47
+          "tile": 40
         },
         {
-          "key": "model.principle.cassette",
-          "label": "Cassette",
+          "key": "model.principle.pentode",
+          "label": "Pentode",
           "family": "model",
-          "shape": "cassette",
-          "tile": 48
+          "shape": "valve",
+          "tile": 41
         },
         {
-          "key": "model.principle.vinyl",
-          "label": "Vinyl",
+          "key": "model.principle.triode",
+          "label": "Triode",
           "family": "model",
-          "shape": "vinyl",
-          "tile": 49
+          "shape": "valve",
+          "tile": 42
         },
         {
-          "key": "model.principle.amp",
-          "label": "Amplifier",
+          "key": "model.principle.transistor",
+          "label": "Transistor",
           "family": "model",
-          "shape": "amp",
-          "tile": 50
+          "shape": "chip",
+          "tile": 43
+        },
+        {
+          "key": "model.principle.fold",
+          "label": "Fold",
+          "family": "model",
+          "shape": "wave",
+          "tile": 44
+        },
+        {
+          "key": "model.principle.glass",
+          "label": "Glass",
+          "family": "model",
+          "shape": "spark",
+          "tile": 45
         },
         {
           "key": "model.principle.transformer",
           "label": "Transformer",
           "family": "model",
           "shape": "transformer",
-          "tile": 51
+          "tile": 46
         },
         {
           "key": "model.principle.digital",
           "label": "Digital",
           "family": "model",
           "shape": "digital",
-          "tile": 52
+          "tile": 47
         },
         {
           "key": "model.neural",
           "label": "Neural model",
           "family": "model",
           "shape": "chip",
-          "tile": 53
+          "tile": 48
         },
         {
           "key": "model.impulse_response",
           "label": "Impulse response",
           "family": "model",
           "shape": "wave_file",
-          "tile": 54
+          "tile": 49
         },
         {
           "key": "model.cabinet",
           "label": "Cabinet",
           "family": "model",
           "shape": "speaker",
-          "tile": 55
+          "tile": 50
         },
         {
           "key": "model.room",
           "label": "Room",
           "family": "model",
           "shape": "room",
-          "tile": 56
+          "tile": 51
         }
       ],
       "tintable": true

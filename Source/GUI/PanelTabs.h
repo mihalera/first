@@ -54,16 +54,17 @@ namespace j37panel
         std::size_t controls[16];
     };
 
-    // Twenty-two pages under three large families - TAPE, FX, SETUP - because
+    // Twenty-three pages under four large families - BOX, FX, RACK, SETUP - because
     // the panel carries ninety-seven knobs and no single subject should own a crowded
     // page. Walking the bar left to right inside a family still walks the signal:
     //
     // Index map, for reading the table below:
     //   0 input  1 drive  2 bias  3 tone  4 character  5 wow  6 flutter  7 mix
     //   8 output  9 stereo_width
-    //   10 tape_source  11 valve_source  12 cassette_source  13 vinyl_source
-    //   14 amp_source  15 transformer_source  16 digital_source
-    //   17 amp_bias  18 sag  19 presence  20 cabinet
+    //   10 tape_source  11 valve_source  12 pentode_source  13 triode_source
+    //   14 transistor_source  15 fold_source  16 glass_source
+    //   17 transformer_source  18 digital_source
+    //   19 amp_bias  20 sag  21 presence  22 cabinet
     //   21 delay_time  22 delay_feedback  23 st_offset
     //   24 noise  25 subfund  26 preamp  27 distortion  28 flux  29 wear
     //   30 mechanics  31 reverb  32 reverb_size
@@ -116,12 +117,22 @@ namespace j37panel
     //  it: the table below, the subtitle list and the coverage check further
     //  down all size themselves from this constant, so adding a page cannot
     //  leave one of them behind.
-    inline constexpr std::size_t numTabPages = 22;
+    inline constexpr std::size_t numTabPages = 23;
     inline constexpr std::array<TabSpec, numTabPages> tabSpecs { {
-        // ---- TAPE family (9 pages): the machine and everything feeding it ---
+        // ---- BOX family (10 pages): the machine and everything feeding it ---
         //  input, tone (BRIGHT), character (TONE), mix, stereo_width, output
-        { "MACHINE", "What goes in, how the machine colours it, and what comes out.",
-                     7, 0, { 0, 3, 4, 7, 9, 8, 37 } },
+        { "BASIC", "What goes in, how the machine colours it, and what comes out.",
+                     7, 0, { 0, 3, 4, 7, 9, 8, 39 } },
+        //  The machine's own IDENTITY, on a page of its own: every TYPE list
+        //  (the tape stock, the valve, the transformer, the converter and the
+        //  record) and the two transport speeds - the deck's and the record's.
+        //  They are COMBO BOXES rather than knobs, so the page carries no knob
+        //  row: resized() lays the selectors across the grid the page would
+        //  otherwise leave empty, and setCurrentTab shows them only here.
+        { "MACHINE", "What this machine is: the tape stock and the three circuit "
+                     "types that voice the saturation, the record's own type, "
+                     "and the two speeds - the deck's and the turntable's.",
+                     0, 0, {} },
         //  di, di_load, di_transformer, preamp, distortion - the gain stages
         //  IN FRONT of the tape. The DI pad/load combo rides this page beside
         //  the knob row in resized(), with the DI it belongs to.
@@ -129,7 +140,7 @@ namespace j37panel
                        "push the front end, and the DI loads, pads and colours "
                        "the instrument before any of it - with its PAD and LOAD "
                        "selector beside the row.",
-                     5, 0, { 49, 50, 51, 26, 27 } },
+                     5, 0, { 51, 52, 53, 28, 29 } },
         //  drive, bias - the head's magnetic saturation itself.
         { "SATURATION", "The magnetic saturation the head applies: DRIVE sets how "
                         "hard the tape is pushed and BIAS where its operating "
@@ -147,7 +158,7 @@ namespace j37panel
                        "record's GENERATION / TURNTABLE / CARTRIDGE re-voice the "
                        "whole vinyl stage from under this row, and the NEURAL "
                        "model picker takes the band's last column.",
-                     3, 0, { 28, 19, 20 } },
+                     3, 0, { 30, 21, 22 } },
         //  noise, noise_lvl, wow, flutter, wear, mechanics - the MACHINE's own
         //  departures from a clean signal. The record's five FAULTS are on the
         //  RECORD page: each is a mechanism of the RECORD's noise, not the
@@ -157,7 +168,7 @@ namespace j37panel
                    "the sources run; WOW and FLUTTER are the transport's noise, "
                    "WEAR and MECHANICS the medium's and the mechanism's. The "
                    "record's five FAULTS are on the RECORD page.",
-                     6, 0, { 24, 36, 5, 6, 29, 30 } },
+                     6, 0, { 26, 38, 5, 6, 31, 32 } },
         //  The record's five FAULTS, on a page of their own because each IS a
         //  mechanism of the record's own noise: surface texture, a repeating
         //  wound, the platter's warp, the cartridge's earthing, the pressing's
@@ -166,7 +177,7 @@ namespace j37panel
                     "SCRATCH a wound crossed once per revolution, WARP the level "
                     "breathing at the platter rate, ELECTRICAL the cartridge's "
                     "earthing, CLICKS the pressing's sharp faults.",
-                     5, 0, { 38, 39, 40, 41, 42 } },
+                     5, 0, { 40, 41, 42, 43, 44 } },
         //  The vinyl stage's own three knobs. These are here and NOT also on
         //  NOISE: they are the record's CHARACTER, while the faults are its
         //  noise - listing them on both pages would put the same knob on two
@@ -176,7 +187,7 @@ namespace j37panel
                    "the platter's own low thump. GENERATION / TURNTABLE / "
                    "CARTRIDGE re-voice it all from CHARACTER; the FAULTS are on "
                    "RECORD.",
-                     3, 0, { 33, 34, 35 } },
+                     3, 0, { 35, 36, 37 } },
         //  The seven SOURCE knobs alone: the saturation mix IS the page, so the
         //  user dialling TAPE up against VALVE is looking at the whole mix and
         //  nothing else. The mix bar in the band under the row shows the same
@@ -188,7 +199,7 @@ namespace j37panel
                  "is heard, and the bar under the row shows the running mix. A "
                  "machine whose own TYPE is OFF contributes nothing and its "
                  "share is redistributed among the rest.",
-                     7, 0, { 10, 11, 12, 13, 14, 15, 16 } },
+                     9, 0, { 10, 11, 12, 13, 14, 15, 16, 17, 18 } },
         //  amp_bias, sag, subfund - everything that BENDS the curve once the
         //  gain stages have pushed it. Three knobs that share one idea (the
         //  curve after the mix), so they are a page of three rather than three
@@ -196,7 +207,7 @@ namespace j37panel
         { "SUBFUND", "The curve-benders: AMP BIAS moves the amp stage's operating "
                      "point, SAG lets its supply yield under load, and SUBFUND "
                      "generates the octave below what plays.",
-                     3, 0, { 17, 18, 25 } },
+                     3, 0, { 19, 20, 27 } },
         // ---- FX family (the first four of its ten pages): the second head,
         //  the room, the envelope, the output equaliser. AUTOTUNE and COMP are
         //  FX too and sit at the END of the table, where they were appended;
@@ -211,13 +222,13 @@ namespace j37panel
                    "the feedback from collecting sub-bass and DLY DAMP takes the "
                    "edge off each pass. The deck's TYPE / SYNC DELAY / RATE "
                    "switches sit under the row.",
-                     7, 1, { 21, 22, 23, 58, 67, 68, 69 } },
+                     7, 1, { 23, 24, 25, 60, 69, 70, 71 } },
         { "REVERB", "The room: REVERB is how much of it is in the output, RVB "
                     "SIZE how long the tail runs, PRE-RVB how far behind the note "
                     "it starts, DAMP how dark it is, RVB WIDTH how wide the wet "
                     "pair stands and RVB LOW where the room stops hearing the "
                     "sub-bass.",
-                     6, 1, { 31, 32, 64, 65, 66, 70 } },
+                     6, 1, { 33, 34, 66, 67, 68, 72 } },
         //  transient_attack (54), transient_sustain (55), transient_mix (56).
         //  The stage that acts on the finished signal's envelope rather than on
         //  the waveform - it changes how the sound MOVES without adding a
@@ -227,7 +238,7 @@ namespace j37panel
                  "event; SUS lengthens (positive) or shortens (negative) what "
                  "follows the attack, its body and ring; TR MIX is how much of "
                  "the shaped signal reaches the output.",
-                     3, 1, { 59, 60, 61 } },
+                     3, 1, { 61, 62, 63 } },
         //  out_low, out_mid, out_high and their three corners.
         { "OUT EQ", "The output equaliser, after the machine and before the output "
                     "trim. Nothing downstream responds to what it does, so it "
@@ -235,7 +246,7 @@ namespace j37panel
                     "predictable EQ you use to place the finished sound. Same "
                     "three bands as the input EQ, same transparency at 0 dB; the "
                     "ORDER and corner switches ride the row below.",
-                     6, 1, { 46, 47, 48, 55, 56, 57 } },
+                     6, 1, { 48, 49, 50, 57, 58, 59 } },
         // ---- SETUP family (3 pages): what the machine hears, its file-fed
         //  models, the engine switches ------------------------------------------
         //  in_low, in_mid, in_high and their three corners.
@@ -246,14 +257,14 @@ namespace j37panel
                    "balance. LOW is a shelf at 200 Hz, MID a bell at 1 kHz, HIGH "
                    "a shelf above 4 kHz; all three are transparent at 0 dB, and "
                    "the ORDER and corner switches ride the row below.",
-                     6, 3, { 43, 44, 45, 52, 53, 54 } },
+                     6, 3, { 45, 46, 47, 54, 55, 56 } },
         //  neural_mix, ir_mix - the two file-fed stages, each with its own
         //  loader in the band under the row.
         { "MODELS", "The two file-fed stages: NEURAL blends in a learned model "
                      "and IR MIX an impulse response - a cabinet or a room - "
                      "each loaded from a file through the loader under its own "
                      "knob.",
-                     2, 3, { 62, 63 } },
+                     2, 3, { 64, 65 } },
         //  No knobs of its own: SETTINGS holds the engine and interface
         //  preferences, shown by setCurrentTab rather than by the knob grid.
              { "SETTINGS", "The engine-level switches and interface preferences: rate, language, renderer and UI sounds.",
@@ -264,7 +275,7 @@ namespace j37panel
         //  on the page's own switch row, and UPWARD joins them as the one knob the
         //  band split added.
              { "COMP", "Three-band compressor with an upward stage: threshold, ratio, attack, release, makeup and mix are shared by the bands, and UPWARD lifts the quiet end toward the ceiling.",
-                               1, 1, { 96 } },
+                               1, 1, { 98 } },
 
         // ---- FX family: the creative effects rack, appended where the family's
         //  bar ends. One knob per stage and one stage per pedal, grouped by what
@@ -284,13 +295,13 @@ namespace j37panel
         //  SHAPE the filters, MOTION the modulators, PITCH the time-and-pitch
         //  stages. The rack's own order is in Source/DSP/FxRack.h.
              { "DRIVE", "The rack's harmonics: SPIKE removes guitar clicks, GATE silences what is below its threshold, DRIVE and FUZZ are the two amplifier curves, FOLD is the wavefolder, BITS quantises and RATE holds samples. Each knob is how much of that stage is in the path; 0 is out.",
-                               7, 2, { 72, 73, 74, 75, 76, 77, 78 } },
+                               7, 2, { 74, 75, 76, 77, 78, 79, 80 } },
              { "SHAPE", "The rack's filters: WAH follows the envelope, COMB is a resonant delay, FORMNT walks the vowels, DYN EQ cuts its band only when it is loud, DE-ESS reduces the sibilance band, RING multiplies by a carrier and SPECTRL gates quiet bands. Each knob is how much of that stage is in the path.",
-                               7, 2, { 71, 82, 83, 84, 85, 79, 94 } },
+                               7, 2, { 73, 84, 85, 86, 87, 81, 96 } },
              { "MOTION", "The rack's modulators: CHORUS, FLANGER, PHASER, TREM, VIBRATO and ROTARY are the classic sweeps, each at its own rate and depth, and VOCODER imposes the bands of the input on a synthesised carrier. Each knob is how much of that stage is in the path.",
-                               7, 2, { 86, 87, 88, 89, 90, 91, 92 } },
+                               7, 2, { 88, 89, 90, 91, 92, 93, 94 } },
              { "PITCH", "The rack's time and pitch stages: PITCH shifts up to an octave, OCTAVE adds the octave below, GRAIN scatters the signal into grains, STUTTER holds a slice of what just played and repeats it, and SPEED is the tape's own three-position switch - half below a quarter, 1x in the middle, double above three quarters.",
-                               5, 2, { 81, 80, 93, 97, 95 } }
+                               5, 2, { 83, 82, 95, 99, 97 } }
         } };
 
     // One SHORT subtitle per page, in tabSpecs' order: the sentence the section
@@ -306,6 +317,7 @@ namespace j37panel
     // adding a page without a caption is a build error rather than a blank line.
     inline constexpr std::array<const char*, numTabPages> tabSubtitles { {
         "in, out and the stereo field of the whole machine",
+        "what this machine is: every TYPE list and both speeds",
         "the gain stages in front of the tape: DI, preamp, distortion",
         "the head's own saturation: DRIVE and where BIAS sits",
         "the head's drive and the machine's two voicing controls",

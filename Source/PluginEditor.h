@@ -594,6 +594,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
         bool shapersTab = false;
         bool inEqTab = false;
         bool outEqTab = false;
+        bool basicTab = false;
         bool machineTab = false;
         bool mixTab = false;
         bool compressorTab = false;
@@ -621,7 +622,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // half-height rows and half-size knobs.
     static constexpr int tabColumns = 4;
     // Twenty-two pages under three large families (TAPE / FX / SETUP).
-    static constexpr int numTabs = 22;
+    static constexpr int numTabs = 23;
     static constexpr std::size_t decorativeOrbCount = 6;
 
     // Header grid dimensions for the two engine-switch rows and language selector.
@@ -979,7 +980,6 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
 
     juce::ComboBox tapeTypeBox;
     juce::ComboBox valveTypeBox;
-    juce::ComboBox ampTypeBox;
     juce::ComboBox transformerTypeBox;
     juce::ComboBox digitalTypeBox;
     juce::ComboBox vinylTypeBox;
@@ -1327,7 +1327,6 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     bool lastShownPresetDirty = false;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tapeTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> valveTypeAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> ampTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         transformerTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> digitalTypeAttachment;
@@ -1358,7 +1357,6 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     juce::Label buildLabel;
     juce::Label tapeTypeLabel;
     juce::Label valveTypeLabel;
-    juce::Label ampTypeLabel;
     juce::Label transformerTypeLabel;
     juce::Label digitalTypeLabel;
     juce::Label vinylTypeLabel;
@@ -1389,7 +1387,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // you can no longer see is a trap rather than a lock. Not part of the saved
     // state: it is a momentary panel affordance, like a held key.
     int frozenTab = -1;
-    juce::TextButton tabFamilyTapeButton{"TAPE"};
+    juce::TextButton tabFamilyTapeButton{"BOX"};
     juce::TextButton tabFamilyFxButton{"FX"};
     juce::TextButton tabFamilyRackButton{"RACK"};
     juce::TextButton tabFamilySetupButton{"SETUP"};
@@ -1399,7 +1397,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // pad, and a page that scrolls is a page nobody dials. SETUP is always the
     // last family, because the engine switches are not part of the sound.
     static constexpr int tabFamilyCount = 4;
-    static constexpr std::array<int, tabFamilyCount> tabFamilyTabCount{9, 6, 4, 3};
+    static constexpr std::array<int, tabFamilyCount> tabFamilyTabCount{10, 6, 4, 3};
     juce::Label metersHeadingLabel;
     juce::Label metersHintLabel;
     juce::Label compressorLabel;

@@ -89,8 +89,8 @@ int main()
         {
             const auto buttonWidth = buttonWidthFor (panelWidth, pages);
             // The stricter of the two paint routines' paddings: the in-tab look and
-            // feel takes 8 px each side, the deck's takes 3.
-            const auto available = static_cast<float> (buttonWidth - 16);
+            // feel takes 5 px each side, the deck's takes 3.
+            const auto available = static_cast<float> (buttonWidth - 10);
 
             for (std::size_t tab = 0; tab < numTabPages; ++tab)
             {

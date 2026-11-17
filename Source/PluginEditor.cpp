@@ -241,7 +241,7 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
     //  file never had this bug because they were already wrapped as a CHAIN
     //  (previous + play) - the boxes now take exactly that chain too: the
     //  previous handler first, the click on top.
-    for (auto* box : { &tapeTypeBox, &valveTypeBox, &ampTypeBox, &transformerTypeBox,
+    for (auto* box : { &tapeTypeBox, &valveTypeBox, &transformerTypeBox,
                        &digitalTypeBox, &vinylTypeBox, &vinylSpeedBox, &speedBox,
                        &instrumentBox, &oversamplingBox, &presetBox, &userPresetBox,
                        &delayTypeBox, &delayRateBox, &vinylGenerationBox,
@@ -518,7 +518,7 @@ void FirstAudioProcessorEditor::setTabFamily (int newFamily, bool openFirstPage)
     // The tab table's family column is the single source of truth: each page
     // states which family hosts it, and this strip reads the column rather
     // than a parallel count array that could drift from the table. The assert
-    // pins the CABINET of pages - nine TAPE, six FX, four RACK, three SETUP - so
+    // pins the CABINET of pages - ten BOX, six FX, four RACK, three SETUP - so
     // a page moved between families is a build error rather than a button that
     // lights wrong, and the totals cannot drift from the family buttons' labels.
     //
@@ -540,9 +540,9 @@ void FirstAudioProcessorEditor::setTabFamily (int newFamily, bool openFirstPage)
                 return false;
             ++familyCounts[static_cast<std::size_t> (tab.family)];
         }
-        return familyCounts[0] == 9 && familyCounts[1] == 6
+        return familyCounts[0] == 10 && familyCounts[1] == 6
             && familyCounts[2] == 4 && familyCounts[3] == 3;
-    }(), "tab families must contain 9 TAPE, 6 FX, 4 RACK and 3 SETUP pages");
+    }(), "tab families must contain 10 BOX, 6 FX, 4 RACK and 3 SETUP pages");
 
     // A family change only filters the tab bar's visibility and jumps to the
     // family's first page: currentTab is set through setCurrentTab so the
@@ -1092,7 +1092,6 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
 
     tapeTypeBox.setLookAndFeel (nullptr);
     valveTypeBox.setLookAndFeel (nullptr);
-    ampTypeBox.setLookAndFeel (nullptr);
     transformerTypeBox.setLookAndFeel (nullptr);
     digitalTypeBox.setLookAndFeel (nullptr);
     vinylTypeBox.setLookAndFeel (nullptr);
@@ -1955,10 +1954,6 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         //  control band, and the two pixels a readout gives back under it. A
         //  literal here is what put the boxes thirteen pixels into the row below.
         const std::vector<DeckRowItem> row {
-            { &speedLabel,        96, -1,  0, captionHeight, false },
-            { &speedBox,           0, -1, captionHeight, controlHeight, true  },
-            { &vinylSpeedLabel,   96, -1,  0, captionHeight, false },
-            { &vinylSpeedBox,      0, -1, captionHeight, controlHeight, true  },
             { &bpmLabel,          96, -1,  0, captionHeight, false },
             // The tempo readout is a VALUE like the two lists beside it, so it
             // takes the control band's height rather than the 13 px a caption
@@ -2068,28 +2063,12 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         //  after the ring and the minimum gaps is the column - the longest
         //  stock values ellipsise a little sooner on a minimum-width panel and
         //  every window above it is the row it always was.
+        // The TYPE lists that used to stand in this band moved to the MACHINE
+        // page, where the user asked for them: this row keeps the OSC ring and
+        // the band it stands in, so the deck's rows below do not shift.
         const auto typesTop = deckTop (j37panel::DeckBands::types);
         oscRing.setBounds (deckTypesRight - deckRingSize, typesTop,
                            deckRingSize, deckRingSize);
-
-        const auto typeColumnWidth = deckTypeColumn;
-
-        const std::vector<DeckRowItem> row {
-            { &tapeTypeLabel,        typeColumnWidth, -1,  0, captionHeight, false },
-            { &tapeTypeBox,            0, -1, captionHeight, controlHeight, true  },
-            { &vinylTypeLabel,        typeColumnWidth, -1,  0, captionHeight, false },
-            { &vinylTypeBox,           0, -1, captionHeight, controlHeight, true  },
-            { &valveTypeLabel,        typeColumnWidth, -1,  0, captionHeight, false },
-            { &valveTypeBox,           0, -1, captionHeight, controlHeight, true  },
-            { &ampTypeLabel,          typeColumnWidth, -1,  0, captionHeight, false },
-            { &ampTypeBox,             0, -1, captionHeight, controlHeight, true  },
-            { &transformerTypeLabel, typeColumnWidth, -1,  0, captionHeight, false },
-            { &transformerTypeBox,     0, -1, captionHeight, controlHeight, true  },
-            { &digitalTypeLabel,      typeColumnWidth, -1,  0, captionHeight, false },
-            { &digitalTypeBox,         0, -1, captionHeight, controlHeight, true  }
-        };
-
-        placeDeckRow (row, deckRowLeft, deckRowRight, typesTop, 14, true);
     }
 
     // ---- row 4: TRANSPORT ---------------------------------------------------
@@ -2475,6 +2454,7 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
     const auto shapersTab = index_of_tab_named ("MODELS") == currentTab;
     const auto inEqTab = index_of_tab_named ("IN EQ") == currentTab;
     const auto outEqTab = index_of_tab_named ("OUT EQ") == currentTab;
+    const auto basicTab = index_of_tab_named ("BASIC") == currentTab;
     const auto machineTab = index_of_tab_named ("MACHINE") == currentTab;
     const auto mixTab = index_of_tab_named ("MIX") == currentTab;
     const auto compressorTab = index_of_tab_named ("COMP") == currentTab;
@@ -2520,7 +2500,7 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
     // page now gives that 50 px to its own three knobs instead.
     const auto memberRows = (settingsTab || delayTab || characterTab
                              || frontEndTab || vinylTab || shapersTab || inEqTab || outEqTab
-                             || machineTab || mixTab) ? 1 : 0;
+                             || basicTab || mixTab) ? 1 : 0;
 
     // The member band is a FIXED strip - a caption band plus a control band -
     // pinned to the grid's BOTTOM edge, and the knob strip takes what is above
@@ -2850,6 +2830,7 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
     geometry.shapersTab = shapersTab;
     geometry.inEqTab = inEqTab;
     geometry.outEqTab = outEqTab;
+    geometry.basicTab = basicTab;
     geometry.machineTab = machineTab;
     geometry.mixTab = mixTab;
     geometry.compressorTab = compressorTab;
@@ -2915,8 +2896,18 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
     // full member of exactly one tab, so it is visible only while that tab is.
     diPadLabel.setVisible (geometry.frontEndTab);
     diPadBox.setVisible (geometry.frontEndTab);
-    tracksLabel.setVisible (geometry.machineTab);
-    tracksBox.setVisible (geometry.machineTab);
+    tracksLabel.setVisible (geometry.basicTab);
+    tracksBox.setVisible (geometry.basicTab);
+
+    // The machine's identity moved off the deck onto the page that is named
+    // after it: the five TYPE lists and the two speeds belong to MACHINE alone.
+    for (auto* box : { &tapeTypeBox, &valveTypeBox, &transformerTypeBox, &digitalTypeBox,
+                       &vinylTypeBox, &speedBox, &vinylSpeedBox })
+        box->setVisible (geometry.machineTab);
+
+    for (auto* label : { &tapeTypeLabel, &valveTypeLabel, &transformerTypeLabel,
+                         &digitalTypeLabel, &vinylTypeLabel, &speedLabel, &vinylSpeedLabel })
+        label->setVisible (geometry.machineTab);
     inputEqOrderLabel.setVisible (geometry.inEqTab);
     inputEqOrderBox.setVisible (geometry.inEqTab);
     outputEqOrderLabel.setVisible (geometry.outEqTab);
@@ -3059,7 +3050,42 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
     }
     else if (geometry.machineTab)
     {
-        // MACHINE: the machine's TRACKS selector rides the band at the page's
+        // MACHINE: the machine's identity, on the page named after it.
+        //
+        // The page carries no knobs, so its grid IS the page and the selectors
+        // take it: the four type lists of the tape-and-circuit chain across the
+        // top row, then the record's own type and the two speeds - the deck's
+        // and the turntable's - beneath them. They used to live in the deck,
+        // where the type row had to share its band with the OSC ring and the
+        // speed boxes sat among the key lists.
+        constexpr int machineColumns = 4;
+        const auto columnWidth = juce::jmax (1, geometry.grid.getWidth() / machineColumns);
+        const auto rowHeight = juce::jmax (1, geometry.grid.getHeight() / 2);
+
+        const auto place = [&] (juce::Label& label, juce::Component& box,
+                                int column, int row, const juce::String& caption)
+        {
+            const auto cell = juce::Rectangle<int> (geometry.grid.getX() + column * columnWidth,
+                                                    geometry.grid.getY() + row * rowHeight,
+                                                    columnWidth, rowHeight);
+            label.setText (caption, juce::dontSendNotification);
+            label.setJustificationType (juce::Justification::centred);
+            label.setBounds (cell.getX() + 6, cell.getY() + 10, cell.getWidth() - 12, 17);
+            box.setBounds (cell.getX() + 12, cell.getY() + 34, cell.getWidth() - 24, 30);
+        };
+
+        place (tapeTypeLabel,        tapeTypeBox,        0, 0, "TAPE TYPE");
+        place (valveTypeLabel,       valveTypeBox,       1, 0, "VALVE TYPE");
+        place (transformerTypeLabel, transformerTypeBox, 2, 0, "TRANSFORMER TYPE");
+        place (digitalTypeLabel,     digitalTypeBox,     3, 0, "DIGITAL TYPE");
+
+        place (vinylTypeLabel,       vinylTypeBox,       0, 1, "VINYL TYPE");
+        place (speedLabel,           speedBox,           1, 1, "SPEED");
+        place (vinylSpeedLabel,      vinylSpeedBox,      2, 1, "VINYL SPEED");
+    }
+    else if (geometry.basicTab)
+    {
+        // BASIC: the machine's TRACKS selector rides the band at the page's
         // foot, under its seven knobs - and CENTRED in it.
         //
         // Pinned to the first cell it left three cells of empty metal beside it,
@@ -3492,8 +3518,6 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             { "vinylSpeedBox",      &vinylSpeedBox },
             { "valveTypeLabel",     &valveTypeLabel },
             { "valveTypeBox",       &valveTypeBox },
-            { "ampTypeLabel",       &ampTypeLabel },
-            { "ampTypeBox",         &ampTypeBox },
             { "transformerLabel",   &transformerTypeLabel },
             { "transformerBox",     &transformerTypeBox },
             { "digitalTypeLabel",   &digitalTypeLabel },

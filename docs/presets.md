@@ -65,12 +65,12 @@ BYPASS, DELTA and POLARITY alone - a switch is not an amount.
 ## Guitar: valves, amps and transformers
 
 These three blend saturation principles rather than running one machine: the SOURCE knobs
-share the stage, so the amp, the transformer and the cassette each contribute their own
-nonlinearity.
+share the stage, so a valve, a pentode and an iron transformer can each contribute their
+own nonlinearity.
 
 | Preset | What it is for | What it sets |
 |---|---|---|
-| **British Valve** | The EL34 midrange push on a DI or a reamp. | EL34 valve 77 % + Marshall Plexi + cassette 11 %, DRIVE 55 %, DIST 30 %, in LOW -1.5 / MID -1 dB. |
+| **British Valve** | The EL34 midrange push on a DI or a reamp. | EL34 valve 80 % + tape 20 %, Marshall Plexi, DRIVE 55 %, DIST 30 %, in LOW -1.5 / MID -1 dB. |
 | **Plexi Bite** | A hard, bright rhythm guitar. | Marshall Plexi 93 %, 2x oversampling, DRIVE 72 %, DIST 38 %, CHAR 68 %, out HIGH +2 dB, filters off. |
 | **Iron Bloom** | Iron and a Vox-style chime on a clean part. | Cinemag transformer 68 % + Vox AC30 16 %, DRIVE 48 %, in LOW +3 dB, WIDTH 60 %, DIST 34 %. |
 
@@ -79,7 +79,7 @@ nonlinearity.
 | Preset | What it is for | What it sets |
 |---|---|---|
 | **Vintage Lo-Fi** | An old record, not a broken one. | J37 at 7.5 ips, wow 22 %/flutter 28 %, VINYL 25 %, DIST 22 %, WEAR 20 %/MECHANICS 18 %, hiss 45 %. |
-| **Wobbly Cassette** | A cassette that has been in a drawer. | Cassette voicing at 7.5 ips, wow 30 %/flutter 34 %, WEAR 28 %/MECHANICS 30 %, VINYL 30 %, hiss 50 %. |
+| **Wobbly Cassette** | A cassette that has been in a drawer. | Tape at 7.5 ips, wow 30 %/flutter 34 %, WEAR 28 %/MECHANICS 30 %, VINYL 30 %, hiss 50 %. |
 | **Lo-Fi Radio** | A small speaker in the next room. | Chrome at 7.5 ips, TONE 28 %, WIDTH 35 %, hiss 55 %, VINYL 45 %, DIST 30 %, input +4 dB and output -4 dB. |
 | **Shellac Radio** | A 78 through a valve set. | Shellac 78 print at VINYL 85 %, hiss 60 %, WIDTH 25 %, wow 30 %, EL34 drive 62 %, output -3 dB. |
 | **Dubplate Dub** | A dub plate with the delay and the wear that come with it. | Dubplate print at VINYL 70 %, delay 220 ms at 42 % feedback, REVERB 22 %, WEAR 22 %/MECHANICS 20 %. |

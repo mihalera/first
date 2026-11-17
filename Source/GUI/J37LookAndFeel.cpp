@@ -1280,7 +1280,11 @@ void J37InlineLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& 
                                            bool shouldDrawButtonAsDown)
 {
     const auto& palette = paletteForTheme (theme);
-    const auto bounds = button.getLocalBounds().toFloat().reduced (8.0f, 1.0f);
+    // 5 px a side rather than 8: the BOX family carries ten pages now, and at the
+    // narrowest panel the old inset was what pushed SATURATION below the half-name
+    // rule in tests/layout - the chip still fits its caption, it just has three more
+    // pixels a side to do it in.
+    const auto bounds = button.getLocalBounds().toFloat().reduced (5.0f, 1.0f);
     const auto text = button.getButtonText();
 
     auto ink = button.getToggleState() ? palette.text : palette.secondary;

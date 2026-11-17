@@ -65,7 +65,8 @@ def add_defs(target: list[dict], family: str, definitions: list[tuple[str, str, 
 def ui_definitions() -> list[dict]:
     items: list[dict] = []
     tab_shapes = {
-        "MACHINE": "reel", "FRONT END": "input", "SATURATION": "wave",
+        "BASIC": "reel", "MACHINE": "knob", "FRONT END": "input",
+        "SATURATION": "wave",
         "CHARACTER": "knob", "NOISE": "wobble", "RECORD": "vinyl",
         "VINYL": "vinyl", "MIX": "sliders", "SUBFUND": "octave",
         "DELAY": "echo", "REVERB": "room", "DYN": "envelope",
@@ -151,8 +152,9 @@ def parameter_definitions() -> list[dict]:
         "input": "input", "drive": "wave", "bias": "magnet", "tone": "eq",
         "character": "knob", "wow": "wobble", "flutter": "wobble", "mix": "sliders",
         "output": "output", "stereo_width": "stereo", "tape_source": "reel",
-        "valve_source": "valve", "cassette_source": "cassette", "vinyl_source": "vinyl",
-        "amp_source": "amp", "transformer_source": "transformer", "digital_source": "digital",
+        "valve_source": "valve", "pentode_source": "valve", "triode_source": "valve",
+        "transistor_source": "chip", "fold_source": "wave", "glass_source": "spark",
+        "transformer_source": "transformer", "digital_source": "digital",
         "amp_bias": "magnet", "sag": "envelope", "presence": "spark", "cabinet": "speaker",
         "delay_time": "clock", "delay_feedback": "echo", "st_offset": "stereo",
         "noise": "noise", "subfund": "octave", "preamp": "input", "distortion": "wave",
@@ -196,7 +198,6 @@ def model_definitions() -> list[dict]:
     sources = [
         ("tape", ROOT / "Source/PluginProcessor.h", "tapeStockNames", "reel"),
         ("valve", ROOT / "Source/DSP/SaturationCore.h", "valveTypeNames", "valve"),
-        ("amp", ROOT / "Source/DSP/SaturationCore.h", "ampTypeNames", "amp"),
         ("transformer", ROOT / "Source/DSP/SaturationCore.h", "transformerTypeNames", "transformer"),
         ("digital", ROOT / "Source/DSP/SaturationCore.h", "digitalTypeNames", "digital"),
         ("vinyl", ROOT / "Source/PluginProcessor.h", "vinylTypeNames", "vinyl"),
@@ -210,9 +211,11 @@ def model_definitions() -> list[dict]:
     for key, label, shape in [
         ("model.principle.tape", "Tape", "reel"),
         ("model.principle.valve", "Valve", "valve"),
-        ("model.principle.cassette", "Cassette", "cassette"),
-        ("model.principle.vinyl", "Vinyl", "vinyl"),
-        ("model.principle.amp", "Amplifier", "amp"),
+        ("model.principle.pentode", "Pentode", "valve"),
+        ("model.principle.triode", "Triode", "valve"),
+        ("model.principle.transistor", "Transistor", "chip"),
+        ("model.principle.fold", "Fold", "wave"),
+        ("model.principle.glass", "Glass", "spark"),
         ("model.principle.transformer", "Transformer", "transformer"),
         ("model.principle.digital", "Digital", "digital"),
         ("model.neural", "Neural model", "chip"),
@@ -603,8 +606,11 @@ def draw_icon(name: str, shape: str, variant: int = 0, tile: int = TILE) -> Imag
 
 
 def atlas_image(items: list[dict], filename: str, columns: int = 8,
-                tile: int = TILE) -> tuple[dict, Image.Image]:
-    rows = math.ceil(len(items) / columns)
+                tile: int = TILE, min_rows: int = 0) -> tuple[dict, Image.Image]:
+    # A slot's size is a contract (PanelAssetSlots.h and Assets/manifest.json),
+    # so an atlas whose item count shrinks keeps the rows it always had rather
+    # than handing the GPU a differently shaped texture.
+    rows = max(min_rows, math.ceil(len(items) / columns))
     image = Image.new("RGBA", (columns * tile, rows * tile), (0, 0, 0, 0))
     for index, item in enumerate(items):
         item["tile"] = index
@@ -626,13 +632,15 @@ def preset_art_atlas() -> tuple[dict, Image.Image]:
         raise SystemExit("FACTORY_PRESET_FILES is empty")
 
     preset_dir = ROOT / "Source/Presets/Factory"
-    source_names = ["tape", "valve", "cassette", "vinyl", "amp", "transformer", "digital"]
+    source_names = ["tape", "valve", "pentode", "triode", "transistor", "fold",
+                    "glass", "transformer", "digital"]
     source_ids = [f"{name}_source" for name in source_names]
-    shapes = {"tape": "reel", "valve": "valve", "cassette": "cassette",
-              "vinyl": "vinyl", "amp": "amp", "transformer": "transformer",
-              "digital": "digital"}
+    shapes = {"tape": "reel", "valve": "valve", "pentode": "valve", "triode": "valve",
+              "transistor": "chip", "fold": "wave", "glass": "spark",
+              "transformer": "transformer", "digital": "digital"}
     colors = {"tape": ACCENT, "valve": (245, 118, 73, 255),
-              "cassette": TEAL, "vinyl": PURPLE, "amp": PINK,
+              "pentode": (224, 138, 60, 255), "triode": PINK,
+              "transistor": TEAL, "fold": PURPLE, "glass": (191, 208, 216, 255),
               "transformer": (178, 207, 82, 255), "digital": BLUE}
     atlas = Image.new("RGBA", (len(order) * TILE, TILE), (0, 0, 0, 0))
     items=[]
@@ -923,15 +931,17 @@ def main() -> int:
     atlases=[]
 
     specs = [
-        ("ui_icons.png", ui_definitions(), 8),
+        ("ui_icons.png", ui_definitions(), 8, 13),
         ("parameter_glyphs.png", parameter_definitions(), 8),
-        ("machine_models.png", model_definitions(), 8),
+        ("machine_models.png", model_definitions(), 8, 8),
         ("meter_status.png", meter_definitions(), 8),
         ("preset_categories.png", category_definitions(), 8),
         ("hardware_details.png", hardware_definitions(), 4),
     ]
-    for filename, items, columns in specs:
-        atlas, image = atlas_image(items, filename, columns)
+    for spec in specs:
+        filename, items, columns = spec[0], spec[1], spec[2]
+        min_rows = spec[3] if len(spec) > 3 else 0
+        atlas, image = atlas_image(items, filename, columns, min_rows=min_rows)
         atlases.append(atlas)
         output_images[filename] = image
 

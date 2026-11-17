@@ -56,7 +56,7 @@ inline constexpr Slot slots[] = {
       "The title-bar and taskbar icon of the USER THEME window. Square, and it "
       "should read at 16 px." },
 
-    { "principle_icons", "principle_icons.png", "principle_icons_png", 448, 64,
+    { "principle_icons", "principle_icons.png", "principle_icons_png", 576, 64,
       "Seven monochrome alpha glyphs for the MIX bar, ordered TAPE, VALVE, "
       "CASSETTE, VINYL, AMP, TRANSFORMER, DIGITAL. Tinted by the active palette." },
 
@@ -73,8 +73,8 @@ inline constexpr Slot slots[] = {
       "all are tintable for active, disabled and high-contrast states." },
 
     { "machine_models", "machine_models.png", "machine_models_png", 512, 512,
-      "Fifty-seven machine, model and OFF glyphs generated from the processor's "
-      "tape, valve, amp, transformer, digital and vinyl name tables." },
+      "Fifty-two machine, model and OFF glyphs generated from the processor's "
+      "tape, valve, transformer, digital and vinyl name tables." },
 
     { "meter_status", "meter_status.png", "meter_status_png", 512, 256,
       "Thirty-two meter, signal, phase, frequency-band and health-state glyphs." },

@@ -839,15 +839,15 @@ namespace
         //  Saturation blend.
         //
         //  The plugin's shaper has always been ONE curve - magnetic hysteresis. These
-        //  two controls turn it into a blend of six mechanisms: the five a real
-        //  analogue chain runs through - tape, valve, cassette, amp, transformer - and
-        //  the converter that stands in for all of them when the programme is going
-        //  through a box instead of a machine. See SaturationCore for what each one is
-        //  and why they are genuinely different shapes.
+        //  knobs turn it into a blend of nine mechanisms: the four a real analogue
+        //  chain runs through - tape, valve, transformer and the converter that stands
+        //  in for all of them - and the five circuits that bend a signal inside the
+        //  boxes between them: pentode, triode, transistor, fold and glass. See
+        //  SaturationCore for what each one is and why they are different shapes.
         //
-        //  The seven SOURCE knobs. Each is its own principle's share of the
-        //  saturation mix - TAPE, VALVE, CASSETTE, AMP, TRANSFORMER, DIGITAL - so a
-        //  user dials the machines they want BY NAME instead of steering one sweep
+        //  The nine SOURCE knobs. Each is its own principle's share of the
+        //  saturation mix, so a user dials the machines they want BY NAME instead of
+        //  steering one sweep
         //  and one spread (the old BLEND/SHAPE pair, removed at the user's
         //  request). Shares are normalised to sum to 1, so the mix stays a true
         //  crossfade and level-stable; a machine whose own TYPE list is OFF has its
@@ -858,22 +858,28 @@ namespace
         layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "tape_source", 1 }, "Tape",
                                                                 percentageRange (0.50f), 1.0f,
                                                                 juce::AudioParameterFloatAttributes().withLabel ("%")));
-        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "vinyl_source", 1 }, "Vinyl",
-                                                                percentageRange (0.50f), 0.0f,
-                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
-        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "cassette_source", 1 }, "Cassette",
-                                                                percentageRange (0.50f), 0.0f,
-                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
-        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "digital_source", 1 }, "Digital",
-                                                                percentageRange (0.50f), 0.0f,
-                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
-        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "amp_source", 1 }, "Amp",
-                                                                percentageRange (0.50f), 0.0f,
-                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
         layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "valve_source", 1 }, "Valve",
                                                                 percentageRange (0.50f), 0.0f,
                                                                 juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "pentode_source", 1 }, "Pentode",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "triode_source", 1 }, "Triode",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "transistor_source", 1 }, "Transistor",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fold_source", 1 }, "Fold",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "glass_source", 1 }, "Glass",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
         layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "transformer_source", 1 }, "Transformer",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "digital_source", 1 }, "Digital",
                                                                 percentageRange (0.50f), 0.0f,
                                                                 juce::AudioParameterFloatAttributes().withLabel ("%")));
     }
@@ -1347,9 +1353,6 @@ namespace
         // -------------------------------------------------------------------------
         layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "valve_type", 1 }, "Valve Type",
                                                                 valveTypeNameList(),
-                                                                0));
-        layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "amp_type", 1 }, "Amp Type",
-                                                                ampTypeNameList(),
                                                                 0));
         layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "transformer_type", 1 }, "Transformer Type",
                                                                 transformerTypeNameList(),

@@ -35,7 +35,7 @@
 // error (C2078) instead of a silent out-of-bounds read at run time, and the tab
 // table is checked against this count by a static_assert in setCurrentTab, so a
 // knob that no tab lists is a build error too.
-inline constexpr std::size_t controlCount = 98;
+inline constexpr std::size_t controlCount = 100;
 
 namespace j37panel
 {
@@ -109,9 +109,11 @@ namespace j37panel
         // its own machine's share of the saturation mix, dialled by name.
         { "tape_source",     "TAPE",       1.0,   "SUBFUND"   },
         { "valve_source",    "VALVE",      0.0,   "SUBFUND"   },
-        { "cassette_source", "CASSETTE",   0.0,   "SUBFUND"   },
-        { "vinyl_source",    "VINYL",      0.0,   "SUBFUND"   },
-        { "amp_source",      "AMP",        0.0,   "SUBFUND"   },
+        { "pentode_source",  "PENTODE",    0.0,   "SUBFUND"   },
+        { "triode_source",   "TRIODE",     0.0,   "SUBFUND"   },
+        { "transistor_source","TRANSISTOR",0.0,   "SUBFUND"   },
+        { "fold_source",     "FOLD",       0.0,   "SUBFUND"   },
+        { "glass_source",    "GLASS",      0.0,   "SUBFUND"   },
         { "transformer_source","TRANSFORMER",0.0,  "SUBFUND"   },
         { "digital_source",  "DIGITAL",    0.0,   "SUBFUND"   },
         { "amp_bias",        "AMP BIAS",   0.50,  "SUBFUND"   },
@@ -335,19 +337,31 @@ namespace j37panel
                    "the mix with the other sources - the shares are "
                    "normalised, so the character changes without the level "
                    "moving. Default 0 percent.";
-        if (id == "cassette_source")
-            return "CASSETTE - how much of the mix is the compact cassette: "
-                   "a hard early knee on narrow tape, small and loud. Default "
-                   "0 percent.";
-        if (id == "vinyl_source")
-            return "VINYL - how much of the mix is the cutting lathe: the "
-                   "gentlest tracing distortion of the seven, a soft "
-                   "level-dependent knee like the groove rounding under the "
-                   "stylus. Default 0 percent.";
-        if (id == "amp_source")
-            return "AMP - how much of the mix is the guitar amplifier's "
-                   "input stage: hard, odd-harmonic, the one that bites. "
+        if (id == "pentode_source")
+            return "PENTODE - how much of the mix is a sharp-cutoff pentode: "
+                   "the tight end of a valve amp, an early knee and an "
+                   "odd-dominant edge. Shares the mix with the other sources "
+                   "and does not change the level. Default 0 percent.";
+        if (id == "triode_source")
+            return "TRIODE - how much of the mix is a low-mu triode: the "
+                   "softest knee here, even-harmonic warmth at any level. "
+                   "Pair it with PENTODE for the two stages of a guitar amp. "
                    "Default 0 percent.";
+        if (id == "transistor_source")
+            return "TRANSISTOR - how much of the mix is a germanium stage: "
+                   "asymmetric conduction with a crossover notch around zero, "
+                   "which puts even harmonics and a grain on the low orders. "
+                   "Default 0 percent.";
+        if (id == "fold_source")
+            return "FOLD - how much of the mix is the wavefolder: the curve "
+                   "turns back instead of flattening, so it folds the signal "
+                   "rather than clipping it. Odd-dominant and level-dependent "
+                   "in a way no tanh curve is. Default 0 percent.";
+        if (id == "glass_source")
+            return "GLASS - how much of the mix is the pure second-order "
+                   "term: it adds the second harmonic and nothing else, so it "
+                   "thickens the sound without adding any edge. Default 0 "
+                   "percent.";
         if (id == "transformer_source")
             return "TRANSFORMER - how much of the mix is the passive input "
                    "transformer: pure analogue but no machine, the only "
@@ -896,11 +910,6 @@ namespace j37panel
                    "runs cold and tight, an EL34 or 6L6 is fatter and more "
                    "compressed, a 300B is the softest and most even, a KT88 has "
                    "the widest drift.";
-        if (id == "amp_type")
-            return "AMP TYPE - the voice of the AMP principle. Only audible in "
-                   "proportion to how much AMP is in the BLEND: the Blackface is "
-                   "clean and firm, the Plexi bites, the AC30 chimes, the Recto "
-                   "slams hardest in the second stage.";
         if (id == "transformer_type")
             return "TRANSFORMER TYPE - the voice of the TRANSFORMER principle. "
                    "Only audible in proportion to how much TRANSFORMER is in the "
