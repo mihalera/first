@@ -1260,7 +1260,7 @@ if(NOT TARGET sokol_gfx)
 CPMAddPackage(
     NAME sokol_gfx
     GITHUB_REPOSITORY floooh/sokol
-    GIT_TAG f5e8833408804652da04e532067e7695bda46118
+    GIT_TAG master
     DOWNLOAD_ONLY YES)
 
 j37_declare_header_only_library(sokol_gfx "${sokol_gfx_SOURCE_DIR}")
