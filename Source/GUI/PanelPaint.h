@@ -490,9 +490,9 @@ inline const UiPalette &paletteFor(bool darkTheme) noexcept {
 }
 
 // -----------------------------------------------------------------------
-//  The seven principles, each with its own colour.
+//  The nine principles, each with its own colour.
 //
-//  The SOURCE knobs replaced one sweep and one spread with seven NAMED
+//  The SOURCE knobs replaced one sweep and one spread with nine NAMED
 //  machines, and a row of seven identical knobs reads as seven copies of
 //  one control. A hue per principle fixes that for the price of a table: the
 //  arc, the tracer and the MIX page's bar all speak it, so the colour IS

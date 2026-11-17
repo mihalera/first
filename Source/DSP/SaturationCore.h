@@ -1,5 +1,5 @@
 // =============================================================================
-//  The saturation core: the seven principles, and the four type lists that voice
+//  The saturation core: the nine principles, and the five type lists that voice
 //  the non-tape ones.
 //
 //  Compiled and driven by tests/dsp/subfund_test.cpp, which includes this header

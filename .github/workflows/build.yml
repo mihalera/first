@@ -432,6 +432,15 @@ jobs:
       - name: Check the panel page table
         run: python3 tests/parameters/check_tabs.py
 
+      # The MIX page's nine knobs and the MACHINE page's seven selectors are the
+      # only UI the saturation has, and every piece of that chain has been
+      # renamed or re-counted at least once: seven knobs became nine, two
+      # principles were inserted in the middle, and the TYPE lists left the deck.
+      # A knob attached to an id nobody reads, or a strip painting a machine the
+      # core is not running, is a clean build and a panel that looks right.
+      - name: Check the MIX and MACHINE page wiring
+        run: python3 tests/parameters/check_mix_wiring.py
+
       # The panel's GLSL is the one piece of the UI nothing else here can see: it
       # is a string literal until a driver compiles it at run time, so a shader
       # that does not compile is a hole where the scene should be, with nothing in

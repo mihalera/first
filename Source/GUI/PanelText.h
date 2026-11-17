@@ -105,7 +105,7 @@ namespace j37panel
         { "mix",             "MIX",        0.5,   "MACHINE"  },
         { "output",          "OUTPUT",     0.0,   "MACHINE"  },
         { "stereo_width",    "WIDTH",      0.5,   "MACHINE"  },
-        // The seven SOURCE knobs, where the old BLEND/SHAPE pair sat: each is
+        // The nine SOURCE knobs, where the old BLEND/SHAPE pair sat: each is
         // its own machine's share of the saturation mix, dialled by name.
         { "tape_source",     "TAPE",       1.0,   "SUBFUND"   },
         { "valve_source",    "VALVE",      0.0,   "SUBFUND"   },

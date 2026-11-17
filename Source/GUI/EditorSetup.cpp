@@ -743,7 +743,7 @@ void FirstAudioProcessorEditor::setUpControlStrip() {
         // the reason the knob's own rectangle is measured from: a knob draws in
         // the space the slider has left after its readout, so two pixels off every
         // cell's readout is two pixels onto every knob on every page - and on the
-        // pages whose rows are short (MACHINE holds seven knobs in two rows) that
+        // pages whose rows are short (MACHINE holds seven selectors in two rows) that
         // is the difference between a scale the ticks have room for and one they
         // do not. The readout itself is unaffected: the font it holds is smaller
         // than the band either way.

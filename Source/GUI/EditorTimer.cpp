@@ -399,10 +399,10 @@ void FirstAudioProcessorEditor::timerCallback() {
                                         telemetry.outputCompressorActivity);
     }
 
-    // The MIX page's bar. Read from the seven SOURCE parameters and normalised
+    // The MIX page's bar. Read from the nine SOURCE parameters and normalised
     // exactly the way SaturationCore::setWeights normalises them - including its
     // all-zero fallback, so a bar that shows pure tape really is pure tape. It is
-    // read only while the page that shows it is on screen: seven parameter reads
+    // read only while the page that shows it is on screen: nine parameter reads
     // and a divide per frame is nothing, but nothing is cheaper than nothing.
     if (mixBar.isVisible() && !panelCovered) {
         std::array<float, principleCount> shares{};
@@ -424,7 +424,8 @@ void FirstAudioProcessorEditor::timerCallback() {
             // The same answer the core gives an empty mix: pure tape, the machine
             // the plugin is calibrated as. Painting anything else here would put
             // the bar and the sound in front of different stories.
-            shares = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+            shares.fill(0.0f);
+            shares[0] = 1.0f;
         }
 
         mixBar.setShares(shares, juce::jlimit(0.0f, 1.0f, shareSum));

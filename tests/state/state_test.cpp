@@ -36,6 +36,7 @@
 #include <atomic>
 #include <cstdio>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "extracted_preamble.inc"
@@ -302,6 +303,71 @@ void checkTheRoundTrip()
     // is the same session.
     check (restored.parameters.copyState().isEquivalentTo (saved.parameters.copyState()),
            "the restored state is the saved state");
+}
+
+/** The two pages the UI side of the saturation lives on: the MIX page's nine
+    SOURCE knobs and the MACHINE page's seven selectors. The page table, the knob
+    defaults and the parameter ids are checked against each other by
+    tests/parameters/check_mix_wiring.py; this is the other end of that chain -
+    the ids that check names are the ids a session writes and reads back, so the
+    values a page dials are the values a reopened project restores. It is stated
+    per id rather than as part of the whole-table round trip above because the
+    whole-table one proves the mechanism and this one proves WHICH parameters are
+    in it: a page re-pointed at a different id would still pass that one. */
+void checkTheMachineSession()
+{
+    std::printf ("the MIX page's nine shares and the MACHINE page's selectors\n");
+
+    FirstAudioProcessor saved;
+
+    const std::array<std::pair<const char*, float>, 9> shares {{
+        { "tape_source", 0.05f },          { "valve_source", 0.10f },
+        { "pentode_source", 0.15f },       { "triode_source", 0.20f },
+        { "transistor_source", 0.25f },    { "fold_source", 0.30f },
+        { "glass_source", 0.35f },         { "transformer_source", 0.40f },
+        { "digital_source", 0.45f } }};
+
+    for (const auto& share : shares)
+    {
+        auto* parameter = saved.parameters.getParameter (share.first);
+        check (parameter != nullptr, std::string ("\"") + share.first + "\" is in the table");
+
+        if (parameter != nullptr)
+            parameter->setValue (share.second);
+    }
+
+    const std::array<std::pair<const char*, float>, 7> selectors {{
+        { "tape_type", 1.0f },    { "valve_type", 2.0f },
+        { "transformer_type", 1.0f }, { "digital_type", 2.0f },
+        { "vinyl_type", 1.0f },   { "speed", 1.0f },
+        { "vinyl_speed", 2.0f } }};
+
+    for (const auto& selector : selectors)
+    {
+        auto* parameter = saved.parameters.getParameter (selector.first);
+        check (parameter != nullptr, std::string ("\"") + selector.first + "\" is in the table");
+
+        if (parameter != nullptr)
+            parameter->setValue (selector.second);
+    }
+
+    juce::MemoryBlock block;
+    saved.getStateInformation (block);
+
+    FirstAudioProcessor restored;
+    restored.setStateInformation (block.getData(), static_cast<int> (block.getSize()));
+
+    // 1e-4 rather than ==: a state is XML text, so a share written as 0.35 comes
+    // back as the nearest float to the text, which is not always the same bits.
+    const auto close = [] (float a, float b) { return std::abs (a - b) < 1.0e-4f; };
+
+    for (const auto& share : shares)
+        check (close (shareOf (restored, share.first), share.second),
+               std::string ("the session restores ") + share.first);
+
+    for (const auto& selector : selectors)
+        check (close (shareOf (restored, selector.first), selector.second),
+               std::string ("the session restores ") + selector.first);
 }
 
 //==============================================================================
@@ -587,6 +653,7 @@ int main()
     checkTheRoundTrip();
     checkTheMigration();
     checkTheRetiredSources();
+    checkTheMachineSession();
     checkTheSessionLoad();
     checkRefusal();
 
