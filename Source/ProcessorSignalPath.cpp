@@ -1580,16 +1580,18 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // -----------------------------------------------------------------------
     //  The saturation mix and the amp voicing.
     //
-    //  All seven SOURCE amounts are read once per block and fed to smoothers,
+    //  All nine SOURCE amounts are read once per block and fed to smoothers,
     //  so none of them can step the curve. The weights themselves are applied
     //  inside the core from the SMOOTHED values, so moving a SOURCE knob morphs
-    //  the harmonics continuously rather than switching between seven curves.
+    //  the harmonics continuously rather than switching between nine curves.
     // -----------------------------------------------------------------------
-    const auto vinylAmountSrc = vinylSourceParam != nullptr ? vinylSourceParam->load() : 0.0f;
     const auto tapeAmount = tapeSourceParam != nullptr ? tapeSourceParam->load() : 1.0f;
     const auto valveAmount = valveSourceParam != nullptr ? valveSourceParam->load() : 0.0f;
-    const auto cassetteAmount = cassetteSourceParam != nullptr ? cassetteSourceParam->load() : 0.0f;
-    const auto ampAmount = ampSourceParam != nullptr ? ampSourceParam->load() : 0.0f;
+    const auto pentodeAmount = pentodeSourceParam != nullptr ? pentodeSourceParam->load() : 0.0f;
+    const auto triodeAmount = triodeSourceParam != nullptr ? triodeSourceParam->load() : 0.0f;
+    const auto transistorAmount = transistorSourceParam != nullptr ? transistorSourceParam->load() : 0.0f;
+    const auto foldAmount = foldSourceParam != nullptr ? foldSourceParam->load() : 0.0f;
+    const auto glassAmount = glassSourceParam != nullptr ? glassSourceParam->load() : 0.0f;
     const auto transformerAmount = transformerSourceParam != nullptr ? transformerSourceParam->load() : 0.0f;
     const auto digitalAmount = digitalSourceParam != nullptr ? digitalSourceParam->load() : 0.0f;
     const auto sagAmount = sagParam != nullptr ? sagParam->load() : 0.0f;
@@ -1598,10 +1600,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto ampBiasAmount = ampBiasParam != nullptr ? ampBiasParam->load() : 0.5f;
 
     tapeSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, tapeAmount));
-    vinylSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, vinylAmountSrc));
     valveSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, valveAmount));
-    cassetteSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, cassetteAmount));
-    ampSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, ampAmount));
+    pentodeSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, pentodeAmount));
+    triodeSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, triodeAmount));
+    transistorSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, transistorAmount));
+    foldSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, foldAmount));
+    glassSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, glassAmount));
     transformerSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, transformerAmount));
     digitalSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, digitalAmount));
     sagSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, sagAmount));
@@ -1734,9 +1738,6 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     valveTypeCached = juce::jlimit (0, valveTypeCount - 1,
                           valveTypeParam != nullptr
                               ? static_cast<int> (valveTypeParam->load()) : 0);
-    ampTypeCached = juce::jlimit (0, ampTypeCount - 1,
-                        ampTypeParam != nullptr
-                            ? static_cast<int> (ampTypeParam->load()) : 0);
     transformerTypeCached = juce::jlimit (0, transformerTypeCount - 1,
                                 transformerTypeParam != nullptr
                                     ? static_cast<int> (transformerTypeParam->load()) : 0);
@@ -2957,23 +2958,24 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
 
         saturation.setWeights (tapeSourceSmoothed.getCurrentValue(),
                                valveSourceSmoothed.getCurrentValue(),
-                               cassetteSourceSmoothed.getCurrentValue(),
-                               vinylSourceSmoothed.getCurrentValue(),
-                               ampSourceSmoothed.getCurrentValue(),
+                               pentodeSourceSmoothed.getCurrentValue(),
+                               triodeSourceSmoothed.getCurrentValue(),
+                               transistorSourceSmoothed.getCurrentValue(),
+                               foldSourceSmoothed.getCurrentValue(),
+                               glassSourceSmoothed.getCurrentValue(),
                                transformerSourceSmoothed.getCurrentValue(),
                                digitalSourceSmoothed.getCurrentValue());
 
-        // The type switches re-voice their own curve. Four of the five live
-        // here, because four of the five are voices on SaturationCore's
-        // curves; the vinyl type re-voices the VinylStage at the end of the
-        // chain instead and is applied once per block.
+        // The type switches re-voice their own curve. Valve, transformer and
+        // digital are voices on SaturationCore's curves and live here; the tape
+        // stock is applied by the head, and the vinyl type re-voices the
+        // VinylStage at the end of the chain once per block.
         //
         // Each switch is cheap - a table read into three floats - but it is
         // still per sample here rather than per block so that sweeping a type
         // control mid-note lands the same way the curve does: sample-locked
         // to the block the host handed us, with no extra state to unwind.
         saturation.setValveVoice (valveTypeCached);
-        saturation.setAmpVoice (ampTypeCached);
         saturation.setTransformerVoice (transformerTypeCached);
         saturation.setDigitalVoice (digitalTypeCached);
 
@@ -3004,7 +3006,12 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         // The amp's post-curve voicing: cabinet, then presence. It is applied
         // only in proportion to how much amp is in the blend, so a pure tape
         // setting is bit-for-bit the machine it always was.
-        const float ampShare = juce::jlimit (0.0f, 1.0f, saturation.ampWeight);
+        //  The AMP practice curve is gone, and its share folded onto VALVE; the
+        //  cabinet and presence stay gated on that share so a pure TAPE setting
+        //  is still bit-for-bit the machine it always was. The gate is the
+        //  saturation mix, not a loaded NAM model - SAG, PRESENCE, CABINET and
+        //  AMP BIAS all work on an empty rack.
+        const float ampShare = juce::jlimit (0.0f, 1.0f, saturation.valveWeight);
         float voicedCore = shapedCore;
         if (ampShare > 1.0e-4f)
         {

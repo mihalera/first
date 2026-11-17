@@ -135,6 +135,13 @@ float mixOf (FirstAudioProcessor& processor)
 }
 
 //==============================================================================
+/** A parameter's own value, denormalised - the percentage a SOURCE knob shows. */
+float shareOf (FirstAudioProcessor& processor, const char* id)
+{
+    const auto* parameter = processor.parameters.getParameter (id);
+    return parameter != nullptr ? parameter->getValue() : -1.0f;
+}
+
 void checkTheTable()
 {
     std::printf ("the parameter table\n");
@@ -363,6 +370,71 @@ void checkTheMigration()
 }
 
 //==============================================================================
+/** A session from before the nine-model set: CASSETTE, VINYL and AMP were shares
+    of their own and AMP TYPE re-voiced a curve that is no longer here.
+
+    The migration's contract is that the sound survives: the retired shares are
+    ADDED to the curves they were folded onto, not dropped, and the ids that no
+    longer exist do not ride along into the next save. */
+void checkTheRetiredSources()
+{
+    std::printf ("states that name the retired saturation models\n");
+
+    FirstAudioProcessor saved;
+    auto tree = saved.parameters.copyState();
+    tree.setProperty ("nonlinStateFormat", juce::var (4), nullptr);
+
+    const auto setShare = [&tree] (const char* id, float value)
+    {
+        if (auto child = tree.getChildWithProperty ("id", juce::var (id)); child.isValid())
+            child.setProperty ("value", juce::var (value), nullptr);
+    };
+
+    const auto addShare = [&tree] (const char* id, float value)
+    {
+        juce::ValueTree child ("PARAM");
+        child.setProperty ("id", juce::var (id), nullptr);
+        child.setProperty ("value", juce::var (value), nullptr);
+        tree.addChild (child, -1);
+    };
+
+    // The SOURCE shares are 0..1. TAPE 0.40 + CASSETTE 0.20 + VINYL 0.10 must
+    // come back as TAPE 0.70; VALVE 0.05 + AMP 0.25 as VALVE 0.30.
+    setShare ("tape_source", 0.40f);
+    setShare ("valve_source", 0.05f);
+    addShare ("cassette_source", 0.20f);
+    addShare ("vinyl_source", 0.10f);
+    addShare ("amp_source", 0.25f);
+    addShare ("amp_type", 3.0f);
+
+    const auto block = blockFor (tree);
+    FirstAudioProcessor restored;
+    restored.setStateInformation (block.getData(), static_cast<int> (block.getSize()));
+
+    const auto close = [] (float a, float b) { return std::abs (a - b) < 1.0e-4f; };
+
+    check (close (shareOf (restored, "tape_source"), 0.70f),
+           "cassette and vinyl fold onto TAPE");
+    check (close (shareOf (restored, "valve_source"), 0.30f),
+           "amp folds onto VALVE");
+
+    juce::MemoryBlock again;
+    restored.getStateInformation (again);
+    std::unique_ptr<juce::XmlElement> xml (
+        juce::AudioProcessor::getXmlFromBinary (again.getData(), static_cast<int> (again.getSize())));
+    check (xml != nullptr, "the migrated state writes back out");
+
+    if (xml != nullptr)
+    {
+        const auto written = juce::ValueTree::fromXml (*xml);
+
+        for (const char* retired : { "cassette_source", "vinyl_source",
+                                     "amp_source", "amp_type" })
+            check (! written.getChildWithProperty ("id", juce::var (retired)).isValid(),
+                   std::string ("the re-saved state carries no ") + retired);
+    }
+}
+
 void checkTheSessionLoad()
 {
     std::printf ("what loading a session leaves behind\n");
@@ -514,6 +586,7 @@ int main()
     checkTheModelLists();
     checkTheRoundTrip();
     checkTheMigration();
+    checkTheRetiredSources();
     checkTheSessionLoad();
     checkRefusal();
 

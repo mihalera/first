@@ -70,7 +70,6 @@
 "Tape formula. Each stock bends the sound differently: J37 is soft and classic, Ampex and Studer are hotter, Chrome and Type 111 are cleaner, GP9 and 499 are dense modern formulas, SM911 is the broadcast reference, SM 468 is high-output low-noise, 888 is the hot thick vintage stock, 815 is dark and dense, 811 is the clean open mastering stock. The formula also shapes the glue compressors' timing." = "Формула стрічки. Кожна змінює звучання по-своєму: J37 м’яка й класична, Ampex і Studer гарячіші, Chrome і Type 111 чистіші, GP9 і 499 — щільні сучасні формули, SM911 — радіомовний еталон, SM 468 — висока вихідна з низьким шумом, 888 — гаряча товста вінтажна плівка, 815 — темна і щільна, 811 — чистий відкритий мастеринг-стандарт. Формула також формує таймінг клейових компресорів.";
 "Transport speed. 7.5 ips is dark and loose, 15 ips is the classic studio speed, 30 ips keeps the most top end and the tightest glue. Speed also shapes the glue timing." = "Швидкість транспорту. 7,5 ips — темно і розхлаблено, 15 ips — класична студійна швидкість, 30 ips — найбільше верху і найщільніший клей. Швидкість також впливає на таймінг клею.";
 "VALVE TYPE - the voice of the VALVE principle. Only audible in proportion to how much VALVE is in the BLEND: a 12AX7 runs cold and tight, an EL34 or 6L6 is fatter and more compressed, a 300B is the softest and most even, a KT88 has the widest drift." = "VALVE TYPE — голос принципу VALVE. Чути лише пропорційно до того, скільки VALVE у BLEND: 12AX7 працює холодно й щільно, EL34 або 6L6 — жирніше й компресованіше, 300B — найм’якше й найрівномірніше, KT88 має найширший дрейф.";
-"AMP TYPE - the voice of the AMP principle. Only audible in proportion to how much AMP is in the BLEND: the Blackface is clean and firm, the Plexi bites, the AC30 chimes, the Recto slams hardest in the second stage." = "AMP TYPE — голос принципу AMP. Чути лише пропорційно до того, скільки AMP у BLEND: Blackface чистий і твердий, Plexi кусається, AC30 дзвенить, Recto найсильніше б’є в другій стадії.";
 "TRANSFORMER TYPE - the voice of the TRANSFORMER principle. Only audible in proportion to how much TRANSFORMER is in the BLEND: the types set how fast the core tracks and how early it starts to saturate - a nickel core bends earlier, steel later and harder." = "TRANSFORMER TYPE — голос принципу TRANSFORMER. Чути лише пропорційно до того, скільки TRANSFORMER у BLEND: типи задають, як швидко серцевина стежить і коли починає насичуватися — нікелева гнеться раніше, сталева пізніше й жорсткіше.";
 "DIGITAL TYPE - the voice of the DIGITAL principle. Only audible in proportion to how much DIGITAL is in the BLEND: the types shorten the word length and deepen the sample-and-hold, from a 16-bit ceiling to full bit-crush." = "DIGITAL TYPE — голос принципу DIGITAL. Чути лише пропорційно до того, скільки DIGITAL у BLEND: типи вкорочують розрядність і поглиблюють sample-and-hold — від стелі 16 біт до повного біткрашу.";
 "VINYL TYPE - the record itself, not the machine: how it was pressed and how worn it is. Audible whenever VINYL is up, and independent of the BLEND. Shellac 78 plays with loud surface between every note, a dubplate is a fresh loud lacquer, a half-speed master is nearly silent between the grooves. The speed of the motor is VINYL SPEED." = "VINYL TYPE — сама платівка, а не машина: як її пресували і наскільки зношена. Чута щоразу, коли VINYL піднятий, і не залежить від BLEND. Shellac 78 грає з гучною поверхнею між нотами, дублікейт — свіжа гучна лакуна, half-speed master — майже тиша між канавками. Швидкість мотора — це VINYL SPEED.";
@@ -326,10 +325,13 @@
 "Language" = "Мова";
 "Tape" = "Стрічка";
 "Vinyl" = "Платівка";
-"Cassette" = "Касета";
 "Digital" = "Цифра";
-"Amp" = "Підсилювач";
 "Valve" = "Лампа";
+"Pentode" = "Пентод";
+"Triode" = "Тріод";
+"Transistor" = "Транзистор";
+"Fold" = "Згортка";
+"Glass" = "Скло";
 "Transformer" = "Трансформатор";
 "Sag" = "Просадка";
 "Presence" = "Присънс";
@@ -373,7 +375,6 @@
 "Turntable" = "Програвач";
 "Cartridge" = "Звукознімач";
 "Valve Type" = "Тип лампи";
-"Amp Type" = "Тип підсилювача";
 "Transformer Type" = "Тип трансформатора";
 "Digital Type" = "Тип цифри";
 "Vinyl Type" = "Тип платівки";
@@ -397,9 +398,11 @@
 // -----------------------------------------------------------------------------
 "TAPE - how much of the mix is the magnetic tape machine: hysteresis with memory, gentle and warm, the principle this plugin was calibrated as. Default 100 percent." = "TAPE — скільки в міксі дає магнітна стрічка: гістерезис із пам’яттю, м’який і теплий, той принцип, під який цей плагін калібрували. Типове 100 відсотків.";
 "VALVE - how much of the mix is the thermionic stage: soft asymmetric compression, even-harmonic warmth. Shares the mix with the other sources - the shares are normalised, so the character changes without the level moving. Default 0 percent." = "VALVE — скільки в міксі дає термоелектронний каскад: м’яке асиметричне стиснення, тепло парних гармонік. Частка ділиться з іншими джерелами, і частки нормалізуються, тож характер змінюється, а рівень ні. Типове 0 відсотків.";
-"CASSETTE - how much of the mix is the compact cassette: a hard early knee on narrow tape, small and loud. Default 0 percent." = "CASSETTE — скільки в міксі дає компакт-касета: ранній твердий злам на вузькій стрічці, дрібно й гучно. Типове 0 відсотків.";
-"VINYL - how much of the mix is the cutting lathe: the gentlest tracing distortion of the seven, a soft level-dependent knee like the groove rounding under the stylus. Default 0 percent." = "VINYL — скільки в міксі дає різальний верстат: найлагідніше з семи спотворення відстеження, м’який злам, що залежить від рівня, як канавка округлюється під голкою. Типове 0 відсотків.";
-"AMP - how much of the mix is the guitar amplifier's input stage: hard, odd-harmonic, the one that bites. Default 0 percent." = "AMP — скільки в міксі дає вхідний каскад гітарного підсилювача: твердий, непарні гармоніки, той, що кусає. Типове 0 відсотків.";
+"PENTODE - how much of the mix is a sharp-cutoff pentode: the tight end of a valve amp, an early knee and an odd-dominant edge. Shares the mix with the other sources and does not change the level. Default 0 percent." = "PENTODE — скільки в міксі дає пентод із гострою відсічкою: тугий край лампового підсилювача, ранній злам і непарний край. Частка ділиться з іншими джерелами і не змінює рівень. Типове 0 відсотків.";
+"TRIODE - how much of the mix is a low-mu triode: the softest knee here, even-harmonic warmth at any level. Pair it with PENTODE for the two stages of a guitar amp. Default 0 percent." = "TRIODE — скільки в міксі дає тріод із низьким підсиленням: найлагідніший злам тут, тепло парних гармонік на будь-якому рівні. У парі з PENTODE — два каскади гітарного підсилювача. Типове 0 відсотків.";
+"TRANSISTOR - how much of the mix is a germanium stage: asymmetric conduction with a crossover notch around zero, which puts even harmonics and a grain on the low orders. Default 0 percent." = "TRANSISTOR — скільки в міксі дає германієвий каскад: асиметрична провідність із провалом біля нуля, звідси парні гармоніки й зерно на низьких порядках. Типове 0 відсотків.";
+"FOLD - how much of the mix is the wavefolder: the curve turns back instead of flattening, so it folds the signal rather than clipping it. Odd-dominant and level-dependent in a way no tanh curve is. Default 0 percent." = "FOLD — скільки в міксі дає хвильовий згинач: крива повертає назад, а не сплощується, тож сигнал згортається, а не обрізається. Непарний і залежний від рівня так, як жодна tanh-крива. Типове 0 відсотків.";
+"GLASS - how much of the mix is the pure second-order term: it adds the second harmonic and nothing else, so it thickens the sound without adding any edge. Default 0 percent." = "GLASS — скільки в міксі дає чистий квадратичний член: він додає другу гармоніку й нічого більше, тож звук густішає без жодного краю. Типове 0 відсотків.";
 "TRANSFORMER - how much of the mix is the passive input transformer: pure analogue but no machine, the only principle that bends the low end first. Default 0 percent." = "TRANSFORMER — скільки в міксі дає пасивний вхідний трансформатор: чиста аналогова ланка без машини, єдиний принцип, що першим гне низ. Типове 0 відсотків.";
 "DIGITAL - how much of the mix is the converter: a hard ceiling with a held code, where the machines stop and the conversion begins. Default 0 percent." = "DIGITAL — скільки в міксі дає перетворювач: тверда стеля з утриманим кодом, там, де машини закінчуються і починається перетворення. Типове 0 відсотків.";
 "BYPASS - hard bypass: the tape engine and both glue compressors are switched out of the path. The switch is ramped, so toggling it never clicks." = "BYPASS — жорсткий байпас: рушій стрічки й обидва клейові компресори виводяться з тракту. Перемикач згладжений, тож переключення ніколи не клацає.";

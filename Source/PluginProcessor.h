@@ -1290,12 +1290,14 @@ private:
     // (The old blend/shape sweep pair was removed: the user asked for the
     // machines to be dialled by name.)
     std::atomic<float>* tapeSourceParam = nullptr;
-    std::atomic<float>* vinylSourceParam = nullptr;
-    std::atomic<float>* cassetteSourceParam = nullptr;
-    std::atomic<float>* digitalSourceParam = nullptr;
-    std::atomic<float>* ampSourceParam = nullptr;
     std::atomic<float>* valveSourceParam = nullptr;
+    std::atomic<float>* pentodeSourceParam = nullptr;
+    std::atomic<float>* triodeSourceParam = nullptr;
+    std::atomic<float>* transistorSourceParam = nullptr;
+    std::atomic<float>* foldSourceParam = nullptr;
+    std::atomic<float>* glassSourceParam = nullptr;
     std::atomic<float>* transformerSourceParam = nullptr;
+    std::atomic<float>* digitalSourceParam = nullptr;
     std::atomic<float>* sagParam = nullptr;
     std::atomic<float>* presenceParam = nullptr;
     std::atomic<float>* cabinetParam = nullptr;
@@ -1373,7 +1375,6 @@ private:
     // The five type switches. Read once per block like every other choice, so the
     // per-sample loops branch on plain ints rather than on atomics.
     std::atomic<float>* valveTypeParam = nullptr;
-    std::atomic<float>* ampTypeParam = nullptr;
     std::atomic<float>* transformerTypeParam = nullptr;
     std::atomic<float>* digitalTypeParam = nullptr;
     std::atomic<float>* vinylTypeParam = nullptr;
@@ -2050,10 +2051,12 @@ private:
     // does, so a mix change cannot step the weights either. Two are paired on
     // one smoother only in the sense that setWeights consumes them together.
     SampleSmoother tapeSourceSmoothed { sampleClock, false, false, 1.0f };
-    SampleSmoother vinylSourceSmoothed { sampleClock };
     SampleSmoother valveSourceSmoothed { sampleClock };
-    SampleSmoother cassetteSourceSmoothed { sampleClock };
-    SampleSmoother ampSourceSmoothed { sampleClock };
+    SampleSmoother pentodeSourceSmoothed { sampleClock };
+    SampleSmoother triodeSourceSmoothed { sampleClock };
+    SampleSmoother transistorSourceSmoothed { sampleClock };
+    SampleSmoother foldSourceSmoothed { sampleClock };
+    SampleSmoother glassSourceSmoothed { sampleClock };
     SampleSmoother transformerSourceSmoothed { sampleClock };
     SampleSmoother digitalSourceSmoothed { sampleClock };
 
@@ -2226,7 +2229,6 @@ private:
     // vinyl type also drives the per-block voice fields on the VinylStages, which
     // are written once here and only read in the loop.
     int valveTypeCached = 0;
-    int ampTypeCached = 0;
     int transformerTypeCached = 0;
     int digitalTypeCached = 0;
     int vinylTypeCached = 0;

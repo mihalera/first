@@ -321,7 +321,7 @@ struct ChainReplica
         //  the one the plugin produces at a default setting.
         const float preDrive = x * (1.0f + driveAmount * 1.2f * speedBias * preDriveGain);
         // Pure tape: the seven SOURCE knobs at their defaults (tape 100, rest 0).
-        saturation.setWeights (1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+        saturation.setWeights (1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
         const float shapedCore = saturation.process (preDrive, shaperDrive, shaperAsymmetry);
         hysteresisMemory = shapedCore;
 
@@ -489,7 +489,7 @@ std::vector<float> renderGenerator (ChainSettings settings, double frequency, do
         const double time = static_cast<double> (i) / kSampleRate;
         const float input = static_cast<float> (amplitude * std::sin (kTwoPi * frequency * time));
         const float preDrive = input * (1.0f + chain.driveAmount * 1.2f * chain.speedBias * chain.preDriveGain);
-        chain.saturation.setWeights (1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
+        chain.saturation.setWeights (1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
         const float shaped = chain.saturation.process (preDrive, chain.shaperDrive, chain.shaperAsymmetry);
         out.push_back (chain.generator.process (shaped, chain.driveAmount, settings.subfund,
                                                 static_cast<float> (kSampleRate)));
@@ -1587,6 +1587,66 @@ void printChainSpectrum()
     printSpectrum (signal, signal.size() - window, window, 20.0, 2600.0, 0.5, 28);
 }
 
+
+//==============================================================================
+/** GLASS is the one curve with no odd content, and this measures that rather
+    than trusting the shape of the code: a sine goes through the shipped header,
+    the output is correlated against its own first, second and third harmonics,
+    and the third has to be negligible while the second is plainly there.
+
+    A test that only walked the branch would pass on a curve with a tanh in it.
+    This one would not. */
+void testGlassSecondHarmonicOnly()
+{
+    constexpr double rate = 48000.0;
+    constexpr double f0 = 1000.0;
+    constexpr int measured = 9600;      // 200 ms - an exact number of periods
+    constexpr int settle = 4800;        // let the DC blocker find its mean
+    constexpr double twoPi = 6.283185307179586;
+
+    SaturationCore core;
+    //  The nine SOURCE weights are tape, valve, pentode, triode, transistor,
+    //  fold, glass, transformer, digital: GLASS alone.
+    core.setWeights (0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f);
+
+    std::vector<float> out;
+    out.reserve (static_cast<std::size_t> (measured));
+
+    for (int i = 0; i < settle + measured; ++i)
+    {
+        const auto x = 0.5f * static_cast<float> (std::sin (twoPi * f0 * i / rate));
+        const auto y = core.process (x, 0.9f, 0.0f);
+
+        if (i >= settle)
+            out.push_back (y);
+    }
+
+    const auto magnitude = [&out] (double freq)
+    {
+        double re = 0.0;
+        double im = 0.0;
+
+        for (std::size_t i = 0; i < out.size(); ++i)
+        {
+            const auto phase = 6.283185307179586 * freq * static_cast<double> (i) / rate;
+            re += static_cast<double> (out[i]) * std::cos (phase);
+            im -= static_cast<double> (out[i]) * std::sin (phase);
+        }
+
+        return std::sqrt (re * re + im * im) / static_cast<double> (out.size());
+    };
+
+    const auto first  = magnitude (f0);
+    const auto second = magnitude (2.0 * f0);
+    const auto third  = magnitude (3.0 * f0);
+
+    std::printf ("glass: 1st %.6f, 2nd %.6f, 3rd %.9f\n", first, second, third);
+
+    check (second > first * 0.02, "GLASS produces a measurable second harmonic");
+    check (third < second * 0.01, "GLASS's third harmonic is far below its second");
+    check (third < first * 1.0e-4, "GLASS's third harmonic is negligible");
+}
+
 int main()
 {
     std::printf ("SUBFUND subharmonic regression harness\n");
@@ -1603,6 +1663,7 @@ int main()
     testBlockRateCoefficients();
     testTapeModulation();
     testTapeVoicing();
+    testGlassSecondHarmonicOnly();
     testTapeCouplings();
     testGlueOperatingPoints();
     testDelayTime();

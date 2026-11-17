@@ -139,7 +139,6 @@ void FirstAudioProcessorEditor::applyTheme() {
     vinylTypeLabel.setColour(juce::Label::textColourId, palette.secondary);
     vinylSpeedLabel.setColour(juce::Label::textColourId, palette.secondary);
     valveTypeLabel.setColour(juce::Label::textColourId, palette.secondary);
-    ampTypeLabel.setColour(juce::Label::textColourId, palette.secondary);
     transformerTypeLabel.setColour(juce::Label::textColourId, palette.secondary);
     digitalTypeLabel.setColour(juce::Label::textColourId, palette.secondary);
     diPadLabel.setColour(juce::Label::textColourId, palette.secondary);
@@ -208,7 +207,6 @@ void FirstAudioProcessorEditor::applyTheme() {
     styleCombo(tapeTypeBox);
     styleCombo(phonePageBox);
     styleCombo(valveTypeBox);
-    styleCombo(ampTypeBox);
     styleCombo(transformerTypeBox);
     styleCombo(digitalTypeBox);
     styleCombo(vinylTypeBox);

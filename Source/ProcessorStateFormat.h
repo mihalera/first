@@ -51,7 +51,7 @@ namespace
     //  State, so this rides along without touching the parameters or the editor.
     // ==========================================================================
     constexpr const char* stateFormatProperty = "nonlinStateFormat";
-    constexpr int currentStateFormat = 4;   // 4 = WIDTH 0..1, natural at 50%, widening above
+    constexpr int currentStateFormat = 5;   // 5 = the nine-model saturation set
 
     void migrateStateFormat (juce::ValueTree& tree)
     {
@@ -74,6 +74,55 @@ namespace
         // Before format 4, WIDTH's 0..1 parameter was scaled by 2 in the DSP,
         // so 0.5 meant natural width. New DSP keeps the same physical mapping,
         // therefore no value migration is required here.
+
+        if (sourceFormat < 5)
+        {
+            // CASSETTE, VINYL and AMP were retired from the saturation model
+            // set, and this is the mapping their shares are folded onto:
+            //
+            //   cassette -> tape    the same magnetic mechanism, narrower gauge
+            //   vinyl    -> tape    the same medium, a gentler knee
+            //   amp      -> valve   thermionic; the amp's cascade is what PENTODE
+            //                       and TRIODE now describe, and a session that
+            //                       dialled AMP meant "a valve stage"
+            //
+            // The share is ADDED to the survivor rather than replacing it, so a
+            // mix of TAPE 60 / CASSETTE 40 comes back as TAPE 100 - the closest
+            // one curve can get to the old blend. The alternative was a silent
+            // fallback to the default, which is what this harness exists to
+            // stop: the session must open with the sound it had, or as near to
+            // it as the surviving curves allow.
+            //
+            // The retired children are removed, not merely ignored, so a session
+            // re-saved from this build carries no id the registry no longer has.
+            const auto fold = [&tree] (const char* retiredId, const char* survivorId)
+            {
+                auto from = tree.getChildWithProperty ("id", retiredId);
+                if (! from.isValid())
+                    return;
+
+                const auto share = static_cast<float> (from.getProperty ("value", 0.0f));
+                if (auto into = tree.getChildWithProperty ("id", survivorId); into.isValid())
+                {
+                    const auto held = static_cast<float> (into.getProperty ("value", 0.0f));
+                    into.setProperty ("value",
+                                      juce::jlimit (0.0f, 1.0f, held + share), nullptr);
+                }
+
+                tree.removeChild (from, nullptr);
+            };
+
+            fold ("cassette_source", "tape_source");
+            fold ("vinyl_source",    "tape_source");
+            fold ("amp_source",      "valve_source");
+
+            // AMP TYPE went with the AMP principle. A session's value for it has
+            // nowhere to go, so the property is dropped rather than left to ride
+            // along in every future save as an id no parameter answers to.
+            if (auto ampType = tree.getChildWithProperty ("id", "amp_type"); ampType.isValid())
+                tree.removeChild (ampType, nullptr);
+        }
+
         tree.setProperty (stateFormatProperty, currentStateFormat, nullptr);
     }
 

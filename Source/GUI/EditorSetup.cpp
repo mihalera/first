@@ -594,8 +594,6 @@ void FirstAudioProcessorEditor::stylePanelLabels() {
                juce::Justification::left);
     styleLabel(valveTypeLabel, "VALVE", 9.0f, paletteFor(false).secondary, true,
                juce::Justification::left);
-    styleLabel(ampTypeLabel, "AMP", 9.0f, paletteFor(false).secondary, true,
-               juce::Justification::left);
     styleLabel(transformerTypeLabel, "XFMR", 9.0f, paletteFor(false).secondary, true,
                juce::Justification::left);
     styleLabel(digitalTypeLabel, "DIGITAL", 9.0f, paletteFor(false).secondary, true,
@@ -661,7 +659,6 @@ void FirstAudioProcessorEditor::stylePanelLabels() {
     addAndMakeVisible(buildLabel);
     addAndMakeVisible(tapeTypeLabel);
     addAndMakeVisible(valveTypeLabel);
-    addAndMakeVisible(ampTypeLabel);
     addAndMakeVisible(transformerTypeLabel);
     addAndMakeVisible(digitalTypeLabel);
     addAndMakeVisible(vinylTypeLabel);
@@ -922,7 +919,6 @@ void FirstAudioProcessorEditor::setUpDeckSelectors() {
     // attachment below, which syncs the box to the parameter.
     tapeTypeBox.addItemList(tapeStockNameList(), 1);
     valveTypeBox.addItemList(valveTypeNameList(), 1);
-    ampTypeBox.addItemList(ampTypeNameList(), 1);
     transformerTypeBox.addItemList(transformerTypeNameList(), 1);
     digitalTypeBox.addItemList(digitalTypeNameList(), 1);
     vinylTypeBox.addItemList(vinylTypeNameList(), 1);
@@ -946,10 +942,6 @@ void FirstAudioProcessorEditor::setUpDeckSelectors() {
                          "BLEND: a 12AX7 runs cold and tight, an EL34 or 6L6 "
                          "is fatter and more compressed, a 300B is the softest "
                          "and most even, a KT88 has the widest drift.");
-    setTip(ampTypeBox, "AMP TYPE - the voice of the AMP principle. Only audible "
-                       "in proportion to how much AMP is in the BLEND: the "
-                       "Blackface is clean and firm, the Plexi bites, the AC30 "
-                       "chimes, the Recto slams hardest in the second stage.");
     setTip(transformerTypeBox, "TRANSFORMER TYPE - the voice of the TRANSFORMER "
                                "principle. Only audible in proportion to how much "
                                "TRANSFORMER is in the BLEND: the types set how "
@@ -1002,7 +994,6 @@ void FirstAudioProcessorEditor::setUpDeckSelectors() {
                           "chosen.");
     tapeTypeBox.setLookAndFeel(&customLookAndFeel);
     valveTypeBox.setLookAndFeel(&customLookAndFeel);
-    ampTypeBox.setLookAndFeel(&customLookAndFeel);
     transformerTypeBox.setLookAndFeel(&customLookAndFeel);
     digitalTypeBox.setLookAndFeel(&customLookAndFeel);
     vinylTypeBox.setLookAndFeel(&customLookAndFeel);
@@ -2293,7 +2284,6 @@ void FirstAudioProcessorEditor::setUpPresetBar() {
 void FirstAudioProcessorEditor::addDeckControlsToPanel() {
     addAndMakeVisible(tapeTypeBox);
     addAndMakeVisible(valveTypeBox);
-    addAndMakeVisible(ampTypeBox);
     addAndMakeVisible(transformerTypeBox);
     addAndMakeVisible(digitalTypeBox);
     addAndMakeVisible(vinylTypeBox);
@@ -2305,8 +2295,6 @@ void FirstAudioProcessorEditor::addDeckControlsToPanel() {
         audioProcessor.parameters, "tape_type", tapeTypeBox);
     valveTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
         audioProcessor.parameters, "valve_type", valveTypeBox);
-    ampTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
-        audioProcessor.parameters, "amp_type", ampTypeBox);
     transformerTypeAttachment =
         std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
             audioProcessor.parameters, "transformer_type", transformerTypeBox);

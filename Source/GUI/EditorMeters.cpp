@@ -615,7 +615,8 @@ void FirstAudioProcessorEditor::MixBar::paint (juce::Graphics& g)
     // casts INTO the slot) and a lit line at the bottom (the far wall catching
     // the lamp).
     static constexpr const char* principleNames[principleCount] {
-        "TAPE", "VALVE", "CASSETTE", "VINYL", "AMP", "TRANSFORMER", "DIGITAL"
+        "TAPE", "VALVE", "PENTODE", "TRIODE", "TRANSISTOR", "FOLD", "GLASS",
+        "TRANSFORMER", "DIGITAL"
     };
     static constexpr const char* principleIconSymbol = "principle_icons_png";
 

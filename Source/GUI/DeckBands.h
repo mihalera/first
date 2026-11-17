@@ -42,7 +42,7 @@ struct DeckBands {
         heading = 0,  // "DECK" and the build id
         model = 1,    // SPEED / VINYL SPEED / BPM
         switches = 2, // INSTRUMENT, HARMONICS, SUBFUND, ANTI-PHASE
-        types = 3,    // the six type selectors
+        types = 3,    // the five type selectors
         transport = 4, // the transport keys and the mode switch
         preset = 5,   // the preset chain
         badge = 6,    // the preset badge line

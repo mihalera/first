@@ -1,6 +1,6 @@
 # MiBoX
 
-**A JUCE 9.0.5 saturation plugin built around a nonlinear magnetic tape machine** - six saturation principles you can blend, a transport you can start and stop, and a mastering-grade output chain around it. Repository: <https://github.com/mihalera/first>
+**A JUCE 9.0.5 saturation plugin built around a nonlinear magnetic tape machine** - nine saturation principles you can blend, a transport you can start and stop, and a mastering-grade output chain around it. Repository: <https://github.com/mihalera/first>
 
 | | |
 | --- | --- |
@@ -30,7 +30,7 @@
 
 ### Contents
 
-The machine and its sound: [Overview](#overview) · [Saturation: six principles, not one curve](#saturation-six-principles-not-one-curve) · [Guitar-amplifier features](#guitar-amplifier-features) · [Preamp and distortion](#preamp-and-distortion) · [Dynamics: the transient shaper](#dynamics-the-transient-shaper) · [Neural stage and IR](#neural-stage-and-ir-rtneural-and-a-convolver) · [Tape condition](#tape-condition-flux-wear-mechanics) · [Reverb and delay](#reverb-and-delay) · [Vinyl](#vinyl) · [Modes](#modes) · [Subharmonics](#subharmonics) · [Signal path](#signal-path)
+The machine and its sound: [Overview](#overview) · [Saturation: nine principles, not one curve](#saturation-nine-principles-not-one-curve) · [Guitar-amplifier features](#guitar-amplifier-features) · [Preamp and distortion](#preamp-and-distortion) · [Dynamics: the transient shaper](#dynamics-the-transient-shaper) · [Neural stage and IR](#neural-stage-and-ir-rtneural-and-a-convolver) · [Tape condition](#tape-condition-flux-wear-mechanics) · [Reverb and delay](#reverb-and-delay) · [Vinyl](#vinyl) · [Modes](#modes) · [Subharmonics](#subharmonics) · [Signal path](#signal-path)
 
 The transport and the pitch: [Transport: start, play, stop](#transport-start-play-stop) · [Repitch](#repitch-the-platters-own-pitch-bend) · [Autotune](#autotune-the-corrector) · [Tape delay](#tape-delay) · [Stereo tape offset](#stereo-tape-offset)
 
@@ -69,41 +69,40 @@ It provides a tape-saturation mastering workflow with:
 - four VU-style meters: input and output level, plus one reduction meter per compressor
 - a vintage analog-inspired UI with animated knobs, reel and level meters
 
-## Saturation: six principles, not one curve
+## Saturation: nine principles, not one curve
 
 A tape machine is **one** of the ways analogue electronics bend a signal, and for a
 long time this plugin was built around that one curve. The shaper is now a blend of
-the six mechanisms a real chain uses, and they are genuinely different shapes:
+the nine mechanisms a real chain uses, and they are genuinely different shapes:
 
 | Principle | Mechanism | Character |
 | --- | --- | --- |
 | **TAPE** | Magnetic hysteresis, with a **memory** term - the medium's state depends on where it has been | Gentle at low level; the asymmetry is what makes the even harmonics |
 | **VALVE** | Thermionic: a soft, strongly asymmetric knee with a wide transition | Even-dominant, and it compresses rather than clips - it thickens before it distorts |
-| **CASSETTE** | Narrow gauge, low bias: a **hard, early knee** with very limited headroom and a low-frequency bump | "Everything is louder and smaller" |
-| **AMP** | A guitar amplifier's input stage: a high-gain, nearly symmetric **cascade** | Clips hard, strong odd harmonics - the one that bites |
+| **PENTODE** | A sharp-cutoff pentode: an early knee and a steep, odd-dominant edge | The tight end of a valve amp - it bites without the fizz |
+| **TRIODE** | A low-mu triode: the softest knee in the set | Even-harmonic warmth at any level - the same valve, asked politely |
+| **TRANSISTOR** | Germanium conduction: asymmetric, with a crossover notch around zero | Even harmonics and a grain on the low orders - the solid-state edge |
+| **FOLD** | A wavefolder: the curve turns back instead of flattening | Folds the signal rather than clipping it; odd-dominant and level-dependent |
+| **GLASS** | The pure second-order term, `x + a*x^2` - and nothing else | Adds the **second harmonic alone**: it thickens the sound without adding edge |
 | **TRANSFORMER** | An iron core's flux lagging whatever drives it, with saturation on the peaks | A gentle, level-dependent compression with a soft top-end loss - the "iron" in a signal path |
 | **DIGITAL** | A converter's quantisation: a held code between sample instants and a hard level ceiling | The one solid-state mechanism: bit depth (16 / 12 / 8-bit), bit crush or sample-and-hold |
 
-Blending them is not a gimmick: a real chain **is** this. A guitar goes into an amp,
-the amp into a desk and a tape machine, a valve preamp sits somewhere in the path, a
-transformer couples the output, and the whole thing may end up on a cassette - or be
-the last thing a converter sees before it is digitised.
+Blending them is not a gimmick: a real chain **is** this. A guitar goes into a valve
+amp - a pentode input stage into a triode output - past a germanium stage, into a desk
+and a tape machine; a transformer couples the output, a wavefolder or a glassy
+second-order stage colours it somewhere in between, and the whole thing may be the last
+thing a converter sees before it is digitised.
 
-**BLEND** sweeps the weighting across the six in a fixed order (tape → valve →
-cassette → amp → transformer → digital) - the order is the signal path rather than a
-ranking, five machines you overload by pushing level into them and then the converter
-that replaces all of them - so the control has one direction the ear can learn.
-**SHAPE** decides how concentrated it is: low picks one principle at a time, high
-spreads the weighting so all six contribute and the result reads as one compound
-machine.
+The blend is set by **nine SOURCE knobs**, one per principle, and they are shares:
+TAPE at 60 with VALVE at 40 is a 60/40 blend, normalised so the mix cannot change the
+level. Every curve is normalised to **unity slope at the origin**, exactly like the
+original tape shaper, so turning a share up changes the shape and never the gain. All
+nine at zero is the dry signal, sample for sample.
 
-Every curve is normalised to **unity slope at the origin**, exactly like the original
-tape shaper, so the blend cannot change the level - only the shape. That property is
-what keeps DRIVE meaning what it says.
+Default is TAPE at 100 % and everything else at 0 % - pure tape, which is exactly what
+every earlier build did.
 
-Default BLEND is 0 % - pure tape, which is exactly what every earlier build did.
-
-Each principle also has its own **model list** (VALVE TYPE, AMP TYPE, TRANSFORMER
+Each principle also has its own **model list** (TAPE TYPE, VALVE TYPE, TRANSFORMER
 TYPE, DIGITAL TYPE, VINYL TYPE), and each list has an **OFF** entry that removes that
 principle outright. When one is off its share of the blend is **redistributed** among
 the principles still present rather than simply dropped, so switching one off changes

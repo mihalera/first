@@ -17,7 +17,7 @@ that came out of the family split:
   * the page count matches the page count in the header and in the subtitle list
   * every knob index is on exactly one page, and none is out of range
   * every page's family is one of the declared families
-  * the families hold the counts setTabFamily() asserts (9 / 6 / 4 / 3)
+  * the families hold the counts setTabFamily() asserts (10 / 6 / 4 / 3)
   * SETUP is the LAST family - the engine switches are not part of the sound,
     which is why they are the one family whose position is a rule
   * the AUTOTUNE and COMP pages stay in FX rather than drifting into RACK: they
@@ -32,8 +32,8 @@ TABS = os.path.join(ROOT, "Source", "GUI", "PanelTabs.h")
 HEADER = os.path.join(ROOT, "Source", "PluginEditor.h")
 TEXT = os.path.join(ROOT, "Source", "GUI", "PanelText.h")
 
-FAMILY_NAMES = {0: "TAPE", 1: "FX", 2: "RACK", 3: "SETUP"}
-FAMILY_COUNTS = {0: 9, 1: 6, 2: 4, 3: 3}
+FAMILY_NAMES = {0: "BOX", 1: "FX", 2: "RACK", 3: "SETUP"}
+FAMILY_COUNTS = {0: 10, 1: 6, 2: 4, 3: 3}
 
 problems = []
 

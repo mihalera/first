@@ -91,8 +91,9 @@ namespace
             "delay_pingpong", "delay_tone", "delay_lowcut", "delay_damp",
             "st_offset", "noise", "noise_lvl", "transport", "spindown",
             "ui_sounds", "language", "anti_phase_guard", "osc_on", "osc_note",
-            "tape_source", "vinyl_source", "cassette_source", "digital_source",
-            "amp_source", "valve_source", "transformer_source",
+            "tape_source", "valve_source", "pentode_source", "triode_source",
+            "transistor_source", "fold_source", "glass_source",
+            "transformer_source", "digital_source",
             "sag", "presence", "cabinet", "amp_bias",
             "preamp", "flux", "wear", "mechanics", "reverb", "reverb_size",
             "reverb_predelay", "reverb_damp", "reverb_width", "reverb_lowcut",
@@ -108,7 +109,7 @@ namespace
             "out_hp_freq", "out_lp_freq", "out_eq_order", "out_eq_q",
             "out_hp_on", "out_lp_on",
             "st_link",
-            "valve_type", "amp_type", "transformer_type",
+            "valve_type", "transformer_type",
             "digital_type", "vinyl_type",
             "delay_sync", "delay_rate", "tuning_tonic", "tuning_mode", "autotune_amount",
             "autotune_speed", "autotune_range", "autotune_octave", "autotune_tolerance", "autotune_gate",
@@ -271,12 +272,14 @@ FirstAudioProcessor::FirstAudioProcessor()
     compressorMakeupParam = parameters.getRawParameterValue ("comp_makeup");
     compressorMixParam = parameters.getRawParameterValue ("comp_mix");
     tapeSourceParam = parameters.getRawParameterValue ("tape_source");
-    vinylSourceParam = parameters.getRawParameterValue ("vinyl_source");
-    cassetteSourceParam = parameters.getRawParameterValue ("cassette_source");
-    digitalSourceParam = parameters.getRawParameterValue ("digital_source");
-    ampSourceParam = parameters.getRawParameterValue ("amp_source");
     valveSourceParam = parameters.getRawParameterValue ("valve_source");
+    pentodeSourceParam = parameters.getRawParameterValue ("pentode_source");
+    triodeSourceParam = parameters.getRawParameterValue ("triode_source");
+    transistorSourceParam = parameters.getRawParameterValue ("transistor_source");
+    foldSourceParam = parameters.getRawParameterValue ("fold_source");
+    glassSourceParam = parameters.getRawParameterValue ("glass_source");
     transformerSourceParam = parameters.getRawParameterValue ("transformer_source");
+    digitalSourceParam = parameters.getRawParameterValue ("digital_source");
     sagParam = parameters.getRawParameterValue ("sag");
     presenceParam = parameters.getRawParameterValue ("presence");
     cabinetParam = parameters.getRawParameterValue ("cabinet");
@@ -330,7 +333,6 @@ FirstAudioProcessor::FirstAudioProcessor()
     outputEqOrderParam = parameters.getRawParameterValue ("out_eq_order");
     outputEqQParam = parameters.getRawParameterValue ("out_eq_q");
     valveTypeParam = parameters.getRawParameterValue ("valve_type");
-    ampTypeParam = parameters.getRawParameterValue ("amp_type");
     transformerTypeParam = parameters.getRawParameterValue ("transformer_type");
     digitalTypeParam = parameters.getRawParameterValue ("digital_type");
     vinylTypeParam = parameters.getRawParameterValue ("vinyl_type");

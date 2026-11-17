@@ -1442,9 +1442,13 @@ jobs:
           mkdir -p "$RUNNER_TEMP/macos-ccache"
           clang_c="$(xcrun --find clang)"
           clang_cxx="$(xcrun --find clang++)"
-          printf '#!/bin/sh\nexec "%s" "%s" "$@"\n' \\
+          if [ -z "$clang_c" ] || [ -z "$clang_cxx" ]; then
+            echo "xcrun did not find the Clang binaries under the active Xcode." >&2
+            exit 1
+          fi
+          printf '#!/bin/sh\nexec "%s" "%s" "$@"\n' \
             "$J37_COMPILER_LAUNCHER" "$clang_c" > "$RUNNER_TEMP/macos-ccache/clang"
-          printf '#!/bin/sh\nexec "%s" "%s" "$@"\n' \\
+          printf '#!/bin/sh\nexec "%s" "%s" "$@"\n' \
             "$J37_COMPILER_LAUNCHER" "$clang_cxx" > "$RUNNER_TEMP/macos-ccache/clang++"
           chmod +x "$RUNNER_TEMP/macos-ccache/clang" "$RUNNER_TEMP/macos-ccache/clang++"
           echo "MACOS_CLANG_C=$clang_c" >> "$GITHUB_ENV"

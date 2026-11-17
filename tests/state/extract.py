@@ -75,11 +75,11 @@ CONSTANT_ANCHORS = [
     "constexpr float maxInputDb =",
 ]
 
-# The six model lists in the header: a count, an array sized by it, and the
+# The five model lists in the header: a count, an array sized by it, and the
 # function that turns it into the juce::StringArray a choice parameter takes -
 # the same list the panel's combo box reads, which is why they are cut rather
 # than restated here.
-NAME_LISTS = ["tapeStock", "valveType", "ampType", "transformerType", "digitalType", "vinylType"]
+NAME_LISTS = ["tapeStock", "valveType", "transformerType", "digitalType", "vinylType"]
 
 # The processor's own definitions the harness runs. Each is cut whole, from its
 # signature through its closing brace.

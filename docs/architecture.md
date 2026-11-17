@@ -45,7 +45,7 @@ by stage, with the rate domain of each - and the short version is
 | Stage | File |
 | --- | --- |
 | input trim, input glue, record head, tape EQ, noise, playback EQ | `Source/ProcessorSignalPath.cpp` (inside `processTapeEngine`) |
-| the saturation curve and its six principles | `Source/DSP/SaturationCore.h` |
+| the saturation curve and its nine principles | `Source/DSP/SaturationCore.h` |
 | the amplifier's sag / presence / cabinet / bias | `Source/DSP/AmpVoicing.h` |
 | the two pre-machine gain stages (preamp, distortion, DI) | `Source/DSP/InputStage.h` |
 | the block-rate coefficients the machine rebuilds once a block | `Source/DSP/BlockRateCoefficients.h` |

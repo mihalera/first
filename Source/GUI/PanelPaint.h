@@ -47,16 +47,17 @@
 #define J37_HAS_MELATONIN_BLUR 0
 #endif
 
-// The seven saturation principles, in the order the SOURCE knobs, the colours
-// and the MIX page's bar all use them: tape, valve, cassette, vinyl, amp,
-// transformer, digital - the same order SaturationCore::setWeights takes them
-// in. Declared once here, ABOVE everything that needs it, because three
-// separate pieces of the panel count the same seven: the LookAndFeel, which
+// The nine saturation principles, in the order the SOURCE knobs, the colours
+// and the MIX page's bar all use them: tape, valve, pentode, triode,
+// transistor, fold, glass, transformer, digital - the same order
+// SaturationCore::setWeights takes them in. Declared once here, ABOVE
+// everything that needs it, because three separate pieces of the panel count
+// the same nine: the LookAndFeel, which
 // paints a knob in its machine's colour and has to hold one pointer per
-// principle; the editor's MixBar, whose strip is a fixed seven cells; and the
-// seven SOURCE registrations themselves. One number, so none of the three can
+// principle; the editor's MixBar, whose strip is a fixed nine cells; and the
+// nine SOURCE registrations themselves. One number, so none of the three can
 // drift from the others.
-inline constexpr int principleCount = 7;
+inline constexpr int principleCount = 9;
 
 namespace j37panel {
 inline constexpr const char* uiFontFamily =
@@ -511,9 +512,11 @@ inline juce::Colour principleColour(int principle, bool darkTheme) noexcept {
     static constexpr juce::uint32 hues[principleCount]{
         0xffe0a53c, // TAPE        - brass
         0xffe0603f, // VALVE       - hot coral
-        0xff3fae9e, // CASSETTE    - teal
-        0xff8a74e0, // VINYL       - violet
-        0xffd9527f, // AMP         - rose
+        0xffe08a3c, // PENTODE     - amber
+        0xffd9527f, // TRIODE      - rose
+        0xff3fae9e, // TRANSISTOR  - teal
+        0xff8a74e0, // FOLD        - violet
+        0xffbfd0d8, // GLASS       - pale steel
         0xffa8b84a, // TRANSFORMER - olive
         0xff3f9fe0  // DIGITAL     - blue
     };
@@ -522,15 +525,16 @@ inline juce::Colour principleColour(int principle, bool darkTheme) noexcept {
     return darkTheme ? base.brighter(0.16f) : base.darker(0.08f);
 }
 
-// The parameter ids the seven SOURCE knobs bind to, in principleColour's
+// The parameter ids the nine SOURCE knobs bind to, in principleColour's
 // order. The MIX page's bar reads them in this order too, so a re-order
 // here moves a colour with its machine rather than orphaning one.
 inline constexpr std::array<const char *, principleCount> principleParameterIds{
-    "tape_source", "valve_source",       "cassette_source", "vinyl_source",
-    "amp_source",  "transformer_source", "digital_source"};
+    "tape_source",   "valve_source",      "pentode_source", "triode_source",
+    "transistor_source", "fold_source",   "glass_source",   "transformer_source",
+    "digital_source"};
 
 /** The principle index of a parameter id, or -1 if it is not one of the
-    seven SOURCE knobs. Used once, where the sliders are built, to stamp the
+    nine SOURCE knobs. Used once, where the sliders are built, to stamp the
     index onto each of them as a component property. */
 inline int principleOf(const juce::String &id) noexcept {
     for (int p = 0; p < principleCount; ++p)

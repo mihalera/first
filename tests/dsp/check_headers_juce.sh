@@ -92,7 +92,9 @@ TU="${BUILD}/header_check.cpp"
     echo ""
 
     for header in "${HEADERS[@]}"; do
-        echo "#include \"${header}\""
+        # ${header%$'\r'}: a Windows python prints the list with CRLF, and a CR
+        # inside the quoted include name is not a preprocessing token at all.
+        echo "#include \"${header%$'\r'}\""
     done
 
     cat <<'EOF'
@@ -160,20 +162,19 @@ TU="${BUILD}/header_check.cpp"
     neural.reset();
 
     SaturationCore core;
-    core.setWeights (0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f);
+    core.setWeights (0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f);
     core.setValveVoice (0);
-    core.setAmpVoice (0);
     core.setTransformerVoice (0);
     core.setDigitalVoice (0);
     x = core.process (x, 3.0f, 0.2f);
     x += core.isIdle() ? 0.0f : 1.0f;
     core.reset();
 
-    // The four voice lists are the reason the DSP shim grew a StringArray, so the
+    // The voice lists are the reason the DSP shim grew a StringArray, so the
     // header that holds them built against the REAL one belongs in this probe: the
     // shim cannot tell a juce::StringArray that takes an add() from one that does
-    // not, and the plugin compiles these four in its own translation unit.
-    x += static_cast<float> (valveTypeNameList().size() + ampTypeNameList().size()
+    // not, and the plugin compiles these lists in its own translation unit.
+    x += static_cast<float> (valveTypeNameList().size()
                            + transformerTypeNameList().size() + digitalTypeNameList().size());
 
     SubharmonicGenerator sub;
