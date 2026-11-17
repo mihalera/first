@@ -1422,6 +1422,34 @@ jobs:
           flavour: macos-${{ matrix.arch }}
           deps-hash: ${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', '.gitmodules') }}
 
+      - name: Install ccache on the Intel runner
+        if: matrix.arch == 'x86_64'
+        run: |
+          if ! command -v ccache >/dev/null 2>&1; then
+            brew install ccache
+          fi
+      - name: Cache compiler output with ccache
+        if: matrix.arch == 'x86_64'
+        uses: ./.github/actions/ccache
+        with:
+          flavour: macos-x86_64
+      - name: Create Xcode compiler launchers
+        if: matrix.arch == 'x86_64'
+        run: |
+          # Xcode does not use CMake's C/CXX_COMPILER_LAUNCHER properties.
+          # Route its compiler settings through ccache explicitly; keep the linkers
+          # pointed at the real Clang binaries so linking is never cached/wrapped.
+          mkdir -p "$RUNNER_TEMP/macos-ccache"
+          clang_c="$(xcrun --find clang)"
+          clang_cxx="$(xcrun --find clang++)"
+          printf '#!/bin/sh\nexec "%s" "%s" "$@"\n' \\
+            "$J37_COMPILER_LAUNCHER" "$clang_c" > "$RUNNER_TEMP/macos-ccache/clang"
+          printf '#!/bin/sh\nexec "%s" "%s" "$@"\n' \\
+            "$J37_COMPILER_LAUNCHER" "$clang_cxx" > "$RUNNER_TEMP/macos-ccache/clang++"
+          chmod +x "$RUNNER_TEMP/macos-ccache/clang" "$RUNNER_TEMP/macos-ccache/clang++"
+          echo "MACOS_CLANG_C=$clang_c" >> "$GITHUB_ENV"
+          echo "MACOS_CLANG_CXX=$clang_cxx" >> "$GITHUB_ENV"
+
       - name: Configure CMake
         run: |
           # COMPILER_INDEX_STORE_ENABLE=NO: the index store is Xcode's database
@@ -1429,14 +1457,25 @@ jobs:
           # and nobody indexes a CI runner. Left on, clang writes it for every
           # translation unit of every target - measurable time and disk for an
           # output that is thrown away with the workspace.
-          cmake -S . -B build -G Xcode \
-            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            -DJ37_FAST_CI_BUILD=ON \
-            -DCMAKE_OSX_ARCHITECTURES="${{ matrix.arch }}" \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY="" \
+          cmake_args=(
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+            -DJ37_FAST_CI_BUILD=ON
+            -DCMAKE_OSX_ARCHITECTURES="${{ matrix.arch }}"
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY=""
             -DCMAKE_XCODE_ATTRIBUTE_COMPILER_INDEX_STORE_ENABLE=NO
+          )
+
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            cmake_args+=(
+              -DCMAKE_XCODE_ATTRIBUTE_CC="$RUNNER_TEMP/macos-ccache/clang"
+              -DCMAKE_XCODE_ATTRIBUTE_CXX="$RUNNER_TEMP/macos-ccache/clang++"
+              -DCMAKE_XCODE_ATTRIBUTE_LD="$MACOS_CLANG_C"
+              -DCMAKE_XCODE_ATTRIBUTE_LDPLUS="$MACOS_CLANG_CXX"
+            )
+          fi
+          cmake -S . -B build -G Xcode "${cmake_args[@]}"
 
       - name: Build
         run: |
@@ -1451,8 +1490,13 @@ jobs:
           # still could not show the failing output. The log is kept instead, filtered
           # for reading, and cmake's own status is captured beside the filter rather
           # than through it.
+          if [ "${{ matrix.arch }}" = "x86_64" ]; then
+            build_jobs=2
+          else
+            build_jobs="$(sysctl -n hw.ncpu)"
+          fi
           status=0
-          cmake --build build --config "${{ env.BUILD_TYPE }}" --parallel \
+          cmake --build build --config "${{ env.BUILD_TYPE }}" --parallel "$build_jobs" \
             > "$RUNNER_TEMP/macos-build.log" 2>&1 || status=$?
 
           grep -E 'error|warning|Error|FAILED|BUILD' "$RUNNER_TEMP/macos-build.log" || true
@@ -1463,6 +1507,10 @@ jobs:
             exit "$status"
           fi
 
+      - name: Report the compiler cache position
+        if: always() && matrix.arch == 'x86_64'
+        continue-on-error: true
+        uses: ./.github/actions/ccache-report
       # Ad-hoc signing. There is no Developer ID certificate in CI (see README
       # "Signing and notarisation"), so the bundles leave the build unsigned -
       # except that an arm64 slice MUST be signed for macOS to execute it at
