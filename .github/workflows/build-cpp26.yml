@@ -52,4 +52,7 @@ jobs:
 
       - name: Build (C++26)
         run: |
-          cmake --build build-cpp26 --config Release --parallel "$J37_BUILD_JOBS"
+          set -o pipefail
+          cmake --build build-cpp26 --config Release --parallel "$J37_BUILD_JOBS" 2>&1 \
+            | tee "$RUNNER_TEMP/cpp26-build.log"
+          python3 tests/lib/check_compiler_warnings.py "$RUNNER_TEMP/cpp26-build.log"

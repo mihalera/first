@@ -76,6 +76,7 @@ Two environment switches, both used by the workflows:
 | --- | --- |
 | `J37_SANITIZE=address,undefined` | builds every harness above, and the unit suite, with ASan + UBSan and turns them loose on the same assertions |
 | `CXX` | the compiler to use; `g++` by default |
+| `J37_NO_WARNING_GATE=1` | lets a harness run finish even when its compile warned (see below) |
 
 The micro-benchmarks are separate and **informational**: `tests/dsp/run_bench.sh`
 (nanobench, needs `-DJ37_BUILD_TESTS=ON` to have fetched it), `tests/neural/run_bench.sh`
@@ -102,6 +103,24 @@ amalgamated sources, looks for the checkout in the CPM cache and takes
 `CATCH2_DIR` as an override. Unlike the benchmarks it IS a gate, because every
 number in it is a property of a function rather than of the machine - there is
 nothing in it that a busier runner could make flaky.
+
+## The warnings gate
+
+A warning from `Source/**` or `tests/**` fails the build it appeared in. The
+scanner is [`tests/lib/check_compiler_warnings.py`](lib/check_compiler_warnings.py):
+it reads a build log, keeps every compiler warning whose path is under `Source/`
+or `tests/`, and ignores `JUCE/`, `ThirdParty/` and fetched `deps/` trees with a
+count so a silent break in the filter is visible. CI runs it on every job that
+compiles the project - the six platform builds, both CMake harnesses in
+`dsp-unit`, the C++23 and C++26 builds and iOS - and `tests/lib/harness.sh` runs
+it at the end of every harness, with the compiler wrapped so its output is what
+gets read.
+
+    python3 tests/lib/check_compiler_warnings.py build.log
+    python3 tests/lib/check_compiler_warnings.py --self-test
+
+`J37_NO_WARNING_GATE=1` keeps a harness run from gating, for a run whose warnings
+are the point (a bisect, or a compiler probe).
 
 ## The shared preamble
 

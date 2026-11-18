@@ -118,3 +118,77 @@ j37_build() {
     mkdir -p "${dir}"
     printf '%s' "${dir}"
 }
+
+# ==============================================================================
+#  The warnings gate.
+#
+#  A build that warns is not a build that passed: every warning from Source/ or
+#  tests/ is a caller to fix, and a zero only stays a zero if the run that broke
+#  it fails. The compiler each harness invokes is wrapped here, so this one file
+#  covers all twenty-nine harnesses - the CMake builds are gated in the workflows
+#  with the same scanner, tests/lib/check_compiler_warnings.py.
+#
+#  J37_NO_WARNING_GATE=1 is for a run whose warnings are the point (the fuzz
+#  harness compiling a mutated-by-design source, or a bisect).
+# ==============================================================================
+if [ -z "${J37_NO_WARNING_GATE:-}" ] && [ -z "${j37_warning_gate_log:-}" ]; then
+    j37_python=""
+    if command -v python3 >/dev/null 2>&1; then
+        j37_python=python3
+    elif command -v python >/dev/null 2>&1; then
+        j37_python=python
+    fi
+
+    j37_warning_gate_log=""
+    if [ -n "${j37_python}" ]; then
+        j37_warning_gate_log="$(mktemp "${TMPDIR:-/tmp}/j37-harness-warnings.XXXXXXXX")"
+        j37_warning_gate_bin="$(mktemp -d "${TMPDIR:-/tmp}/j37-harness-cc.XXXXXXXX")"
+
+        # j37_wrap_compiler <compiler> <wrapper name> - a pass-through that keeps
+        # what the compiler said. stderr is collected rather than streamed, so
+        # the compiler's exit status stays the wrapper's own: a harness that
+        # checks that status must keep seeing it.
+        j37_wrap_compiler() {
+            local real="${1}" wrapper="${j37_warning_gate_bin}/${2}"
+            {
+                printf '#!/usr/bin/env bash
+'
+                #  Only stderr is kept: that is where a compiler writes warnings,
+                #  and the probes that pipe a translation unit through -E keep
+                #  their stdout untouched instead of filling the log with it.
+                printf 'err="$(mktemp "${TMPDIR:-/tmp}/j37-compiler-err.XXXXXXXX")"
+'
+                printf '"%s" "$@" 2> "$err"
+' "${real}"
+                printf 'status=$?
+'
+                printf 'cat "$err" >&2
+'
+                printf 'cat "$err" >> "%s"
+' "${j37_warning_gate_log}"
+                printf 'rm -f "$err"
+'
+                printf 'exit $status
+'
+            } > "${wrapper}"
+            chmod +x "${wrapper}"
+            printf '%s' "${wrapper}"
+        }
+
+        CXX="$(j37_wrap_compiler "${CXX}" c++)"
+        CC="$(j37_wrap_compiler "${CC}" cc)"
+
+        # The gate runs on the way out, after the harness has printed its own
+        # verdict, and it can only turn a pass into a failure.
+        j37_warning_gate_exit() {
+            local status=$?
+            #  Unconditional: a silent compiler is the common case, and the gate
+            #  says so in one line rather than staying invisible until it fires.
+            "${j37_python}" "${J37_TESTS}/lib/check_compiler_warnings.py" "${j37_warning_gate_log}" || status=1
+            rm -f "${j37_warning_gate_log}"
+            rm -rf "${j37_warning_gate_bin}"
+            exit "${status}"
+        }
+        trap j37_warning_gate_exit EXIT
+    fi
+fi

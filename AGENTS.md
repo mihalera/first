@@ -58,6 +58,7 @@ Avoid reading the whole `README.md` or the very large processor/editor files whe
 - The developer-only CMake tests are off by default and fetched with `-DJ37_BUILD_TESTS=ON`. The many fast harnesses under `tests/` are run directly; they are not all CTest targets.
 - On Windows, the shell harnesses require Bash and a C++ compiler. Use a Bash environment where `g++` or `clang++` is available. Use Python checks directly with `python` or `py`.
 - Run the smallest relevant check for a source change and report exactly what ran. Use `tests/README.md` to select it; do not imply a full build or suite passed if it was not run.
+- The build is held to zero warnings from `Source/**` and `tests/**`: `tests/lib/check_compiler_warnings.py` scans every build log in CI and every harness run, and fails on one. Warnings from `JUCE/` and `ThirdParty/` are ignored.
 
 <!-- OMX:AGENTS:START -->
 <!-- AUTONOMY DIRECTIVE — DO NOT REMOVE -->
