@@ -15,7 +15,7 @@
 //    * `ThemeChoice` came out of J37LookAndFeel to sit beside the palettes that
 //      select on it. A palette cannot be nested inside the class that paints with
 //      it, and every caller was already reaching through the class to name it.
-//    * `principleCount` and the melatonin_blur probe came with the kit: the seven
+//    * `principleCount` and the melatonin_blur probe came with the kit: the nine
 //      principles are the colours here before they are anything else, and the
 //      paint routines are what use that module.
 //
@@ -493,18 +493,18 @@ inline const UiPalette &paletteFor(bool darkTheme) noexcept {
 //  The nine principles, each with its own colour.
 //
 //  The SOURCE knobs replaced one sweep and one spread with nine NAMED
-//  machines, and a row of seven identical knobs reads as seven copies of
+//  machines, and a row of nine identical knobs reads as nine copies of
 //  one control. A hue per principle fixes that for the price of a table: the
 //  arc, the tracer and the MIX page's bar all speak it, so the colour IS
-//  the name - the user learns "coral is the valve" once, and the seven
-//  knobs stop being seven strangers.
+//  the name - the user learns "coral is the valve" once, and the nine
+//  knobs stop being nine strangers.
 //
 //  The hues are spread around the wheel but held to one family: warm brass
 //  and coral for the two machines that are mostly about heat, cool teal and
 //  violet for the two that are about a surface and a groove, the rest as the
 //  mid-tones between them. Each is desaturated enough to sit on charcoal or
 //  metal without glowing and dark enough to read on ivory, so the same
-//  seven colours work on all three themes - the dark ones get a small lift
+//  nine colours work on all three themes - the dark ones get a small lift
 //  and the light one a small sink, because one pigment needs opposite
 //  treatment on opposite grounds.
 // -----------------------------------------------------------------------

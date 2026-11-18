@@ -2937,15 +2937,15 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         //
         //  This replaces the single magneticHysteresis call. It runs the same
         //  DRIVE and BIAS arguments the old shaper took - so both controls keep
-        //  their meaning and their existing calibration - but weights seven
-        //  distinct curve shapes together: tape, valve, cassette, vinyl, amp,
-        //  transformer and digital. See SaturationCore for what each one is
-        //  and why they are genuinely different mechanisms rather than seven
-        //  settings of one.
+        //  their meaning and their existing calibration - but weights nine
+        //  distinct curve shapes together: tape, valve, pentode, triode,
+        //  transistor, fold, glass, transformer and digital. See SaturationCore
+        //  for what each one is and why they are genuinely different mechanisms
+        //  rather than nine settings of one.
         //
         //  The weights come from the SMOOTHED SOURCE controls, so moving a
         //  SOURCE knob morphs the harmonics continuously instead of stepping
-        //  between seven curves on a block boundary.
+        //  between nine curves on a block boundary.
         //
         //  SAG acts on the DRIVE, not on the output, because that is what the
         //  supply does: it is the gain that droops under sustained demand. The
