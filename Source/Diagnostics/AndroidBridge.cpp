@@ -18,6 +18,13 @@
 
 #include <jni.h>
 
+extern "C"
+{
+//  Declared before it is defined, because -Wmissing-prototypes is on and this
+//  entry point has no caller in the image: the Java VM resolves it by name.
+JNIEXPORT void JNICALL Java_com_mcsmes_mibox_Diag_setLogPath (JNIEnv*, jclass, jstring);
+}
+
 extern "C" __attribute__ ((visibility ("default"))) JNIEXPORT void JNICALL
 Java_com_mcsmes_mibox_Diag_setLogPath (JNIEnv* env, jclass, jstring path)
 {

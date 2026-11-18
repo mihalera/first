@@ -538,7 +538,13 @@ public:
         const auto control = clamp01 (amount);
         const auto selected = control < 0.25f ? 0.5f : (control > 0.75f ? 2.0f : 1.0f);
 
-        if (selected == 1.0f)
+        //  The 1x position is the branch NEITHER of those comparisons took, rather
+        //  than `selected == 1.0f`: at 1x the stage is a bit-exact pass-through, so
+        //  the condition is the branch structure itself rather than an equality
+        //  against a float. A NaN control takes this branch too - both comparisons
+        //  are false for it, which is also how `selected` comes to hold 1.0f - so
+        //  the behaviour is exactly what it was.
+        if (! (control < 0.25f) && ! (control > 0.75f))
         {
             readPosition = 1.0f;
             return;
