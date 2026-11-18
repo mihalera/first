@@ -37,6 +37,7 @@
 #include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <map>
 #include <string>
 #include <utility>
@@ -279,7 +280,10 @@ double channelLag (const std::vector<float>& a, const std::vector<float>& b, int
     {
         double sum = 0.0;
         for (std::size_t i = from; i < to; ++i)
-            sum += static_cast<double> (a[i]) * static_cast<double> (b[i + lag]);
+        {
+            const auto j = static_cast<std::size_t> (static_cast<std::ptrdiff_t> (i) + lag);
+            sum += static_cast<double> (a[i]) * static_cast<double> (b[j]);
+        }
         if (sum > bestScore)
         {
             bestScore = sum;
@@ -293,7 +297,10 @@ double channelLag (const std::vector<float>& a, const std::vector<float>& b, int
     {
         double sum = 0.0;
         for (std::size_t i = from; i < to; ++i)
-            sum += static_cast<double> (a[i]) * static_cast<double> (b[i + lag]);
+        {
+            const auto j = static_cast<std::size_t> (static_cast<std::ptrdiff_t> (i) + lag);
+            sum += static_cast<double> (a[i]) * static_cast<double> (b[j]);
+        }
         return sum;
     };
     const auto cM = scoreAt (bestLag - 1);
@@ -371,23 +378,9 @@ double heldSampleFraction (const std::vector<float>& signal, std::size_t from, s
         return 0.0;
     std::size_t held = 0;
     for (std::size_t i = from; i + 1 < to; ++i)
-        if (signal[i] == signal[i + 1])
+        if (std::memcmp (&signal[i], &signal[i + 1], sizeof (float)) == 0)
             ++held;
     return static_cast<double> (held) / static_cast<double> (to - from - 1);
-}
-
-/** Zero-crossing rate per second: the pitch direction a coast reads as. */
-double zeroCrossingsPerSecond (const std::vector<float>& signal, std::size_t from, std::size_t to)
-{
-    to = std::min (to, signal.size());
-    if (to <= from + 1)
-        return 0.0;
-    std::size_t crossings = 0;
-    for (std::size_t i = from; i + 1 < to; ++i)
-        if ((signal[i] < 0.0f) != (signal[i + 1] < 0.0f))
-            ++crossings;
-    return static_cast<double> (crossings) * sampleRate
-           / static_cast<double> (to - from - 1);
 }
 
 double maxAbs (const std::vector<float>& signal, std::size_t from, std::size_t to)
@@ -444,15 +437,6 @@ std::vector<float> whiteNoise (int frames, float amp, std::uint32_t seed = 7u)
     return s;
 }
 
-std::vector<float> mixed (const std::vector<float>& a, const std::vector<float>& b)
-{
-    const auto n = std::min (a.size(), b.size());
-    std::vector<float> s (n);
-    for (std::size_t i = 0; i < n; ++i)
-        s[i] = a[i] + b[i];
-    return s;
-}
-
 std::vector<float> burstTrain (int frames, double hertz, float amp, int onFrames, int offFrames)
 {
     auto s = zeros (frames);
@@ -492,15 +476,6 @@ double windowRmsAvg (const std::vector<float>& s, int firstStart, int stride,
         sum += rmsRange (s, static_cast<std::size_t> (firstStart + b * stride + offIn),
                          static_cast<std::size_t> (firstStart + b * stride + offIn + len));
     return sum / static_cast<double> (bursts);
-}
-
-std::size_t firstWindowOver (const std::vector<float>& s, const std::vector<float>& ref,
-                             std::size_t win, std::size_t step, std::size_t from, double factor)
-{
-    for (std::size_t start = from; start + win < s.size(); start += step)
-        if (rmsRange (s, start, start + win) > factor * rmsRange (ref, start, start + win))
-            return start;
-    return s.size();
 }
 
 double msOf (std::size_t frame) { return static_cast<double> (frame) * 1000.0 / sampleRate; }
@@ -577,15 +552,6 @@ double echoPeakMs (const std::vector<float>& s, std::size_t from, std::size_t to
     for (std::size_t i = from; i < to; ++i)
         if (std::abs (s[i]) > bestMag) { bestMag = std::abs (s[i]); best = i; }
     return msOf (best);
-}
-
-std::size_t argmaxAbs (const std::vector<float>& s, std::size_t from, std::size_t to)
-{
-    to = std::min (to, s.size());
-    std::size_t best = from; double bestMag = 0.0;
-    for (std::size_t i = from; i < to; ++i)
-        if (std::abs (s[i]) > bestMag) { bestMag = std::abs (s[i]); best = i; }
-    return best;
 }
 
 using TestFn = bool (*) (std::string& note);
@@ -912,8 +878,8 @@ static const Row table[] = {
     } },
 { "stereo_width", "stereo width widens the image", [] (std::string& note) {
         const int F = 2 * framesPerSecond;
-        std::vector<float> L (F), R (F);
-        for (int i = 0; i < F; ++i) { L[i] = 0.2f * (float) std::sin (6.2831853 * 440.0 * i / 48000.0); R[i] = -L[i]; }
+        std::vector<float> L (static_cast<std::size_t> (F)), R (static_cast<std::size_t> (F));
+        for (std::size_t i = 0; i < static_cast<std::size_t> (F); ++i) { L[i] = 0.2f * (float) std::sin (6.2831853 * 440.0 * static_cast<double> (i) / 48000.0); R[i] = -L[i]; }
         const auto narrow = renderWith ({{ "stereo_width", 0.0f }}, L, R);
         const auto wide = renderWith ({{ "stereo_width", 100.0f }}, L, R);
         const auto sa = 9600, sb = 38400;
@@ -926,8 +892,8 @@ static const Row table[] = {
     } },
 { "anti_phase_guard", "anti-phase guard changes an anti-phase mix", [] (std::string& note) {
         const int F = 2 * framesPerSecond;
-        std::vector<float> L (F), R (F);
-        for (int i = 0; i < F; ++i) { L[i] = 0.2f * (float) std::sin (6.2831853 * 440.0 * i / 48000.0); R[i] = -L[i]; }
+        std::vector<float> L (static_cast<std::size_t> (F)), R (static_cast<std::size_t> (F));
+        for (std::size_t i = 0; i < static_cast<std::size_t> (F); ++i) { L[i] = 0.2f * (float) std::sin (6.2831853 * 440.0 * static_cast<double> (i) / 48000.0); R[i] = -L[i]; }
         const auto on = renderWith ({{ "anti_phase_guard", 1.0f }}, L, R);
         const auto off = renderWith ({{ "anti_phase_guard", 0.0f }}, L, R);
         const double d = maxDifference (on, off);
@@ -1061,8 +1027,8 @@ static const Row table[] = {
     } },
 { "tracks", "tracks changes the bleed level", [] (std::string& note) {
         const int F = 2 * framesPerSecond;
-        std::vector<float> L (F), R (F);
-        for (int i = 0; i < F; ++i) { L[i] = 0.2f * (float) std::sin (6.2831853 * 440.0 * i / 48000.0); R[i] = 0.0f; }
+        std::vector<float> L (static_cast<std::size_t> (F)), R (static_cast<std::size_t> (F));
+        for (std::size_t i = 0; i < static_cast<std::size_t> (F); ++i) { L[i] = 0.2f * (float) std::sin (6.2831853 * 440.0 * static_cast<double> (i) / 48000.0); R[i] = 0.0f; }
         const auto a = renderWith ({{ "tracks", 0.0f }}, L, R);
         const auto b = renderWith ({{ "tracks", 3.0f }}, L, R);
         const double d = maxDifference (a, b);
@@ -1107,8 +1073,8 @@ static const Row table[] = {
     } },
 { "delay_pingpong", "ping-pong puts echoes on the far side", [] (std::string& note) {
         const int F = 2 * framesPerSecond;
-        std::vector<float> L (F, 0.0f), R (F, 0.0f);
-        for (int i = 0; i < 10; ++i) L[240 + i] = 0.5f;
+        std::vector<float> L (static_cast<std::size_t> (F), 0.0f), R (static_cast<std::size_t> (F), 0.0f);
+        for (std::size_t i = 0; i < 10; ++i) L[240 + i] = 0.5f;
         const auto off = renderWith ({{ "delay_pingpong", 0.0f }, { "delay_feedback", 60.0f }, { "delay_time", 100.0f }, { "mix", 100.0f }}, L, R);
         const auto on = renderWith ({{ "delay_pingpong", 100.0f }, { "delay_feedback", 60.0f }, { "delay_time", 100.0f }, { "mix", 100.0f }}, L, R);
         const auto sa = 4800, sb = 38400;
@@ -1120,8 +1086,8 @@ static const Row table[] = {
     } },
 { "delay_tone", "delay tone changes echo brightness", [] (std::string& note) {
         const int F = 2 * framesPerSecond;
-        std::vector<float> buf (F, 0.0f);
-        for (int i = 0; i < 50; ++i) buf[240 + i] = (i % 2 == 0) ? 0.5f : -0.5f;
+        std::vector<float> buf (static_cast<std::size_t> (F), 0.0f);
+        for (std::size_t i = 0; i < 50; ++i) buf[240 + i] = (i % 2 == 0) ? 0.5f : -0.5f;
         const auto dark = renderMono ({{ "delay_tone", 0.0f }, { "delay_feedback", 60.0f }, { "delay_time", 100.0f }, { "mix", 100.0f }}, buf);
         const auto bright = renderMono ({{ "delay_tone", 1.0f }, { "delay_feedback", 60.0f }, { "delay_time", 100.0f }, { "mix", 100.0f }}, buf);
         const auto sa = 4800, sb = 38400;
@@ -1157,8 +1123,8 @@ static const Row table[] = {
     } },
 { "st_offset", "st offset shifts the right channel", [] (std::string& note) {
         const int F = 2 * framesPerSecond;
-        std::vector<float> L (F), R (F);
-        for (int i = 0; i < F; ++i) { L[i] = 0.2f * (float) std::sin (6.2831853 * 440.0 * i / 48000.0); R[i] = L[i]; }
+        std::vector<float> L (static_cast<std::size_t> (F)), R (static_cast<std::size_t> (F));
+        for (std::size_t i = 0; i < static_cast<std::size_t> (F); ++i) { L[i] = 0.2f * (float) std::sin (6.2831853 * 440.0 * static_cast<double> (i) / 48000.0); R[i] = L[i]; }
         const auto a = renderWith ({{ "st_offset", 300.0f }}, L, R);
         const auto b = renderWith ({{ "st_offset", -300.0f }}, L, R);
         const auto sa = 9600, sb = 38400;
@@ -1286,7 +1252,6 @@ static const Row table[] = {
         const auto t = sine (455.0, F, 0.2f);
         const auto slow = renderMono ({{ "autotune_amount", 1.0f }, { "autotune_speed", 0.0f }, { "tuning_tonic", 9.0f }, { "tuning_mode", 0.0f }}, t);
         const auto fast = renderMono ({{ "autotune_amount", 1.0f }, { "autotune_speed", 1.0f }, { "tuning_tonic", 9.0f }, { "tuning_mode", 0.0f }}, t);
-        const auto sa = 9600, sb = 38400;
         const double ps = peakFrequency (slow.left, 440.0, 60.0, 0.5, 480, 1920);
         const double pf = peakFrequency (fast.left, 440.0, 60.0, 0.5, 480, 1920);
         note = "slowEarly=" + std::to_string (ps) + " fastEarly=" + std::to_string (pf);
@@ -1729,8 +1694,8 @@ static const Row table[] = {
     } },
 { "reverb_width", "reverb width widens the image", [] (std::string& note) {
         const int F = 2 * framesPerSecond;
-        std::vector<float> L (F), R (F);
-        for (int i = 0; i < F; ++i) { L[i] = 0.2f * (float) std::sin (6.2831853 * 440.0 * i / 48000.0); R[i] = 0.1f * (float) std::sin (6.2831853 * 660.0 * i / 48000.0); }
+        std::vector<float> L (static_cast<std::size_t> (F)), R (static_cast<std::size_t> (F));
+        for (std::size_t i = 0; i < static_cast<std::size_t> (F); ++i) { L[i] = 0.2f * (float) std::sin (6.2831853 * 440.0 * static_cast<double> (i) / 48000.0); R[i] = 0.1f * (float) std::sin (6.2831853 * 660.0 * static_cast<double> (i) / 48000.0); }
         const auto narrow = renderWith ({{ "reverb", 1.0f }, { "reverb_width", 0.0f }}, L, R);
         const auto wide = renderWith ({{ "reverb", 1.0f }, { "reverb_width", 2.0f }}, L, R);
         const auto sa = 9600, sb = 38400;
@@ -1997,8 +1962,8 @@ static const Row table[] = {
     } },
 { "st_link", "st link changes stereo processing", [] (std::string& note) {
         const int F = 2 * framesPerSecond;
-        std::vector<float> L (F), R (F);
-        for (int i = 0; i < F; ++i) { L[i] = 0.4f * (float) std::sin (6.2831853 * 440.0 * i / 48000.0); R[i] = 0.1f * (float) std::sin (6.2831853 * 440.0 * i / 48000.0); }
+        std::vector<float> L (static_cast<std::size_t> (F)), R (static_cast<std::size_t> (F));
+        for (std::size_t i = 0; i < static_cast<std::size_t> (F); ++i) { L[i] = 0.4f * (float) std::sin (6.2831853 * 440.0 * static_cast<double> (i) / 48000.0); R[i] = 0.1f * (float) std::sin (6.2831853 * 440.0 * static_cast<double> (i) / 48000.0); }
         const auto linked = renderWith ({{ "st_link", 1.0f }, { "glue_on", 1.0f }}, L, R);
         const auto unlinked = renderWith ({{ "st_link", 0.0f }, { "glue_on", 1.0f }}, L, R);
         const double d = maxDifference (linked, unlinked);
@@ -2121,8 +2086,8 @@ static const Row table[] = {
     } },
 { "fx_anti_spike", "anti-spike limits peaks", [] (std::string& note) {
         const int F = 2 * framesPerSecond;
-        std::vector<float> t (F, 0.0f);
-        for (int i = 0; i < F; i += 480) t[i] = 0.9f;
+        std::vector<float> t (static_cast<std::size_t> (F), 0.0f);
+        for (std::size_t i = 0; i < static_cast<std::size_t> (F); i += 480) t[i] = 0.9f;
         const auto off = renderMono ({{ "fx_anti_spike", 0.0f }}, t);
         const auto on = renderMono ({{ "fx_anti_spike", 1.0f }}, t);
         const auto sa = 9600, sb = 38400;
@@ -2439,6 +2404,11 @@ static const Row table[] = {
 };
 int main ()
 {
+    //  Line-buffered: a run is 150 renders long, and ctest -V is what turns this
+    //  output into the CI log. Without this the lines arrive in block-sized
+    //  bursts after the fact instead of as progress.
+    std::setvbuf (stdout, nullptr, _IOLBF, 0);
+
     FirstAudioProcessor processor;
     std::vector<std::string> registered;
     for (auto* p : processor.getParameters())
@@ -2470,10 +2440,10 @@ int main ()
     }
     for (int i = 0; i < tableCount && i < (int) registered.size(); ++i)
     {
-        if (std::string (table[i].id) != registered[i])
+        if (std::string (table[i].id) != registered[static_cast<std::size_t> (i)])
         {
             std::printf ("META FAIL: row %d id '%s' != registered '%s'\\n",
-                         i, table[i].id, registered[i].c_str());
+                         i, table[i].id, registered[static_cast<std::size_t> (i)].c_str());
             metaOk = false;
         }
     }

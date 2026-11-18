@@ -39,7 +39,7 @@ tests/fuzz/run.sh         # the WAV decoder fed mutated bytes, under ASan/UBSan 
 tests/unit/run.sh         # the equaliser, the compressor and the transient shaper, as units
 cmake -S . -B build-tests -DJ37_BUILD_TESTS=ON
 cmake --build build-tests --target j37_parameter_audio_tests
-ctest --test-dir build-tests -R parameter_audio --output-on-failure
+ctest --test-dir build-tests -V -R parameter_audio
 
 Those three lines are the exception to "no CMake configure": the two harnesses
 link the shipping plugin, so they are configured and built into a build of
