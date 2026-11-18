@@ -87,6 +87,8 @@ jobs:
             exit "$status"
           fi
 
+          python3 tests/lib/check_compiler_warnings.py "$RUNNER_TEMP/ios-build.log"
+
       - name: Verify the iOS AUv3 bundle
         run: |
           set -euo pipefail
