@@ -2396,7 +2396,7 @@ jobs:
           #  That was a second full walk of every target, and the failing output was
           #  unreachable anyway.
           status=0
-          cmake --build build-android --config "${{ env.BUILD_TYPE }}" --parallel \
+          cmake --build build-android --config "${{ env.BUILD_TYPE }}" --parallel 1 \
             > "$RUNNER_TEMP/android-build.log" 2>&1 || status=$?
 
           grep -E 'error|warning|Error|FAILED|BUILD' "$RUNNER_TEMP/android-build.log" || true
