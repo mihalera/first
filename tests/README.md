@@ -37,7 +37,7 @@ tests/scale/run.sh        # scale degree membership, all tonic/mode ring notes a
 tests/diagnostics/run.sh  # the diagnostic switch, the trace sink and the shutdown watchdog (real thread stacks on Windows)
 tests/fuzz/run.sh         # the WAV decoder fed mutated bytes, under ASan/UBSan and (where clang is) libFuzzer
 tests/unit/run.sh         # the equaliser, the compressor and the transient shaper, as units
-cmake --build build --target j37_processor_boundary_tests && ctest --test-dir build -R processor_boundaries --output-on-failure
+cmake --build build --target j37_parameter_audio_tests && ctest --test-dir build -R parameter_audio --output-on-failure
 
 tests/dsp/check_headers_juce.sh     # every Source/DSP/*.h against real JUCE
 tests/editor/check_editor_juce.sh   # every translation unit and Source/GUI/*.h against real JUCE
