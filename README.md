@@ -1835,7 +1835,10 @@ this repository carries its licence text. A shipped binary carries none of them.
 
 Three dev-only libraries are **off by default**, so a plugin build never drags a test
 framework into its dependency graph. The first two are configured by
-`-DJ37_BUILD_TESTS=ON`; `libebur128` needs no configure at all, because the harness that
+`-DJ37_BUILD_TESTS=ON`, and that configure is a build of its own -
+`cmake -S . -B build-tests -DJ37_BUILD_TESTS=ON` - because the two CMake harnesses
+(the processor boundary and the parameter audio tests) link the plugin and live in
+`tests/CMakeLists.txt`; `libebur128` needs no configure at all, because the harness that
 uses it is one of the ones that compiles itself:
 
 | Library | Pinned at | Why |

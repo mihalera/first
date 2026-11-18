@@ -16,6 +16,7 @@
 # committed. The generic names below catch a default `cmake -B build`, and the
 # explicit `build/` entry catches the one the CI and the README use.
 build/
+build-tests/
 build-clangd/
 cmake-build-*/
 CMakeFiles/
