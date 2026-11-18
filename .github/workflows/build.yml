@@ -830,7 +830,7 @@ jobs:
   build-linux-debug:
     name: build-linux-debug (Melatonin inspector)
     runs-on: ubuntu-26.04
-    timeout-minutes: 25
+    timeout-minutes: 40
 
     steps:
       - name: Checkout repository
