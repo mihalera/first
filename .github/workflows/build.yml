@@ -682,6 +682,11 @@ jobs:
           cmake --build build --target j37_processor_boundary_tests --parallel 2
           ctest --test-dir build -C Release -R processor_boundaries --output-on-failure
 
+      - name: Build and run parameter audio tests
+        run: |
+          cmake --build build --target j37_parameter_audio_tests --parallel 2
+          ctest --test-dir build -C Release -R parameter_audio --output-on-failure --timeout 600
+
       #  The job's last step, so the numbers cover everything it compiled, and
       #  the counters were zeroed before the build: these are this job's own.
       - name: Report the compiler cache position
