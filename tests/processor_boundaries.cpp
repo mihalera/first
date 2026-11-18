@@ -3,11 +3,18 @@
 
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <iostream>
 #include <vector>
 
 namespace {
 constexpr float guardValue = 12345.0f;
+
+//  A guard sample is written as 12345.0f and has to come back untouched, so
+//  the comparison is exact by construction. Comparing the representation says
+//  that, and keeps -Wfloat-equal off a line that is doing precisely what it
+//  warns about.
+bool isGuard(float value) { return std::memcmp(&value, &guardValue, sizeof(value)) == 0; }
 
 bool processGuardedBlock(FirstAudioProcessor &processor,
                          juce::MidiBuffer &midi,
@@ -36,10 +43,10 @@ bool processGuardedBlock(FirstAudioProcessor &processor,
                 return false;
 
         for (int sample = 0; sample < guardSamples; ++sample) {
-            if (storage[static_cast<std::size_t>(channel)][static_cast<std::size_t>(sample)] !=
-                    guardValue ||
-                storage[static_cast<std::size_t>(channel)]
-                       [static_cast<std::size_t>(guardSamples + samples + sample)] != guardValue)
+            if (!isGuard(storage[static_cast<std::size_t>(channel)]
+                                [static_cast<std::size_t>(sample)]) ||
+                !isGuard(storage[static_cast<std::size_t>(channel)]
+                                [static_cast<std::size_t>(guardSamples + samples + sample)]))
                 return false;
         }
     }

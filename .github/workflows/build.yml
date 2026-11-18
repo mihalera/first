@@ -680,12 +680,17 @@ jobs:
       - name: Build and run processor boundary tests
         run: |
           cmake --build build-tests --target j37_processor_boundary_tests --parallel 2
-          ctest --test-dir build-tests -C Release -R processor_boundaries --output-on-failure
+          #  -V rather than -o: the harness prints its own claims and refusals, and a
+          #  green run is only believable if those lines are in the log too.
+          ctest --test-dir build-tests -C Release -V -R processor_boundaries
 
       - name: Build and run parameter audio tests
         run: |
           cmake --build build-tests --target j37_parameter_audio_tests --parallel 2
-          ctest --test-dir build-tests -C Release -R parameter_audio --output-on-failure --timeout 1800
+          #  -V, for the same reason as above: the per-parameter PASS lines and the
+          #  "N/N passed, C checks, 0 failures" summary belong in the log, not only
+          #  in a local terminal.
+          ctest --test-dir build-tests -C Release -V -R parameter_audio --timeout 1800
 
       #  The job's last step, so the numbers cover everything it compiled, and
       #  the counters were zeroed before the build: these are this job's own.
