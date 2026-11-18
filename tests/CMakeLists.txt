@@ -30,6 +30,40 @@ set(J37_TESTS_BINARY_DIR "${CMAKE_BINARY_DIR}")
 
 get_target_property(J37_GENERATED_SOURCES_DIR first JUCE_GENERATED_SOURCES_DIRECTORY)
 
+# ==============================================================================
+#
+#   LTO off for this build tree.
+#
+#   These two binaries exist to run assertions; they are never shipped, and the
+#   plugin they link is built here only because it is their dependency. Link-time
+#   code generation re-optimises the whole program at every link, and in CI that
+#   is minutes spent on code nobody listens to: the harness link was the single
+#   longest step of the job that builds it.
+#
+#   The flags arrive through the INTERFACE of juce_recommended_lto_flags as
+#   generator expressions (see cmake/J37Platform.cmake, which clears it for
+#   -DJ37_FAST_CI_BUILD=ON), so filtering these targets' own options finds
+#   nothing; clearing that interface is what takes effect. This is scoped to this
+#   directory: a plugin build never configures it, and a session that sets
+#   J37_FAST_CI_BUILD=ON has already cleared the same interface for the whole
+#   tree, which leaves this a no-op.
+#
+#   It cannot change what the tests assert. LTO is an optimisation pass, not a
+#   semantic switch: the harnesses read rendered audio through tolerances orders
+#   of magnitude wider than any instruction-selection difference, and CI already
+#   builds the plugin itself without LTO.
+#
+# ==============================================================================
+if(TARGET juce_recommended_lto_flags)
+    set_property(TARGET juce_recommended_lto_flags PROPERTY
+                 INTERFACE_COMPILE_OPTIONS "")
+    set_property(TARGET juce_recommended_lto_flags PROPERTY
+                 INTERFACE_LINK_LIBRARIES "")
+    message(STATUS "Test harnesses: LTO disabled (assertions, not a shipped build)")
+else()
+    message(STATUS "Test harnesses: LTO disabled (juce_recommended_lto_flags absent)")
+endif()
+
 #  One description for both binaries: they link the same target and need the
 #  same include surface, so the reason for each line is written once.
 function(j37_add_harness_target target)
