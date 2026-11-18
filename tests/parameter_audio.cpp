@@ -2077,9 +2077,9 @@ static const Row table[] = {
         return failures == fail0;
     } },
 { "ir_mix", "IR mix convolves the loaded IR", [] (std::string& note) {
-        writeIrWav ("build/probe_ir.wav");
+        writeIrWav ("probe_ir.wav");
         Engine engine;
-        engine.processor.loadIrFile (juce::File (juce::String ("build/probe_ir.wav")));
+        engine.processor.loadIrFile (juce::File (juce::String ("probe_ir.wav")));
         const auto warm = whiteNoise (framesPerSecond, 0.2f, 11u);
         for (int attempt = 0; attempt < 32; ++attempt)
         {
