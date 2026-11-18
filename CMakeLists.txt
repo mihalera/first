@@ -1047,61 +1047,24 @@ j37_apply_android_settings(first)
 j37_apply_fast_build_settings(first)
 
 # ------------------------------------------------------------------------------
-#  Processor boundary harness. This executable links the real plugin processor
-#  and calls its public host entry points without opening an editor or audio device.
+#  The CMake test harnesses.
+#
+#  The two executables that link the shipping plugin - the processor boundary
+#  harness and the one-audible-test-per-parameter harness - are described in
+#  tests/CMakeLists.txt and are built in a build directory of their own:
+#
+#    cmake -S . -B build-tests -DJ37_BUILD_TESTS=ON
+#
+#  This option is the whole switch. A plugin build - build/, build-rel/, the
+#  cpp23 and cpp26 builds - leaves it OFF, so it neither configures the tests nor
+#  builds them, and nothing test-shaped ends up in the plugin's build tree.
+#
+#  `enable_testing()` has to stay HERE rather than in tests/, because CTest looks
+#  for its test file in the build directory's top level.
 # ------------------------------------------------------------------------------
 if(J37_BUILD_TESTS)
     enable_testing()
-
-    get_target_property(J37_GENERATED_SOURCES_DIR first JUCE_GENERATED_SOURCES_DIRECTORY)
-    add_executable(j37_processor_boundary_tests tests/processor_boundaries.cpp)
-    # JUCE's generated plugin definitions include category strings with `|`; on
-    # Windows clang's module scanner passes those through cmd.exe as a pipe.
-    # This target has no C++ modules, so do not invoke that scanner for it.
-    set_property(TARGET j37_processor_boundary_tests PROPERTY CXX_SCAN_FOR_MODULES OFF)
-    target_compile_definitions(j37_processor_boundary_tests PRIVATE
-        JucePlugin_Name="MiBoX"
-        JucePlugin_IsSynth=0
-        JucePlugin_IsMidiEffect=0
-        JucePlugin_PreferredChannelConfigurations=0)
-    #  PluginProcessor.h includes <JuceHeader.h> and the plugin's own DSP headers,
-    #  so this target has to compile against the same include surface the plugin
-    #  does: every JUCE module, the generated binary data, and the third-party
-    #  headers between them. `first` already carries that whole list, so it is
-    #  asked for the list rather than restated - and rather than linked, because a
-    #  JUCE module keeps its sources on the same interface as its includes, so
-    #  linking one here would compile every module a second time.
-    target_include_directories(j37_processor_boundary_tests PRIVATE
-        Source
-        "${J37_GENERATED_SOURCES_DIR}"
-        "${CMAKE_CURRENT_BINARY_DIR}/generated"
-        $<TARGET_PROPERTY:first,INCLUDE_DIRECTORIES>)
-    target_link_libraries(j37_processor_boundary_tests PRIVATE
-        first
-        juce::juce_recommended_config_flags
-        juce::juce_recommended_warning_flags)
-    add_test(NAME processor_boundaries COMMAND j37_processor_boundary_tests)
-
-    #  Parameter audible harness. One unique rendered-audio test per parameter,
-    #  driven through the real processor's processBlock the way a host calls it.
-    #  Same include surface as the boundary harness above, for the same reason.
-    add_executable(j37_parameter_audio_tests tests/parameter_audio.cpp)
-    set_property(TARGET j37_parameter_audio_tests PROPERTY CXX_SCAN_FOR_MODULES OFF)
-    target_compile_definitions(j37_parameter_audio_tests PRIVATE
-        JucePlugin_Name="MiBoX"
-        JucePlugin_IsSynth=0
-        JucePlugin_IsMidiEffect=0
-        JucePlugin_PreferredChannelConfigurations=0)
-    target_include_directories(j37_parameter_audio_tests PRIVATE
-        Source
-        "${J37_GENERATED_SOURCES_DIR}"
-        "${CMAKE_CURRENT_BINARY_DIR}/generated"
-        $<TARGET_PROPERTY:first,INCLUDE_DIRECTORIES>)
-    target_link_libraries(j37_parameter_audio_tests PRIVATE
-        first
-        juce::juce_recommended_config_flags
-        juce::juce_recommended_warning_flags)
-    add_test(NAME parameter_audio COMMAND j37_parameter_audio_tests)
+    add_subdirectory(tests)
 endif()
 
 # ------------------------------------------------------------------------------

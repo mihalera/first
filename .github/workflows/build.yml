@@ -620,7 +620,7 @@ jobs:
       - name: Cache the CMake dependency trees
         uses: ./.github/actions/build-cache
         with:
-          build-dir: build
+          build-dir: build-tests
           flavour: harness
           deps-hash: ${{ hashFiles('CMakeLists.txt', 'cmake/*.cmake', '.gitmodules') }}
 
@@ -664,7 +664,7 @@ jobs:
 
       - name: Configure with the dev tests enabled (fetches Catch2)
         run: |
-          cmake -S . -B build \
+          cmake -S . -B build-tests \
             -DCMAKE_BUILD_TYPE=Release \
             -DJ37_BUILD_TESTS=ON
 
@@ -679,13 +679,13 @@ jobs:
 
       - name: Build and run processor boundary tests
         run: |
-          cmake --build build --target j37_processor_boundary_tests --parallel 2
-          ctest --test-dir build -C Release -R processor_boundaries --output-on-failure
+          cmake --build build-tests --target j37_processor_boundary_tests --parallel 2
+          ctest --test-dir build-tests -C Release -R processor_boundaries --output-on-failure
 
       - name: Build and run parameter audio tests
         run: |
-          cmake --build build --target j37_parameter_audio_tests --parallel 2
-          ctest --test-dir build -C Release -R parameter_audio --output-on-failure --timeout 1800
+          cmake --build build-tests --target j37_parameter_audio_tests --parallel 2
+          ctest --test-dir build-tests -C Release -R parameter_audio --output-on-failure --timeout 1800
 
       #  The job's last step, so the numbers cover everything it compiled, and
       #  the counters were zeroed before the build: these are this job's own.

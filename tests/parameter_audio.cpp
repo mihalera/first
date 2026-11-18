@@ -1,7 +1,7 @@
 // =============================================================================
 //  One unique AUDIBLE test per parameter, rendered through the real plugin.
 //
-//    target: j37_parameter_audio_tests   (cmake --build build --target ...)
+//    target: j37_parameter_audio_tests   (cmake --build build-tests --target ...)
 //
 //  tests/parameters/unique_test.cpp pins every parameter's TABLE row - the
 //  numbers the host automates. This harness asks the question those rows cannot:
