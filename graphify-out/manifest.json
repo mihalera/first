@@ -81,21 +81,21 @@
     "semantic_hash": "e0de88eb20a0eecc1a4307bdaea1733f"
   },
   ".github/workflows/build-cpp23.yml": {
-    "mtime": 1794410128.164878,
-    "seen": 1794648118.5670161,
-    "ast_hash": "caf500a8599dd0eeb1199b69d5d7e9fd",
-    "semantic_hash": "caf500a8599dd0eeb1199b69d5d7e9fd"
+    "mtime": 1795042974.0728934,
+    "seen": 1795044408.727988,
+    "ast_hash": "db6de80e95258afdb44b70598828bc4a",
+    "semantic_hash": ""
   },
   ".github/workflows/build-cpp26.yml": {
-    "mtime": 1794410128.410033,
-    "seen": 1794648118.5671604,
-    "ast_hash": "f8b1cf318c4987487d9f30d8c5a56669",
-    "semantic_hash": "f8b1cf318c4987487d9f30d8c5a56669"
+    "mtime": 1795042974.0728934,
+    "seen": 1795044408.7279973,
+    "ast_hash": "409a6d0419dd8b861e474f03049b948b",
+    "semantic_hash": ""
   },
   ".github/workflows/build.yml": {
-    "mtime": 1794945327.440936,
-    "seen": 1794948252.3147755,
-    "ast_hash": "320fd0500755bd32cdf331d56cb6c525",
+    "mtime": 1795042974.0748987,
+    "seen": 1795044408.7280114,
+    "ast_hash": "d28015ed8dc9d4119accfe3979c0a5d4",
     "semantic_hash": ""
   },
   ".github/workflows/release-draft.yml": {
@@ -248,9 +248,9 @@
     "language": "language=.cpp"
   },
   "Source/DSP/Fx/FxPitch.h": {
-    "mtime": 1794870168.615103,
-    "seen": 1794870563.5445762,
-    "ast_hash": "df5c8336897a865d3f7f1246098bcd73",
+    "mtime": 1795037546.3764112,
+    "seen": 1795044408.73239,
+    "ast_hash": "b7fb554b49abf7b7a709510cae8ba54c",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
@@ -583,10 +583,10 @@
     "language": "language=.cpp"
   },
   "Source/Diagnostics/AndroidBridge.cpp": {
-    "mtime": 1794240635.0190551,
-    "seen": 1794648118.5763805,
-    "ast_hash": "2bbe70fdd64ded9cacebfb0e2c88cb9b",
-    "semantic_hash": "2bbe70fdd64ded9cacebfb0e2c88cb9b"
+    "mtime": 1795037546.3769112,
+    "seen": 1795044408.7418134,
+    "ast_hash": "44159bb99620387e0ff2adc5c3655eef",
+    "semantic_hash": ""
   },
   "Source/Diagnostics/DiagCore.cpp": {
     "mtime": 1794654229.0756567,
@@ -825,9 +825,9 @@
     "language": "language=.cpp"
   },
   "Source/GUI/PanelAssetSlots.h": {
-    "mtime": 1794935104.9556901,
-    "seen": 1794936264.6365216,
-    "ast_hash": "1c845fd4c7e8890ef07c5a31f311a931",
+    "mtime": 1795029948.0568633,
+    "seen": 1795044408.748671,
+    "ast_hash": "c61e7f5d3236d078d4fbcfc84212c48c",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
@@ -839,9 +839,9 @@
     "language": "language=.cpp"
   },
   "Source/GUI/PanelPaint.h": {
-    "mtime": 1794945327.4474523,
-    "seen": 1794948252.3392918,
-    "ast_hash": "7ce623b22be513c2ea3ed93634376392",
+    "mtime": 1795029948.0573635,
+    "seen": 1795044408.7488806,
+    "ast_hash": "b0cde0529a427f9ade8b4e608592b157",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
@@ -1278,9 +1278,9 @@
     "language": "language=.cpp"
   },
   "Source/ProcessorSignalPath.cpp": {
-    "mtime": 1794935104.9837677,
-    "seen": 1794936264.6416845,
-    "ast_hash": "664461004d9d4733b1de65393f5ffaba",
+    "mtime": 1795029948.0593636,
+    "seen": 1795044408.761799,
+    "ast_hash": "34f0c1f84cffe665378b469ffa213b0f",
     "semantic_hash": ""
   },
   "Source/ProcessorStateFormat.h": {
@@ -1655,10 +1655,10 @@
     "semantic_hash": "9e78edd504f74ef88e8b2bc1c3045c2f"
   },
   "tests/lib/harness.sh": {
-    "mtime": 1794595071.2471836,
-    "seen": 1794648118.5954158,
-    "ast_hash": "8f283702b47a08d82a7eddd7ae575db4",
-    "semantic_hash": "8f283702b47a08d82a7eddd7ae575db4"
+    "mtime": 1795042974.07792,
+    "seen": 1795044408.7740946,
+    "ast_hash": "079f9e14dbd08ec5b982a95ce02b0986",
+    "semantic_hash": ""
   },
   "tests/limiter/limiter_test.cpp": {
     "mtime": 1792875558.5966992,
@@ -2126,9 +2126,9 @@
     "semantic_hash": ""
   },
   "tests/processor_boundaries.cpp": {
-    "mtime": 1794677144.6747038,
-    "seen": 1794869323.1410997,
-    "ast_hash": "6e2a14893ed743f552d59080665088e5",
+    "mtime": 1795034706.5955217,
+    "seen": 1795044408.78054,
+    "ast_hash": "fa71ae23d84bde185b3370a6a3aa89e6",
     "semantic_hash": ""
   },
   "tests/unit/stutter_test.cpp": {
@@ -2780,9 +2780,9 @@
     "semantic_hash": ""
   },
   "AGENTS.md": {
-    "mtime": 1794870168.6106024,
-    "seen": 1794870563.6205077,
-    "ast_hash": "a9ab69e90f5d989ade1e78da184356e1",
+    "mtime": 1795042974.0759017,
+    "seen": 1795044408.809866,
+    "ast_hash": "036e924661f73da796657233f6be4ce3",
     "semantic_hash": ""
   },
   "Assets/README.md": {
@@ -2798,9 +2798,9 @@
     "semantic_hash": ""
   },
   "CMakeLists.txt": {
-    "mtime": 1794873832.5990202,
-    "seen": 1794928579.3482265,
-    "ast_hash": "4e7f686cf2232c2d419b3aa8ab3c7916",
+    "mtime": 1795032694.625225,
+    "seen": 1795044408.8102539,
+    "ast_hash": "ef483cf7ec54a72e0b1961b276c555db",
     "semantic_hash": ""
   },
   "CODE_OF_CONDUCT.md": {
@@ -2810,9 +2810,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1794935104.950166,
-    "seen": 1794936264.685842,
-    "ast_hash": "9d071b60a82d77f19b2818cbf1decb0a",
+    "mtime": 1795032694.6267307,
+    "seen": 1795044408.8104424,
+    "ast_hash": "78cffb326932257413209bfc0c630f5f",
     "semantic_hash": ""
   },
   "SPLITTING-BIG-FILES.md": {
@@ -2918,9 +2918,9 @@
     "semantic_hash": ""
   },
   "tests/README.md": {
-    "mtime": 1794998052.5375087,
-    "seen": 1794998095.450986,
-    "ast_hash": "c3d095ba719e769bd98c7f8f72536193",
+    "mtime": 1795042974.0769167,
+    "seen": 1795044408.813791,
+    "ast_hash": "8a78b42cab9d888562c70c4c1bcaf160",
     "semantic_hash": ""
   },
   "tests/shaders/VulkanSceneShaders/README.md": {
@@ -3062,9 +3062,9 @@
     "semantic_hash": ""
   },
   "tests/parameter_audio.cpp": {
-    "mtime": 1794996423.315339,
-    "seen": 1794998095.4149659,
-    "ast_hash": "24f050952184c4e6a6f689a11aaa97b7",
+    "mtime": 1795034706.5955217,
+    "seen": 1795044408.7772665,
+    "ast_hash": "cf3d539423c4a552438ec5308789be62",
     "semantic_hash": ""
   },
   "tests/parameters/check_mix_wiring.py": {
@@ -3074,9 +3074,27 @@
     "semantic_hash": ""
   },
   ".github/workflows/build-ios.yml": {
-    "mtime": 1794946551.0940704,
-    "seen": 1794948252.3147652,
-    "ast_hash": "19a4c1a6fa97e75e139f904a259d336d",
+    "mtime": 1795042974.0738952,
+    "seen": 1795044408.728005,
+    "ast_hash": "017e4e0da65c7d6405f76705d275b181",
+    "semantic_hash": ""
+  },
+  "tests/lib/check_compiler_warnings.py": {
+    "mtime": 1795042974.0774198,
+    "seen": 1795044408.774086,
+    "ast_hash": "e4f50adcdab40a154599bb6c99a7c956",
+    "semantic_hash": ""
+  },
+  "tests/CMakeLists.txt": {
+    "mtime": 1795040674.7672868,
+    "seen": 1795044408.8137834,
+    "ast_hash": "a12590462fb515225cf3af15feb3f1eb",
+    "semantic_hash": ""
+  },
+  "tests/IR.wav": {
+    "mtime": 1795044382.5555916,
+    "seen": 1795044408.8178017,
+    "ast_hash": "355e90e067fae209c150774be5c44afa",
     "semantic_hash": ""
   }
 }
