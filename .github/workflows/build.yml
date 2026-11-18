@@ -1109,6 +1109,10 @@ jobs:
           # for a translation unit that succeeds, which is what kept this log enormous:
           # a full JUCE build is hundreds of files, and every one of them was a line.
           # A failure still prints in full, which is the only part worth reading.
+          #  Tee-Object only creates its file when the pipeline yields a line, and
+          #  a clean build yields none, so create the log first: the scan below
+          #  then reads an empty file instead of a missing one.
+          New-Item -ItemType File -Path "$env:RUNNER_TEMP/windows-build.log" -Force | Out-Null
           cmake --build build --config ${{ env.BUILD_TYPE }} --parallel 2>&1 |
             ForEach-Object {
                 # Drop the per-file progress chatter, keep warnings and errors.
@@ -1321,6 +1325,10 @@ jobs:
           $env:CMAKE_BUILD_PARALLEL_LEVEL = [Environment]::ProcessorCount
           $env:CL_MPCount = [Environment]::ProcessorCount
 
+          #  Tee-Object only creates its file when the pipeline yields a line, and
+          #  a clean build yields none, so create the log first: the scan below
+          #  then reads an empty file instead of a missing one.
+          New-Item -ItemType File -Path "$env:RUNNER_TEMP/windows-arm64-build.log" -Force | Out-Null
           cmake --build build --config ${{ env.BUILD_TYPE }} --parallel 2>&1 |
             ForEach-Object {
                 if ($_ -match 'cl : .*warning|error|Error|warning [A-Z]+[0-9]+') { $_ }
