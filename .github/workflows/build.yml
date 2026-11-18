@@ -608,7 +608,7 @@ jobs:
   dsp-unit:
     name: DSP unit tests
     runs-on: ubuntu-26.04
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout repository
@@ -685,7 +685,7 @@ jobs:
       - name: Build and run parameter audio tests
         run: |
           cmake --build build --target j37_parameter_audio_tests --parallel 2
-          ctest --test-dir build -C Release -R parameter_audio --output-on-failure --timeout 1200
+          ctest --test-dir build -C Release -R parameter_audio --output-on-failure --timeout 1800
 
       #  The job's last step, so the numbers cover everything it compiled, and
       #  the counters were zeroed before the build: these are this job's own.

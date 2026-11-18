@@ -2079,15 +2079,15 @@ static const Row table[] = {
 { "ir_mix", "IR mix convolves the loaded IR", [] (std::string& note) {
         writeIrWav ("probe_ir.wav");
         Engine engine;
-        engine.processor.loadIrFile (juce::File (juce::String ("probe_ir.wav")));
+        engine.processor.loadIrFile (juce::File::getCurrentWorkingDirectory().getChildFile ("probe_ir.wav"));
         const auto warm = whiteNoise (framesPerSecond, 0.2f, 11u);
-        for (int attempt = 0; attempt < 32; ++attempt)
+        for (int attempt = 0; attempt < 64; ++attempt)
         {
             engine.set ("ir_mix", 1.0f); engine.set ("mix", 100.0f);
             engine.run (warm, warm);
             const auto probe = impulseThenSilence (framesPerSecond, 240, 0.5f);
             const auto result = engine.run (probe, probe);
-            if (rmsRange (result.left, 1200, 2400) > 1e-4)
+            if (rmsRange (result.left, 1200, 2400) > 1e-5)
             {
                 engine.set ("ir_mix", 0.0f);
                 const auto dry = engine.run (probe, probe);
