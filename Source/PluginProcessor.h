@@ -1375,6 +1375,9 @@ private:
     // The five type switches. Read once per block like every other choice, so the
     // per-sample loops branch on plain ints rather than on atomics.
     std::atomic<float>* valveTypeParam = nullptr;
+    std::atomic<float>* pentodeTypeParam = nullptr;
+    std::atomic<float>* triodeTypeParam = nullptr;
+    std::atomic<float>* transistorTypeParam = nullptr;
     std::atomic<float>* transformerTypeParam = nullptr;
     std::atomic<float>* digitalTypeParam = nullptr;
     std::atomic<float>* vinylTypeParam = nullptr;
@@ -2229,6 +2232,9 @@ private:
     // vinyl type also drives the per-block voice fields on the VinylStages, which
     // are written once here and only read in the loop.
     int valveTypeCached = 0;
+    int pentodeTypeCached = 0;
+    int triodeTypeCached = 0;
+    int transistorTypeCached = 0;
     int transformerTypeCached = 0;
     int digitalTypeCached = 0;
     int vinylTypeCached = 0;

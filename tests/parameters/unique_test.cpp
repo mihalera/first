@@ -34,7 +34,8 @@
 //  is part of what a host's parameter index addresses.
 //
 //  What is deliberately NOT restated: the five model-list choice names
-//  (tape_type, valve_type, transformer_type, digital_type, vinyl_type). They are single-sourced in the headers and arrive here through
+//  (tape_type, valve_type, pentode_type, triode_type, transistor_type, transformer_type,
+//  digital_type, vinyl_type). They are single-sourced in the headers and arrive here through
 //  the extracted table; restating them would be the second copy that already
 //  drifted once. Their rows pin the count and the default index, and the sweep
 //  holds their Off-last convention.
@@ -115,7 +116,7 @@ constexpr const char* const* noOptions = nullptr;
 // The option lists the table spells out, pinned exactly as written there.
 const char* const eqOrderOptions[] = { "6 dB/oct", "12 dB/oct", "18 dB/oct",
                                        "24 dB/oct", "36 dB/oct", "48 dB/oct" };
-const char* const speedOptions[] = { "7.5 ips", "15 ips", "30 ips" };
+const char* const speedOptions[] = { "7.5 ips", "15 ips", "30 ips", "Off" };
 const char* const instrumentOptions[] = { "Master Bus", "Vocal", "Bass", "Guitar",
                                           "Piano", "Drums" };
 const char* const oversamplingOptions[] = { "Off", "2x", "4x", "8x" };
@@ -134,7 +135,7 @@ const char* const languageOptions[] = { "English",
                                         "\xd1\x81\xd1\x8c\xd0\xba\xd0\xb0" };
 const char* const padOptions[] = { "0 dB", "-10 dB", "-20 dB", "-30 dB" };
 const char* const delayTypeOptions[] = { "Tape", "BBD", "Modern" };
-const char* const vinylSpeedOptions[] = { "33 RPM", "45 RPM", "78 RPM" };
+const char* const vinylSpeedOptions[] = { "33 RPM", "45 RPM", "78 RPM", "Off" };
 const char* const generationOptions[] = { "Laquer", "Direct", "Printed", "Off" };
 const char* const turntableOptions[] = { "Belt", "Direct", "Idler", "Off" };
 const char* const cartridgeOptions[] = { "MM", "MC", "DJ", "Off" };
@@ -205,7 +206,7 @@ constexpr Expect uniqueExpectations[] =
 
     // -- addDeckControls: the deck itself ---------------------------------------
     { "tape_type", 'C', "Tape Type", 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, "", 13, noOptions },
-    { "speed", 'C', "Speed", 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, "", 3, speedOptions },
+    { "speed", 'C', "Speed", 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, "", 4, speedOptions },
     { "instrument", 'C', "Instrument", 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, "", 6, instrumentOptions },
     { "drive", 'F', "Drive", 0.30f, 0.0f, 1.0f, 0.001f, 0.45f, "%", 0, noOptions },
     { "bias", 'F', "Bias", 0.42f, 0.0f, 1.0f, 0.001f, 0.40f, "%", 0, noOptions },
@@ -317,7 +318,7 @@ constexpr Expect uniqueExpectations[] =
     { "vinyl", 'F', "Vinyl", 0.0f, 0.0f, 1.0f, 0.001f, 0.45f, "%", 0, noOptions },
     { "vinyl_crackle", 'F', "Crackle", 0.5f, 0.0f, 1.0f, 0.001f, 0.45f, "%", 0, noOptions },
     { "vinyl_rumble", 'F', "Rumble", 0.35f, 0.0f, 1.0f, 0.001f, 0.45f, "%", 0, noOptions },
-    { "vinyl_speed", 'C', "Vinyl Speed", 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, "", 3, vinylSpeedOptions },
+    { "vinyl_speed", 'C', "Vinyl Speed", 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, "", 4, vinylSpeedOptions },
     { "vinyl_dust", 'F', "Dust", 0.0f, 0.0f, 1.0f, 0.001f, 0.45f, "%", 0, noOptions },
     { "vinyl_scratch", 'F', "Scratch", 0.0f, 0.0f, 1.0f, 0.001f, 0.45f, "%", 0, noOptions },
     { "vinyl_warp", 'F', "Warp", 0.0f, 0.0f, 1.0f, 0.001f, 0.45f, "%", 0, noOptions },
@@ -332,6 +333,9 @@ constexpr Expect uniqueExpectations[] =
 
     // -- addTypeSwitchControls: the five model lists ----------------------------
     { "valve_type", 'C', "Valve Type", 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, "", 7, noOptions },
+    { "pentode_type", 'C', "Pentode Type", 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, "", 5, noOptions },
+    { "triode_type", 'C', "Triode Type", 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, "", 5, noOptions },
+    { "transistor_type", 'C', "Transistor Type", 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, "", 5, noOptions },
     { "transformer_type", 'C', "Transformer Type", 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, "", 6, noOptions },
     { "digital_type", 'C', "Digital Type", 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, "", 6, noOptions },
     { "vinyl_type", 'C', "Vinyl Type", 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, "", 7, noOptions },

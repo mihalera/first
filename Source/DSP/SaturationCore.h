@@ -79,6 +79,57 @@ static_assert (j37model::namesAreComplete (digitalTypeNames),
 
 inline juce::StringArray digitalTypeNameList() { return j37model::toStringArray (digitalTypeNames); }
 
+// -- PENTODE -------------------------------------------------------------------
+//  The small-signal pentodes a guitar stage is built around. Each one sets how
+//  early its knee arrives (the slope) and how much even content it leaves: an
+//  EF86 is the tightest and most odd-dominant, a 6SJ7 is the softest.
+inline constexpr int pentodeTypeCount = 5;
+
+inline constexpr std::array<const char*, pentodeTypeCount> pentodeTypeNames
+{
+    "EF86", "6SJ7", "12BY7", "6AU6",
+    "Off"   // see the note on tapeStockNames: OFF is appended, never inserted
+};
+
+static_assert (j37model::namesAreComplete (pentodeTypeNames),
+               "pentodeTypeCount and pentodeTypeNames must describe the same number of pentode types");
+
+inline juce::StringArray pentodeTypeNameList() { return j37model::toStringArray (pentodeTypeNames); }
+
+// -- TRIODE --------------------------------------------------------------------
+//  The low-mu triodes and driver valves. Each sets its operating point's drift
+//  (coldness and sag), how late it bends (the slope) and how much even content it
+//  carries.
+inline constexpr int triodeTypeCount = 5;
+
+inline constexpr std::array<const char*, triodeTypeCount> triodeTypeNames
+{
+    "12AT7", "12AU7", "6SN7", "2A3",
+    "Off"   // see the note on tapeStockNames: OFF is appended, never inserted
+};
+
+static_assert (j37model::namesAreComplete (triodeTypeNames),
+               "triodeTypeCount and triodeTypeNames must describe the same number of triode types");
+
+inline juce::StringArray triodeTypeNameList() { return j37model::toStringArray (triodeTypeNames); }
+
+// -- TRANSISTOR ----------------------------------------------------------------
+//  Germanium and silicon stages. The type sets the crossover notch's width, the
+//  two halves' slopes and the even content - the three things that separate one
+//  transistor stage's grain from another's.
+inline constexpr int transistorTypeCount = 5;
+
+inline constexpr std::array<const char*, transistorTypeCount> transistorTypeNames
+{
+    "AC128", "OC71", "AF126", "2N3906",
+    "Off"   // see the note on tapeStockNames: OFF is appended, never inserted
+};
+
+static_assert (j37model::namesAreComplete (transistorTypeNames),
+               "transistorTypeCount and transistorTypeNames must describe the same number of transistor types");
+
+inline juce::StringArray transistorTypeNameList() { return j37model::toStringArray (transistorTypeNames); }
+
 //==============================================================================
 /**
     The nine saturation principles, and the mix that combines them.
@@ -194,6 +245,9 @@ struct SaturationCore
         // switching a machine off re-weights the rest to cover it, so the mix
         // holds its degree of saturation and only the character changes.
         if (valveOff)       valveWeight = 0.0f;
+        if (pentodeOff)     pentodeWeight = 0.0f;
+        if (triodeOff)      triodeWeight = 0.0f;
+        if (transistorOff)  transistorWeight = 0.0f;
         if (transformerOff) transformerWeight = 0.0f;
         if (digitalOff)     digitalWeight = 0.0f;
         if (tapeOff)        tapeWeight = 0.0f;
@@ -240,13 +294,19 @@ struct SaturationCore
         else
         {
             // All sources at zero. The character still has to resolve to
-            // something, and pure tape is what the machine was calibrated as -
-            // but saturationAmount above is zero, so process() hands every
-            // curve a drive of nothing and the core returns its input
-            // bit-for-bit. The shares here describe a mix that is not playing.
-            tapeWeight = 1.0f;
-            valveWeight = pentodeWeight = triodeWeight = transistorWeight = foldWeight
-                        = glassWeight = transformerWeight = digitalWeight = 0.0f;
+            // SOMETHING, and it used to resolve to pure tape - which put the
+            // panel's mix bar at 100 % TAPE the moment the user turned the last
+            // knob down, as if the plugin had chosen a machine for them. An
+            // empty mix has no leading principle, so the shares are divided
+            // EQUALLY: the bar reads nine equal ninths, which is the honest
+            // picture of "nothing dialled". saturationAmount above is zero, so
+            // process() hands every curve a drive of nothing and the core
+            // returns its input bit-for-bit either way - these shares describe
+            // a mix that is not playing, and they should look like one.
+            static constexpr float emptyMixShare = 1.0f / 9.0f;
+            tapeWeight = valveWeight = pentodeWeight = triodeWeight = transistorWeight
+                       = foldWeight = glassWeight = transformerWeight = digitalWeight
+                       = emptyMixShare;
         }
     }
 
@@ -389,6 +449,28 @@ struct SaturationCore
     }
 
     bool valveOff = false;
+
+    // The PENTODE family's voice, from PENTODE TYPE: how early the knee arrives
+    // (the slope) and how much even content the stage leaves (the asymmetry
+    // weight). Defaults are the 12BY7-ish centre the engine shipped with.
+    float pentodeSlope = 3.2f;
+    float pentodeEven  = 0.10f;
+
+    void setPentodeVoice (int type) noexcept
+    {
+        // OFF: see setValveVoice for what OFF means on a principle's own model
+        // list - the principle is removed, not merely turned down.
+        pentodeOff = (type >= pentodeTypeCount - 1);
+        if (pentodeOff)
+            return;
+
+        static constexpr float slope[4] = { 3.60f, 2.80f, 3.20f, 4.00f };
+        static constexpr float even [4] = { 0.06f, 0.14f, 0.10f, 0.04f };
+        pentodeSlope = slope[type];
+        pentodeEven  = even [type];
+    }
+
+    bool pentodeOff = false;
     /** True when the TAPE principle's own model list is OFF. Set from the TAPE
         TYPE switch by the engine; see the note in setBlend for what an OFF
         principle does and, more importantly, what it does NOT do. */
@@ -452,14 +534,16 @@ struct SaturationCore
 
     float shapePentode (float x, float drive, float asymmetry) noexcept
     {
-        const float biased = x + asymmetry * 0.10f + ampBiasOffset();
+        const float biased = x + asymmetry * pentodeEven + ampBiasOffset();
 
-        // The steepest slope of any analogue curve here: a pentode clips early.
-        const float slope = 1.0f + drive * 3.2f;
+        // The steepest slope of any analogue curve here: a pentode clips early,
+        // and PENTODE TYPE moves the corner - an EF86 arrives sooner than a 6SJ7.
+        const float slope = 1.0f + drive * pentodeSlope;
         const float shaped = j37Tanh (biased * slope) / slope;
 
         // Zero-point correction, the rule every curve here follows.
-        const float atZero = j37Tanh ((asymmetry * 0.10f + ampBiasOffset()) * slope) / slope;
+        const float atZero = j37Tanh ((asymmetry * pentodeEven + ampBiasOffset()) * slope)
+                             / slope;
         return shaped - atZero;
     }
 
@@ -474,6 +558,28 @@ struct SaturationCore
     */
     float triodeColdness = 0.40f;
     float triodeSag      = 0.55f;
+    float triodeSlope    = 0.90f;   // how late the knee arrives
+    float triodeEven     = 0.85f;   // the squared term's weight
+
+    void setTriodeVoice (int type) noexcept
+    {
+        // OFF: see setValveVoice for what OFF means on a principle's own model
+        // list - the principle is removed, not merely turned down.
+        triodeOff = (type >= triodeTypeCount - 1);
+        if (triodeOff)
+            return;
+
+        static constexpr float cold [4] = { 0.45f, 0.55f, 0.60f, 0.70f };
+        static constexpr float sag  [4] = { 0.45f, 0.60f, 0.70f, 0.35f };
+        static constexpr float slope[4] = { 1.10f, 0.85f, 0.75f, 0.65f };
+        static constexpr float even [4] = { 0.75f, 0.95f, 1.00f, 1.10f };
+        triodeColdness = cold [type];
+        triodeSag      = sag  [type];
+        triodeSlope    = slope[type];
+        triodeEven     = even [type];
+    }
+
+    bool triodeOff = false;
 
     float shapeTriode (float x, float drive, float asymmetry) noexcept
     {
@@ -488,16 +594,16 @@ struct SaturationCore
         const float biased = x + driftingBias;
 
         // The gentlest slope of the three valve-family curves: it bends late and
-        // keeps bending.
-        const float slope = 1.0f + drive * 0.9f;
+        // keeps bending - and TRIODE TYPE moves how late (a 2A3 is the softest).
+        const float slope = 1.0f + drive * triodeSlope;
         const float soft = j37Tanh (biased * slope) / slope;
 
         // The even content is carried by the squared term, as on the valve, but
         // stronger: this is the warm curve.
-        const float asymmetryTerm = driftingBias * 0.85f * soft * soft;
+        const float asymmetryTerm = driftingBias * triodeEven * soft * soft;
 
         const float softAtZero = j37Tanh (driftingBias * slope) / slope;
-        const float asymmetryAtZero = driftingBias * 0.85f * softAtZero * softAtZero;
+        const float asymmetryAtZero = driftingBias * triodeEven * softAtZero * softAtZero;
 
         return (soft - softAtZero) - (asymmetryTerm - asymmetryAtZero);
     }
@@ -511,6 +617,35 @@ struct SaturationCore
         have. The notch is what separates it from shapeValve - a valve has a
         bias point, a germanium stage has a dead band around it.
     */
+    // The TRANSISTOR family's voice, from TRANSISTOR TYPE: the notch's width, the
+    // two halves' slopes and the even weight. Defaults are the AC128-ish stage
+    // the engine shipped with; a silicon BC109 crosses far more cleanly than a
+    // germanium OC71, which is the difference the type list exists to offer.
+    float transistorNotch   = 0.060f;
+    float transistorSlopePos = 2.0f;
+    float transistorSlopeNeg = 2.6f;
+    float transistorEven    = 0.30f;
+
+    void setTransistorVoice (int type) noexcept
+    {
+        // OFF: see setValveVoice for what OFF means on a principle's own model
+        // list - the principle is removed, not merely turned down.
+        transistorOff = (type >= transistorTypeCount - 1);
+        if (transistorOff)
+            return;
+
+        static constexpr float notch[4] = { 0.060f, 0.085f, 0.070f, 0.030f };
+        static constexpr float pos  [4] = { 2.00f, 1.90f, 2.10f, 2.40f };
+        static constexpr float neg  [4] = { 2.60f, 2.90f, 2.70f, 2.40f };
+        static constexpr float even [4] = { 0.30f, 0.38f, 0.34f, 0.18f };
+        transistorNotch    = notch[type];
+        transistorSlopePos = pos  [type];
+        transistorSlopeNeg = neg  [type];
+        transistorEven     = even [type];
+    }
+
+    bool transistorOff = false;
+
     float shapeTransistor (float x, float drive, float asymmetry) noexcept
     {
         transistorBiasState += (x - transistorBiasState) * 0.002f;
@@ -520,27 +655,27 @@ struct SaturationCore
         // because a harder-driven stage crosses it faster. Written as a
         // smoothstep so the slope at the origin stays 1 - a hard subtraction
         // would give the curve a kink that no amplifier has.
-        const float notch = 0.06f / (1.0f + drive * 3.0f);
+        const float notch = transistorNotch / (1.0f + drive * 3.0f);
         const float magnitude = std::abs (biased);
         const float eased = magnitude / (magnitude + notch);
         const float shifted = (biased < 0.0f ? -1.0f : 1.0f) * magnitude * eased;
 
         // The conduction asymmetry: the slope differs between the halves, which
-        // is the even content.
-        const float slopePos = 1.0f + drive * 2.0f;
-        const float slopeNeg = 1.0f + drive * 2.6f;
+        // is the even content. TRANSISTOR TYPE sets both halves.
+        const float slopePos = 1.0f + drive * transistorSlopePos;
+        const float slopeNeg = 1.0f + drive * transistorSlopeNeg;
         const float slope = shifted < 0.0f ? slopeNeg : slopePos;
         const float shaped = j37Tanh (shifted * slope) / slope;
 
         // The squared term carries the rest of the even series, and the zero
         // correction takes its pedestal back off.
-        const float asymmetryTerm = asymmetry * 0.30f * shaped * shaped;
+        const float asymmetryTerm = asymmetry * transistorEven * shaped * shaped;
         const float z = asymmetry * 0.22f;
         const float zEased = std::abs (z) / (std::abs (z) + notch);
         const float zShifted = (z < 0.0f ? -1.0f : 1.0f) * std::abs (z) * zEased;
         const float zSlope = zShifted < 0.0f ? slopeNeg : slopePos;
         const float zShaped = j37Tanh (zShifted * zSlope) / zSlope;
-        const float asymmetryAtZero = asymmetry * 0.30f * zShaped * zShaped;
+        const float asymmetryAtZero = asymmetry * transistorEven * zShaped * zShaped;
 
         return (shaped - zShaped) - (asymmetryTerm - asymmetryAtZero);
     }

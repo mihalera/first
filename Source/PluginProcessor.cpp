@@ -109,7 +109,8 @@ namespace
             "out_hp_freq", "out_lp_freq", "out_eq_order", "out_eq_q",
             "out_hp_on", "out_lp_on",
             "st_link",
-            "valve_type", "transformer_type",
+            "valve_type", "pentode_type", "triode_type", "transistor_type",
+            "transformer_type",
             "digital_type", "vinyl_type",
             "delay_sync", "delay_rate", "tuning_tonic", "tuning_mode", "autotune_amount",
             "autotune_speed", "autotune_range", "autotune_octave", "autotune_tolerance", "autotune_gate",
@@ -333,6 +334,9 @@ FirstAudioProcessor::FirstAudioProcessor()
     outputEqOrderParam = parameters.getRawParameterValue ("out_eq_order");
     outputEqQParam = parameters.getRawParameterValue ("out_eq_q");
     valveTypeParam = parameters.getRawParameterValue ("valve_type");
+    pentodeTypeParam = parameters.getRawParameterValue ("pentode_type");
+    triodeTypeParam = parameters.getRawParameterValue ("triode_type");
+    transistorTypeParam = parameters.getRawParameterValue ("transistor_type");
     transformerTypeParam = parameters.getRawParameterValue ("transformer_type");
     digitalTypeParam = parameters.getRawParameterValue ("digital_type");
     vinylTypeParam = parameters.getRawParameterValue ("vinyl_type");

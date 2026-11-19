@@ -102,8 +102,12 @@ struct TransportRig
     // stored energy - grows with the speed; the servo's own rate does not, and
     // the ratio would turn the 30 ips spin-up into a two-second wait that reads
     // as a fault rather than as a machine.
-    static constexpr float tapeSpeedScales[3]  { 0.71f, 1.00f, 1.41f };   // 7.5 / 15 / 30 ips
-    static constexpr float vinylSpeedScales[3] { 1.00f, 1.17f, 1.54f };   // 33 / 45 / 78 rpm
+    //  The fourth entry is the list's OFF (see the parameter table: OFF is
+    //  appended, never inserted). With the speed off the gesture is NEUTRAL -
+    //  the reference duration, unscaled - because a speed that is not modelled
+    //  cannot make the capstan come up faster or the platter coast longer.
+    static constexpr float tapeSpeedScales[4]  { 0.71f, 1.00f, 1.41f, 1.00f };
+    static constexpr float vinylSpeedScales[4] { 1.00f, 1.17f, 1.54f, 1.00f };
 
     /** The tempo's scale on every gesture: half the tempo, twice the gesture,
         anchored at 120 BPM - the same anchor the wow rate uses, and the tempo a
@@ -195,8 +199,8 @@ struct TransportRig
         // read when a gesture starts, but the STEPS are stored when a gesture
         // starts, so a selector moved mid-coast cannot step the ramp that is
         // running - the next gesture is the one that follows the change.
-        const auto tapeIndex = tapeSpeed < 0 ? 0 : (tapeSpeed > 2 ? 2 : tapeSpeed);
-        const auto vinylIndex = vinylSpeed < 0 ? 0 : (vinylSpeed > 2 ? 2 : vinylSpeed);
+        const auto tapeIndex = tapeSpeed < 0 ? 0 : (tapeSpeed > 3 ? 3 : tapeSpeed);
+        const auto vinylIndex = vinylSpeed < 0 ? 0 : (vinylSpeed > 3 ? 3 : vinylSpeed);
         const auto tempoScale = tempoScaleFor (tempoBpm);
 
         capstanScale = tapeSpeedScales[tapeIndex] * tempoScale;

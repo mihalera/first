@@ -241,9 +241,13 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
     //  file never had this bug because they were already wrapped as a CHAIN
     //  (previous + play) - the boxes now take exactly that chain too: the
     //  previous handler first, the click on top.
-    for (auto* box : { &tapeTypeBox, &valveTypeBox, &transformerTypeBox,
+    //  The factory list is NOT in this set any more: PresetComboBox reports its
+    //  picks through its own callback (see setUpPresetBar), which plays the click
+    //  itself because that path deliberately sends no change notification.
+    for (auto* box : { &tapeTypeBox, &valveTypeBox, &pentodeTypeBox, &triodeTypeBox,
+                       &transistorTypeBox, &transformerTypeBox,
                        &digitalTypeBox, &vinylTypeBox, &vinylSpeedBox, &speedBox,
-                       &instrumentBox, &oversamplingBox, &presetBox, &userPresetBox,
+                       &instrumentBox, &oversamplingBox, &userPresetBox,
                        &delayTypeBox, &delayRateBox, &vinylGenerationBox,
                        &vinylTurntableBox, &vinylCartridgeBox })
         if (box != nullptr)
@@ -1111,6 +1115,9 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     oscButton.setLookAndFeel (nullptr);
     oversamplingBox.setLookAndFeel (nullptr);
     instrumentBox.setLookAndFeel (nullptr);
+    pentodeTypeBox.setLookAndFeel (nullptr);
+    triodeTypeBox.setLookAndFeel (nullptr);
+    transistorTypeBox.setLookAndFeel (nullptr);
     vinylGenerationBox.setLookAndFeel (nullptr);
     vinylTurntableBox.setLookAndFeel (nullptr);
     vinylCartridgeBox.setLookAndFeel (nullptr);
@@ -1953,17 +1960,22 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         //  Every height in the table is the band's own: the caption band, the
         //  control band, and the two pixels a readout gives back under it. A
         //  literal here is what put the boxes thirteen pixels into the row below.
+        //  TONIC and MODE moved down to the type row, beside the OSC ring they
+        //  describe; what is left up here is the deck's READOUTS - the tempo and
+        //  the harmonic split - so the two rows above the keys are one block of
+        //  numbers and the row under them is one block of settings. BPM was a
+        //  caption plus a readout alone on this line, which read as a setting the
+        //  user could turn; pairing it with the harmonics it sits beside says
+        //  what it is.
         const std::vector<DeckRowItem> row {
-            { &bpmLabel,          96, -1,  0, captionHeight, false },
-            // The tempo readout is a VALUE like the two lists beside it, so it
+            { &bpmLabel,          120, -1,  0, captionHeight, false },
+            // The tempo readout is a VALUE like the readout beside it, so it
             // takes the control band's height rather than the 13 px a caption
             // line would give it: at caption height it was a stub of type under
             // a caption, and the row behind it read as four boxes and a fragment.
-            { &bpmReadout,         0, -1, captionHeight, controlHeight, true  },
-            { &tuningTonicLabel, 150, -1,  0, captionHeight, false },
-            { &tuningTonicBox,     0, -1, captionHeight, controlHeight, true  },
-            { &tuningModeLabel,  150, -1,  0, captionHeight, false },
-            { &tuningModeBox,      0, -1, captionHeight, controlHeight, true  }
+            { &bpmReadout,          0, -1, captionHeight, controlHeight, true  },
+            { &harmonicsLabel,    120, -1,  0, captionHeight, false },
+            { &harmonicsReadout,    0, -1, captionHeight, controlHeight, true  }
         };
 
         placeDeckRow (row, deck.getX() + 18, deck.getRight() - reelCorridor,
@@ -1987,8 +1999,11 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     //  which is why one number serves them and why the deck's right edge is a
     //  single vertical line rather than three near-misses.
     const auto deckRowRight = deckTypesRight - deckRingSize - deckRingGap;
-    const auto deckTypeColumn = juce::jmax (60, juce::jmin (108,
-        (deckRowRight - deckRowLeft - 5 * 14) / 6));
+    //  Three selectors share this row with the ring: INSTRUMENT, TONIC and MODE
+    //  are the three things the ring's key is made of, so they stand on the row
+    //  the ring draws on rather than two rows above it.
+    const auto deckTypeColumn = juce::jmax (60, juce::jmin (150,
+        (deckRowRight - deckRowLeft - 2 * 14) / 3));
 
     // ---- row 2: SWITCHES ----------------------------------------------------
     // OVERSAMPLING is a SETTINGS-tab member and lives in the member row under
@@ -2002,15 +2017,13 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     //  the user could turn.
     {
         constexpr int readoutGap = 12;
-        const auto readoutWidth = juce::jmax (44, (deckRowRight - deckRowLeft
-                                                    - deckTypeColumn - 3 * readoutGap) / 3);
+        const auto readoutWidth = juce::jmax (44, (deckRowRight - deckRowLeft - readoutGap) / 2);
 
+        //  The two tracking readouts, in the same order the signal meets them:
+        //  SUBFUND follows the note the machine is generating, ANTI-PHASE
+        //  watches the stereo pair at the output. Each takes half the row now
+        //  that INSTRUMENT has moved to the key row beside the ring.
         const std::vector<DeckRowItem> row {
-            { &instrumentLabel,  deckTypeColumn, -1,  0, captionHeight, false },
-            { &instrumentBox,              0, -1, captionHeight, controlHeight, true  },
-
-            { &harmonicsLabel,  readoutWidth, -1,  0, captionHeight, false },
-            { &harmonicsReadout,           0, -1, captionHeight, controlHeight, true  },
             { &subfundLabel,    readoutWidth, -1,  0, captionHeight, false },
             { &subfundReadout,             0, -1, captionHeight, controlHeight, true  },
             { &antiPhaseLabel,  readoutWidth, -1,  0, captionHeight, false },
@@ -2066,6 +2079,18 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         // The TYPE lists that used to stand in this band moved to the MACHINE
         // page, where the user asked for them: this row keeps the OSC ring and
         // the band it stands in, so the deck's rows below do not shift.
+        const std::vector<DeckRowItem> row {
+            { &instrumentLabel,  deckTypeColumn, -1,  0, captionHeight, false },
+            { &instrumentBox,              0, -1, captionHeight, controlHeight, true  },
+            { &tuningTonicLabel, deckTypeColumn, -1,  0, captionHeight, false },
+            { &tuningTonicBox,             0, -1, captionHeight, controlHeight, true  },
+            { &tuningModeLabel,  deckTypeColumn, -1,  0, captionHeight, false },
+            { &tuningModeBox,              0, -1, captionHeight, controlHeight, true  }
+        };
+
+        placeDeckRow (row, deckRowLeft, deckRowRight,
+                      deckTop (j37panel::DeckBands::types), 14, true);
+
         const auto typesTop = deckTop (j37panel::DeckBands::types);
         oscRing.setBounds (deckTypesRight - deckRingSize, typesTop,
                            deckRingSize, deckRingSize);
@@ -2498,9 +2523,14 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
     // way to be reached from the page whose stage plays it. DYN does NOT: its
     // knobs moved to CHARACTER and nothing ever rode the band it reserved, so the
     // page now gives that 50 px to its own three knobs instead.
-    const auto memberRows = (settingsTab || delayTab || characterTab
+    //  CHARACTER and BASIC are deliberately NOT in this list any more: the three
+    //  vinyl voicing lists moved to VINYL (the page whose stage they re-voice)
+    //  and TRACKS moved to FRONT END (the page whose gain stages feed the head it
+    //  describes), so both pages hold nothing but knobs and give the band's 50 px
+    //  to their own knobs instead.
+    const auto memberRows = (settingsTab || delayTab
                              || frontEndTab || vinylTab || shapersTab || inEqTab || outEqTab
-                             || basicTab || mixTab) ? 1 : 0;
+                             || mixTab) ? 1 : 0;
 
     // The member band is a FIXED strip - a caption band plus a control band -
     // pinned to the grid's BOTTOM edge, and the knob strip takes what is above
@@ -2896,17 +2926,21 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
     // full member of exactly one tab, so it is visible only while that tab is.
     diPadLabel.setVisible (geometry.frontEndTab);
     diPadBox.setVisible (geometry.frontEndTab);
-    tracksLabel.setVisible (geometry.basicTab);
-    tracksBox.setVisible (geometry.basicTab);
+    // TRACKS describes the machine's head geometry, which is part of what the
+    // front end is feeding, so it rides FRONT END beside the DI pad.
+    tracksLabel.setVisible (geometry.frontEndTab);
+    tracksBox.setVisible (geometry.frontEndTab);
 
     // The machine's identity moved off the deck onto the page that is named
-    // after it: the five TYPE lists and the two speeds belong to MACHINE alone.
-    for (auto* box : { &tapeTypeBox, &valveTypeBox, &transformerTypeBox, &digitalTypeBox,
+    // after it: the eight TYPE lists and the two speeds belong to MACHINE alone.
+    for (auto* box : { &tapeTypeBox, &valveTypeBox, &pentodeTypeBox, &triodeTypeBox,
+                       &transistorTypeBox, &transformerTypeBox, &digitalTypeBox,
                        &vinylTypeBox, &speedBox, &vinylSpeedBox })
         box->setVisible (geometry.machineTab);
 
-    for (auto* label : { &tapeTypeLabel, &valveTypeLabel, &transformerTypeLabel,
-                         &digitalTypeLabel, &vinylTypeLabel, &speedLabel, &vinylSpeedLabel })
+    for (auto* label : { &tapeTypeLabel, &valveTypeLabel, &pentodeTypeLabel, &triodeTypeLabel,
+                         &transistorTypeLabel, &transformerTypeLabel, &digitalTypeLabel,
+                         &vinylTypeLabel, &speedLabel, &vinylSpeedLabel })
         label->setVisible (geometry.machineTab);
     inputEqOrderLabel.setVisible (geometry.inEqTab);
     inputEqOrderBox.setVisible (geometry.inEqTab);
@@ -2974,15 +3008,16 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
     clearNoiseButton.setVisible (geometry.vinylTab);
     noiseStatusLabel.setVisible (geometry.vinylTab);
 
-    // The three vinyl selectors stayed on CHARACTER: they re-voice the whole
-    // vinyl stage, so they live with the machine's other voicing rather than
-    // beside the record's faults (which are on RECORD).
-    vinylGenerationLabel.setVisible (geometry.characterTab);
-    vinylGenerationBox.setVisible (geometry.characterTab);
-    vinylTurntableLabel.setVisible (geometry.characterTab);
-    vinylTurntableBox.setVisible (geometry.characterTab);
-    vinylCartridgeLabel.setVisible (geometry.characterTab);
-    vinylCartridgeBox.setVisible (geometry.characterTab);
+    //  The three vinyl selectors live on VINYL, the page whose stage they
+    //  re-voice: GENERATION is how the record was cut, TURNTABLE what plays it
+    //  and CARTRIDGE what reads it, and they sit in that page's member band
+    //  beside the print loader that replaces its surface.
+    vinylGenerationLabel.setVisible (geometry.vinylTab);
+    vinylGenerationBox.setVisible (geometry.vinylTab);
+    vinylTurntableLabel.setVisible (geometry.vinylTab);
+    vinylTurntableBox.setVisible (geometry.vinylTab);
+    vinylCartridgeLabel.setVisible (geometry.vinylTab);
+    vinylCartridgeBox.setVisible (geometry.vinylTab);
 
     // The mix bar takes the MIX page's whole member band: seven cells across the
     // full width is the only size at which each machine's name and percentage
@@ -3041,12 +3076,14 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
 
     if (geometry.frontEndTab)
     {
-        // FRONT END: the DI's own pad/load selector rides the band under the
-        // knobs - the row the DI feeds. It used to take the fourth cell of the
-        // knob grid's second row; the strip is one full row now, so the band is
-        // the only place on the page a combo can be, and it is where the DI's
-        // own input switch belongs anyway.
+        // FRONT END: the DI's own pad/load selector and the head's TRACKS layout
+        // ride the band under the knobs - the row the DI feeds and the head it
+        // describes. The DI pad used to take the fourth cell of the knob grid's
+        // second row; the strip is one full row now, so the band is the only
+        // place on the page a combo can be, and it is where the DI's own input
+        // switch belongs anyway.
         placeDeckSwitch (geometry, diPadLabel, diPadBox, 0, 1, "DI PAD");
+        placeDeckSwitch (geometry, tracksLabel, tracksBox, 1, 1, "TRACKS");
     }
     else if (geometry.machineTab)
     {
@@ -3058,7 +3095,7 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
         // and the turntable's - beneath them. They used to live in the deck,
         // where the type row had to share its band with the OSC ring and the
         // speed boxes sat among the key lists.
-        constexpr int machineColumns = 4;
+        constexpr int machineColumns = 5;
         const auto columnWidth = juce::jmax (1, geometry.grid.getWidth() / machineColumns);
         const auto rowHeight = juce::jmax (1, geometry.grid.getHeight() / 2);
 
@@ -3074,41 +3111,21 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
             box.setBounds (cell.getX() + 12, cell.getY() + 34, cell.getWidth() - 24, 30);
         };
 
+        //  Two rows of five: the three circuit voices that joined the list -
+        //  PENTODE, TRIODE and TRANSISTOR - sit beside VALVE, because the four
+        //  of them are the same kind of thing, and the medium's two speeds keep
+        //  the row below.
         place (tapeTypeLabel,        tapeTypeBox,        0, 0, "TAPE TYPE");
         place (valveTypeLabel,       valveTypeBox,       1, 0, "VALVE TYPE");
-        place (transformerTypeLabel, transformerTypeBox, 2, 0, "TRANSFORMER TYPE");
-        place (digitalTypeLabel,     digitalTypeBox,     3, 0, "DIGITAL TYPE");
+        place (pentodeTypeLabel,     pentodeTypeBox,     2, 0, "PENTODE TYPE");
+        place (triodeTypeLabel,      triodeTypeBox,      3, 0, "TRIODE TYPE");
+        place (transistorTypeLabel,  transistorTypeBox,  4, 0, "TRANSISTOR TYPE");
 
-        place (vinylTypeLabel,       vinylTypeBox,       0, 1, "VINYL TYPE");
-        place (speedLabel,           speedBox,           1, 1, "SPEED");
-        place (vinylSpeedLabel,      vinylSpeedBox,      2, 1, "VINYL SPEED");
-    }
-    else if (geometry.basicTab)
-    {
-        // BASIC: the machine's TRACKS selector rides the band at the page's
-        // foot, under its seven knobs - and CENTRED in it.
-        //
-        // Pinned to the first cell it left three cells of empty metal beside it,
-        // which is the user's "there is still a lot of free space, to the right
-        // of TRACKS": the page has exactly one member, so the member band is the
-        // control's whole world and a page of one should not be laid out as if
-        // three more were coming. Two cells wide, centred under the knob row,
-        // gives the list room for a name and keeps the air either side equal.
-        //  The cell is written from the grid's two EDGES rather than as two cell
-        //  widths: the grid's width is not always divisible by four, and the
-        //  leftover pixels belong to the band's outer margins, not to one side.
-        const auto tracksLeft = geometry.grid.getX() + geometry.cellWidth;
-        const auto tracksRight = geometry.grid.getRight() - geometry.cellWidth;
-        const auto tracksCell = juce::Rectangle<int> (tracksLeft, geometry.memberRowY,
-                                                      juce::jmax (1, tracksRight - tracksLeft),
-                                                      geometry.grid.getBottom() - geometry.memberRowY);
-        tracksLabel.setText ("TRACKS", juce::dontSendNotification);
-        tracksLabel.setJustificationType (juce::Justification::centred);
-        tracksLabel.setBounds (tracksCell.getX() + 5, tracksCell.getY() + 1,
-                               tracksCell.getWidth() - 10, 17);
-        tracksBox.setBounds (tracksCell.getX() + 12, tracksCell.getY() + 20,
-                             tracksCell.getWidth() - 24,
-                             juce::jmin (30, tracksCell.getHeight() - 22));
+        place (transformerTypeLabel, transformerTypeBox, 0, 1, "TRANSFORMER TYPE");
+        place (digitalTypeLabel,     digitalTypeBox,     1, 1, "DIGITAL TYPE");
+        place (vinylTypeLabel,       vinylTypeBox,       2, 1, "VINYL TYPE");
+        place (speedLabel,           speedBox,           3, 1, "SPEED");
+        place (vinylSpeedLabel,      vinylSpeedBox,      4, 1, "VINYL SPEED");
     }
     else if (geometry.settingsTab)
     {
@@ -3201,15 +3218,6 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
         placeDeckSwitch (geometry, delaySyncLabel, delaySyncButton, 1, 1, "SYNC DELAY");
         placeDeckSwitch (geometry, delayRateLabel, delayRateBox, 2, 1, "RATE");
     }
-    else if (geometry.characterTab)
-    {
-        // CHARACTER: three knobs in one row, so the member band under them
-        // carries the page's three voicing lists - left to right, the order
-        // the record is made in: what was cut, what plays it, what reads it.
-        placeDeckSwitch (geometry, vinylGenerationLabel, vinylGenerationBox, 0, 1, "GENERATION");
-        placeDeckSwitch (geometry, vinylTurntableLabel, vinylTurntableBox, 1, 1, "TURNTABLE");
-        placeDeckSwitch (geometry, vinylCartridgeLabel, vinylCartridgeBox, 2, 1, "CARTRIDGE");
-    }
     else if (geometry.shapersTab)
     {
         //  MODELS: the two file-fed stages on one page, each with its loader
@@ -3270,14 +3278,25 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
         // CLEAR PRINT under its right. Centred rather than pinned left because
         // the three knobs above span the whole row - a pair at the left edge
         // would read as belonging to the first knob, which is VINYL MIX.
+        //  The three voicing lists take the band's first three cells - the order
+        //  the record is made in: what was cut, what plays it, what reads it - and
+        //  the print loader keeps the fourth. It used to span two cells with the
+        //  readout over them; one cell holds the readout line and the two keys
+        //  under it, which is the same shape the MODELS page's cards use.
+        placeDeckSwitch (geometry, vinylGenerationLabel, vinylGenerationBox, 0, 1, "GENERATION");
+        placeDeckSwitch (geometry, vinylTurntableLabel, vinylTurntableBox, 1, 1, "TURNTABLE");
+        placeDeckSwitch (geometry, vinylCartridgeLabel, vinylCartridgeBox, 2, 1, "CARTRIDGE");
+
         const auto buttonY = geometry.memberRowY + 20;
         const auto buttonH = juce::jmin (30, geometry.grid.getBottom() - geometry.memberRowY - 22);
-        const auto leftEdge = geometry.grid.getX() + geometry.cellWidth;
-        loadNoiseButton.setBounds (leftEdge + 12, buttonY, geometry.cellWidth - 24, buttonH);
-        clearNoiseButton.setBounds (leftEdge + geometry.cellWidth + 12, buttonY,
-                                    geometry.cellWidth - 24, buttonH);
-        noiseStatusLabel.setBounds (leftEdge + 5, geometry.memberRowY - 1,
-                                    2 * geometry.cellWidth - 10, 17);
+        const auto loaderLeft = geometry.grid.getX() + 3 * geometry.cellWidth;
+        constexpr int keyGap = 6;
+        const auto keyWidth = juce::jmax (24, (geometry.cellWidth - 24 - keyGap) / 2);
+        loadNoiseButton.setBounds (loaderLeft + 12, buttonY, keyWidth, buttonH);
+        clearNoiseButton.setBounds (loaderLeft + 12 + keyWidth + keyGap, buttonY,
+                                    keyWidth, buttonH);
+        noiseStatusLabel.setBounds (loaderLeft + 5, geometry.memberRowY + 1,
+                                    geometry.cellWidth - 10, 17);
     }
     else if (geometry.inEqTab || geometry.outEqTab)
     {
@@ -3518,6 +3537,12 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             { "vinylSpeedBox",      &vinylSpeedBox },
             { "valveTypeLabel",     &valveTypeLabel },
             { "valveTypeBox",       &valveTypeBox },
+            { "pentodeTypeLabel",   &pentodeTypeLabel },
+            { "pentodeTypeBox",     &pentodeTypeBox },
+            { "triodeTypeLabel",    &triodeTypeLabel },
+            { "triodeTypeBox",      &triodeTypeBox },
+            { "transistorLabel",    &transistorTypeLabel },
+            { "transistorBox",      &transistorTypeBox },
             { "transformerLabel",   &transformerTypeLabel },
             { "transformerBox",     &transformerTypeBox },
             { "digitalTypeLabel",   &digitalTypeLabel },
@@ -3685,18 +3710,34 @@ void FirstAudioProcessorEditor::randomiseAllParameters()
 {
     auto& random = juce::Random::getSystemRandom();
 
-    //  The two monitor switches are held by POINTER rather than skipped by id, and
-    //  the loop works on the AudioProcessorParameter the list already hands out:
-    //  Android builds this plugin with RTTI off, so a dynamic_cast there is a build
-    //  failure rather than a slower path, and the base class has no id to compare.
-    auto* bypassParameter = static_cast<juce::AudioProcessorParameter*> (
-        audioProcessor.parameters.getParameter ("bypass"));
-    auto* deltaParameter = static_cast<juce::AudioProcessorParameter*> (
-        audioProcessor.parameters.getParameter ("delta"));
+    //  The controls RND leaves alone are held by POINTER rather than skipped by
+    //  id, and the loop works on the AudioProcessorParameter the list already
+    //  hands out: Android builds this plugin with RTTI off, so a dynamic_cast
+    //  there is a build failure rather than a slower path, and the base class has
+    //  no id to compare.
+    //
+    //  The list is the panel's MONITOR surface: BYPASS silences the machine being
+    //  listened to, DELTA swaps to the difference signal, POLARITY and AUTO GAIN
+    //  are monitoring decisions, OSCRing is the note generator the user is playing
+    //  over the machine, GLUE COMP is a whole-machine dynamics switch, and
+    //  STOP / PLAY / START / SPINDOWN (one choice parameter and one bool) are the
+    //  transport. A draw that moved any of them would look like the plugin had
+    //  crashed, stopped, or switched to a different instrument.
+    const std::array<const char*, 8> untouchedIds {
+        "bypass", "delta", "polarity", "auto_gain", "osc_on", "glue_on",
+        "transport", "spindown"
+    };
+
+    std::array<juce::AudioProcessorParameter*, untouchedIds.size()> untouched {};
+    for (std::size_t i = 0; i < untouchedIds.size(); ++i)
+        untouched[i] = audioProcessor.parameters.getParameter (untouchedIds[i]);
 
     for (auto* parameter : audioProcessor.getParameters())
     {
-        if (parameter == nullptr || parameter == bypassParameter || parameter == deltaParameter)
+        if (parameter == nullptr)
+            continue;
+
+        if (std::find (untouched.begin(), untouched.end(), parameter) != untouched.end())
             continue;
 
         parameter->beginChangeGesture();

@@ -468,18 +468,28 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
             // translated strings here are the tooltips and the value readouts, not
             // the fixed names of things.
             //
-            //  It says TAPE on purpose. The cell sits on the MODELS page beside the
-            //  neural and IR loaders, and the signal behind the curve is neither of
-            //  them - it is the magnetic stage's own output, the same sample the
-            //  HARMONICS readout on the deck is measured on. "SPECTRUM" alone, one
-            //  cell away from two file-fed stages, would read as theirs.
+            //  It is called SPECTRUM, not TAPE SPECTRUM. The word TAPE was there
+            //  because the cell sits beside two file-fed loaders and the curve
+            //  measures the magnetic stage - but the curve is the output's own
+            //  spectrum, the cards beside it are captioned NEURAL and IR
+            //  themselves, and a display that needs a prefix to say whose it is
+            //  is a display that has not said what it shows.
             const auto captionHeight = 11.0f;
             const auto captionArea = spectrumCell.withHeight(captionHeight);
 
             g.setColour(palette.accent);
-            g.setFont(shrinkingFont("TAPE SPECTRUM", captionHeight - 2.0f, juce::Font::bold,
+            g.setFont(shrinkingFont("SPECTRUM", captionHeight - 2.0f, juce::Font::bold,
                                     captionArea.getWidth()));
-            g.drawText("TAPE SPECTRUM", captionArea, juce::Justification::centredLeft, false);
+            g.drawText("SPECTRUM", captionArea, juce::Justification::centredLeft, false);
+
+            //  The axis legend rides the caption line's right end: three numbers
+            //  are all a fixed -72 .. 0 dBFS axis needs to be read against, and
+            //  they cost the curve no height at all.
+            g.setColour(palette.secondary.withAlpha(0.8f));
+            g.setFont(shrinkingFont("0 / -24 / -48 / -72 dBFS", captionHeight - 3.5f,
+                                    juce::Font::plain, captionArea.getWidth() * 0.62f));
+            g.drawText("0 / -24 / -48 / -72 dBFS", captionArea, juce::Justification::centredRight,
+                       false);
 
             // What is left of the cell below the caption is the curve's box, so the
             // caption can never be drawn over the curve and the curve can never run
@@ -521,10 +531,13 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
                                                  curveArea.getBottom() - points.back().y);
             curvePath.lineTo (last);
 
-            //  A dB grid behind the curve, at a third and two thirds of the box:
-            //  the axis is fixed (-72 dBFS at the floor, full scale at the top), so
-            //  two hairlines are enough to read a level off the curve, and they are
-            //  drawn as a rule in the panel's own border ink rather than as a chart.
+            //  A dB grid behind the curve at -24, -48 and the floor: the axis is
+            //  fixed (-72 dBFS at the bottom, full scale at the top), so three
+            //  hairlines are enough to read a level off the curve, and they are
+            //  drawn as rules in the panel's own border ink rather than as a chart.
+            //  The floor line is the brightest of the three - it is the edge the
+            //  curve sits on when a band is empty, so it has to read as a floor
+            //  rather than as another decoration.
             for (const auto share : { 1.0f / 3.0f, 2.0f / 3.0f })
             {
                 const auto y = curveArea.getBottom() - curveArea.getHeight() * share;
@@ -532,6 +545,9 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
                 g.drawHorizontalLine (juce::roundToInt (y), curveArea.getX() + 2.0f,
                                       curveArea.getRight() - 2.0f);
             }
+            g.setColour (palette.border.withAlpha (0.6f));
+            g.drawHorizontalLine (juce::roundToInt (curveArea.getBottom() - 1.0f),
+                                  curveArea.getX() + 2.0f, curveArea.getRight() - 2.0f);
 
             // The area under the line, filled with a vertical gradient: at this
             // size a stroke alone reads as a scratch on the panel, and the shape of
@@ -557,6 +573,26 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
             g.setColour (palette.accent);
             g.strokePath (curvePath, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved,
                                                            juce::PathStrokeType::rounded));
+
+            //  THE PEAK HOLD. A straight-line trace above the live curve, in the
+            //  same ink a little brighter, because it is a memory rather than a
+            //  measurement: a band that was hit a moment ago still reads as hit
+            //  while the curve underneath has already come down. Straight
+            //  segments rather than the smoothed curve above on purpose - a hold
+            //  is a set of remembered values, not a shape between them.
+            const auto peakPoints =
+                j37spectrum::curve (spectrumPeakDb, curveArea.getWidth(),
+                                    curveArea.getHeight());
+
+            juce::Path peakPath;
+            peakPath.startNewSubPath (curveArea.getX() + peakPoints.front().x,
+                                      curveArea.getBottom() - peakPoints.front().y);
+            for (std::size_t i = 1; i < peakPoints.size(); ++i)
+                peakPath.lineTo (curveArea.getX() + peakPoints[i].x,
+                                 curveArea.getBottom() - peakPoints[i].y);
+
+            g.setColour (palette.accent.brighter (0.45f).withAlpha (0.6f));
+            g.strokePath (peakPath, juce::PathStrokeType (1.0f, juce::PathStrokeType::mitered));
 
             g.setColour (palette.border.withAlpha (0.55f));
             g.drawRoundedRectangle (spectrumCell, 3.0f, 1.0f);

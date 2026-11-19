@@ -919,11 +919,16 @@ void FirstAudioProcessorEditor::setUpDeckSelectors() {
     // attachment below, which syncs the box to the parameter.
     tapeTypeBox.addItemList(tapeStockNameList(), 1);
     valveTypeBox.addItemList(valveTypeNameList(), 1);
+    pentodeTypeBox.addItemList(pentodeTypeNameList(), 1);
+    triodeTypeBox.addItemList(triodeTypeNameList(), 1);
+    transistorTypeBox.addItemList(transistorTypeNameList(), 1);
     transformerTypeBox.addItemList(transformerTypeNameList(), 1);
     digitalTypeBox.addItemList(digitalTypeNameList(), 1);
     vinylTypeBox.addItemList(vinylTypeNameList(), 1);
-    vinylSpeedBox.addItemList(juce::StringArray{"33 RPM", "45 RPM", "78 RPM"}, 1);
-    speedBox.addItemList(juce::StringArray{"7.5 ips", "15 ips", "30 ips"}, 1);
+    //  The lists carry the same entries, in the same order, as the choice
+    //  parameters beside them - OFF last, because the index is the preset ABI.
+    vinylSpeedBox.addItemList(juce::StringArray{"33 RPM", "45 RPM", "78 RPM", "Off"}, 1);
+    speedBox.addItemList(juce::StringArray{"7.5 ips", "15 ips", "30 ips", "Off"}, 1);
     tapeTypeBox.setTextWhenNothingSelected("Select tape");
     speedBox.setTextWhenNothingSelected("Select speed");
     setTip(tapeTypeBox, "Tape formula. Each stock bends the sound differently: "
@@ -936,7 +941,10 @@ void FirstAudioProcessorEditor::setUpDeckSelectors() {
                         "compressors' timing.");
     setTip(speedBox, "Transport speed. 7.5 ips is dark and loose, 15 ips is the "
                      "classic studio speed, 30 ips keeps the most top end and "
-                     "the tightest glue. Speed also shapes the glue timing.");
+                     "the tightest glue. Speed also shapes the glue timing. OFF "
+                     "models no speed at all: the machine keeps its reference "
+                     "response whatever the capstan is doing, so this is the "
+                     "neutral the three speeds are heard against.");
     setTip(valveTypeBox, "VALVE TYPE - the voice of the VALVE principle. Only "
                          "audible in proportion to how much VALVE is in the "
                          "BLEND: a 12AX7 runs cold and tight, an EL34 or 6L6 "
@@ -965,7 +973,25 @@ void FirstAudioProcessorEditor::setUpDeckSelectors() {
                           "describes what drives it. Each speed carries its own "
                           "wow rate and depth, so the same record wanders "
                           "differently at 33 and 45, and a 78's wind-up motor "
-                          "wobbles hardest. 33 RPM is the default.");
+                          "wobbles hardest. OFF models no rotation at all: the "
+                          "disc's own faults are heard without the motor's "
+                          "wander on top of them. 33 RPM is the default.");
+    setTip(pentodeTypeBox, "PENTODE TYPE - the voice of the PENTODE principle. "
+                           "Only audible in proportion to how much PENTODE is "
+                           "in the mix: an EF86 arrives at its knee soonest and "
+                           "stays the most odd-dominant, a 6SJ7 is the softest, "
+                           "a 6AU6 the sharpest. OFF removes the principle.");
+    setTip(triodeTypeBox, "TRIODE TYPE - the voice of the TRIODE principle. "
+                          "Only audible in proportion to how much TRIODE is in "
+                          "the mix: a 12AT7 bends earlier and cooler, a 6SN7 is "
+                          "the warmest and most even, a 2A3 bends latest of all. "
+                          "OFF removes the principle.");
+    setTip(transistorTypeBox, "TRANSISTOR TYPE - the voice of the TRANSISTOR "
+                              "principle. Only audible in proportion to how much "
+                              "TRANSISTOR is in the mix: the germanium types "
+                              "(AC128, OC71, AF126) cross the notch late and "
+                              "gritty, the silicon 2N3906 crosses it cleanly. "
+                              "OFF removes the principle.");
 
     // The deck's readout pairs: the numbers change at 60 Hz, so a tooltip on
     // the VALUE would sit under a moving mouse on every frame. The caption
@@ -994,6 +1020,9 @@ void FirstAudioProcessorEditor::setUpDeckSelectors() {
                           "chosen.");
     tapeTypeBox.setLookAndFeel(&customLookAndFeel);
     valveTypeBox.setLookAndFeel(&customLookAndFeel);
+    pentodeTypeBox.setLookAndFeel(&customLookAndFeel);
+    triodeTypeBox.setLookAndFeel(&customLookAndFeel);
+    transistorTypeBox.setLookAndFeel(&customLookAndFeel);
     transformerTypeBox.setLookAndFeel(&customLookAndFeel);
     digitalTypeBox.setLookAndFeel(&customLookAndFeel);
     vinylTypeBox.setLookAndFeel(&customLookAndFeel);
@@ -2095,32 +2124,29 @@ void FirstAudioProcessorEditor::setUpPresetBar() {
     setTip(presetBox, "Factory presets. Loading one replaces the whole machine state "
                       "in a single undoable step.");
     presetBox.setLookAndFeel(&customLookAndFeel);
-    presetBox.onChange = [this] {
-        const auto selectedId = presetBox.getSelectedId();
-        if (selectedId <= 0)
+    //  THE LIST REPORTS EVERY PICK, not only a changed one - see PresetComboBox in
+    //  PluginEditor.h for why a stock ComboBox cannot. That is what makes a click
+    //  on an already-loaded preset meaningful: the panel shows the EDITED badge
+    //  when the machine has drifted from it, and picking it again is the one-click
+    //  way back. Applying a clean preset again is skipped so the undo history does
+    //  not collect an entry for a click that changed nothing.
+    presetBox.onItemPicked = [this](int itemId) {
+        if (itemId <= 0)
             return;
-        const auto presetIndex = selectedId - 1;
 
-        // Re-selecting the displayed entry IS a state change whenever the machine
-        // has drifted from that preset since it was loaded (the EDITED badge is
-        // exactly that fact, on screen). When user clicks the same preset again,
-        // always reload it (even if clean) so that one-click works and the
-        // edited-state stays in sync. Only skip when the machine has genuinely
-        // drifted: that way "put this preset back" works reliably.
-        if (presetIndex == audioProcessor.getLastPresetIndex())
-        {
-            if (audioProcessor.isPresetDirty())
-            {
-                audioProcessor.applyFactoryPreset(presetIndex);
-                lastShownPreset = presetIndex;
-            }
-            // else: preset is loaded and clean - do nothing, letting the click
-            // update the edited-badge state properly.
+        const auto presetIndex = itemId - 1;
+
+        // The box sends no change notification on this path, so the click the
+        // attachInterfaceSounds() chain would have played is fired here instead.
+        uiSounds.trigger(UiSoundEngine::Voice::click);
+
+        if (presetIndex == audioProcessor.getLastPresetIndex() && !audioProcessor.isPresetDirty())
             return;
-        }
 
+        // The tick notices the new index on its own - the same path a session load
+        // and an undo take - so the box's entry, the artwork badge and the user-preset
+        // list all land without a second, slightly different update written here.
         audioProcessor.applyFactoryPreset(presetIndex);
-        lastShownPreset = presetIndex;
     };
     addAndMakeVisible(presetBox);
 
@@ -2284,6 +2310,9 @@ void FirstAudioProcessorEditor::setUpPresetBar() {
 void FirstAudioProcessorEditor::addDeckControlsToPanel() {
     addAndMakeVisible(tapeTypeBox);
     addAndMakeVisible(valveTypeBox);
+    addAndMakeVisible(pentodeTypeBox);
+    addAndMakeVisible(triodeTypeBox);
+    addAndMakeVisible(transistorTypeBox);
     addAndMakeVisible(transformerTypeBox);
     addAndMakeVisible(digitalTypeBox);
     addAndMakeVisible(vinylTypeBox);
@@ -2295,6 +2324,13 @@ void FirstAudioProcessorEditor::addDeckControlsToPanel() {
         audioProcessor.parameters, "tape_type", tapeTypeBox);
     valveTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
         audioProcessor.parameters, "valve_type", valveTypeBox);
+    pentodeTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+        audioProcessor.parameters, "pentode_type", pentodeTypeBox);
+    triodeTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+        audioProcessor.parameters, "triode_type", triodeTypeBox);
+    transistorTypeAttachment =
+        std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
+            audioProcessor.parameters, "transistor_type", transistorTypeBox);
     transformerTypeAttachment =
         std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
             audioProcessor.parameters, "transformer_type", transformerTypeBox);

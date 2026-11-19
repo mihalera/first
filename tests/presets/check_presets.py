@@ -236,7 +236,8 @@ transparent = {
     # Corners whose bottom is already above zero, so zero is out of range rather
     # than quieter: an echo and a room that cut nothing, and a one-semitone range.
     "delay_lowcut": 20.0, "reverb_lowcut": 20.0, "autotune_range": 1.0,
-    "tape_type": 12, "valve_type": 6, "transformer_type": 5,
+    "tape_type": 12, "valve_type": 6, "pentode_type": 4, "triode_type": 4,
+    "transistor_type": 4, "transformer_type": 5,
     "digital_type": 5, "vinyl_type": 6, "speed": 1, "delay_type": 0,
     "transport": 1, "st_link": 1.0, "anti_phase_guard": 1, "auto_gain": 0,
 }

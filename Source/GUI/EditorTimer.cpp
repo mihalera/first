@@ -20,6 +20,9 @@
 #include "GUI/PanelText.h"
 #include "GUI/PanelTranslations.h"
 #include "GUI/AnimationTiming.h"
+//  The spectrum's own axis: the peak hold's floor is the same -72 dBFS the
+//  curve is drawn against, and it is read from the metric rather than repeated.
+#include "GUI/SpectrumMetrics.h"
 
 // Only the names this file's own text uses: a header member that is not
 // reachable from here should not look reachable.
@@ -421,11 +424,11 @@ void FirstAudioProcessorEditor::timerCallback() {
             for (auto &share : shares)
                 share /= shareSum;
         else {
-            // The same answer the core gives an empty mix: pure tape, the machine
-            // the plugin is calibrated as. Painting anything else here would put
-            // the bar and the sound in front of different stories.
-            shares.fill(0.0f);
-            shares[0] = 1.0f;
+            // The same answer the core gives an empty mix: nine equal shares.
+            // An empty mix has no leading principle, and painting TAPE at 100 %
+            // here would put the bar in front of a different story from the
+            // knobs - which is exactly what it used to do.
+            shares.fill(1.0f / static_cast<float>(principleCount));
         }
 
         mixBar.setShares(shares, juce::jlimit(0.0f, 1.0f, shareSum));
@@ -455,6 +458,14 @@ void FirstAudioProcessorEditor::timerCallback() {
         auto& shown = displayedSpectrumDb[band];
         const auto coefficient = measured > shown ? 0.55f : 0.14f;
         shown += (measured - shown) * coefficient;
+
+        //  The peak hold beside it: up with the measurement, down at a fixed
+        //  rate. At the editor's 60 Hz a 0.15 dB step is about 9 dB a second,
+        //  which is slow enough to read a transient off the line and fast enough
+        //  that the line is back at the floor a second after the hit.
+        auto& held = spectrumPeakDb[band];
+        held = measured > held ? measured
+                               : juce::jmax (j37spectrum::floorDb, held - 0.15f);
     }
 
     // Only the page that DRAWS the curve is invalidated, and only its own cell: the
@@ -599,8 +610,12 @@ void FirstAudioProcessorEditor::timerCallback() {
     // the SPEED combo, so the transport did not move them at all.
     // getSelectedId() returns 0 while nothing is selected, which would index the
     // combo's item list at -1, so the index is clamped before it is used.
-    const auto speedIndex = juce::jlimit(0, 2, speedBox.getSelectedId() - 1);
-    const auto speedScale = speedIndex == 0 ? 0.55f : (speedIndex == 1 ? 0.85f : 1.25f);
+    //  The fourth entry is the list's OFF: the speed is not modelled, so the reels
+    //  spin at the reference rate rather than at any one speed's signature.
+    const auto speedIndex = juce::jlimit(0, 3, speedBox.getSelectedId() - 1);
+    const auto speedScale = speedIndex == 0 ? 0.55f
+                            : speedIndex == 1 ? 0.85f
+                            : speedIndex == 2 ? 1.25f : 0.95f;
 
     // Follow the machine's own platter with a display-only lag, so the reels ease
     // into a spindown rather than snapping when a block boundary lands.

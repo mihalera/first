@@ -501,8 +501,9 @@ namespace j37panel
                    "not of the record: the VINYL TYPE describes the disc, this "
                    "describes what drives it. Each speed carries its own wow rate "
                    "and depth, so the same record wanders differently at 33 and "
-                   "45, and a 78's wind-up motor wobbles hardest. 33 RPM is the "
-                   "default.";
+                   "45, and a 78's wind-up motor wobbles hardest. OFF models no "
+                   "rotation at all: the disc's own faults are heard without the "
+                   "motor's wander on top of them. 33 RPM is the default.";
         if (id == "vinyl_dust")
             return "DUST - fine particulate in the groove. Unlike "
                    "CRACKLE's random ticks, dust is a CONTINUOUS granular "
@@ -765,7 +766,9 @@ namespace j37panel
             return "SPEED - the transport speed: 7.5 ips is dark and loose, "
                    "15 ips is the classic studio speed, 30 ips keeps the most top "
                    "end and the tightest glue. It also shapes the glue timing and "
-                   "how long the deck's own gestures take.";
+                   "how long the deck's own gestures take. OFF models no speed at "
+                   "all: the machine keeps its reference response whatever the "
+                   "capstan is doing.";
         if (id == "instrument")
             return "INSTRUMENT - re-voices the whole machine for what is being "
                    "recorded: how hard the tape bends, how much top end survives, "
@@ -910,6 +913,21 @@ namespace j37panel
                    "runs cold and tight, an EL34 or 6L6 is fatter and more "
                    "compressed, a 300B is the softest and most even, a KT88 has "
                    "the widest drift.";
+        if (id == "pentode_type")
+            return "PENTODE TYPE - the voice of the PENTODE principle: how early "
+                   "its knee arrives and how much even content it leaves. An "
+                   "EF86 is the tightest and most odd-dominant, a 6SJ7 the "
+                   "softest, a 6AU6 the sharpest. OFF removes the principle.";
+        if (id == "triode_type")
+            return "TRIODE TYPE - the voice of the TRIODE principle: how late it "
+                   "bends, how coldly it runs and how much even content it "
+                   "carries. A 12AT7 bends earliest, a 2A3 latest of all. OFF "
+                   "removes the principle.";
+        if (id == "transistor_type")
+            return "TRANSISTOR TYPE - the voice of the TRANSISTOR principle: the "
+                   "crossover notch's width, the two halves' slopes and the even "
+                   "content. The germanium types cross the notch late and gritty, "
+                   "the silicon 2N3906 cleanly. OFF removes the principle.";
         if (id == "transformer_type")
             return "TRANSFORMER TYPE - the voice of the TRANSFORMER principle. "
                    "Only audible in proportion to how much TRANSFORMER is in the "
