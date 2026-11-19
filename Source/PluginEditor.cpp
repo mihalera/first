@@ -2070,114 +2070,110 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
 
     // ---- row 3: TRANSPORT ---------------------------------------------------
     {
-        //  ONE SPACING FOR THE WHOLE ROW. The keys used to be laid out by the
-        //  shared solver with elastic gaps, so every window wider than the minimum
-        //  opened a hole between SPINDOWN and the hint and a second one between the
-        //  hint and the mode switch - three gaps of three different widths on a
-        //  row of four equal keys. The gaps are now the deck's own 14 px, and the
-        //  one item that is TEXT - the at-speed hint - takes the room that is left
-        //  instead of the gaps taking it.
-        constexpr int transportKeyWidth = 62;
+        //  Fixed-width keys placed from both ends so STOP/PLAY/START never
+        //  collide with MODE/SPINDOWN regardless of panel width. The at-speed
+        //  hint fills the gap that is left between the two key banks.
+        constexpr int transportKeyWidth  = 62;
         constexpr int transportSpinWidth = 74;
         constexpr int transportModeWidth = 150;
-        constexpr int transportGap = 14;
+        constexpr int transportGap       = 10;
 
-        // 4 vertical lines: every key starts on one of them, so the row reads
-        // as a grid instead of a drifting chain.
-        const auto transportRowY = deckTop (j37panel::DeckBands::transport) + captionHeight;
-        const auto transportRight = deck.getRight() - deckRightInset;
-        const auto line1 = deck.getX() + 18;
-        const auto line4 = deck.getRight() - deckRightInset;
-        const auto span = transportRight - line1;
-        const auto line2 = line1 + span / 4;
-        const auto line3 = line1 + span * 2 / 4;
+        const auto transportRowY    = deckTop (j37panel::DeckBands::transport) + captionHeight;
+        const auto transportLeft    = deck.getX() + 18;
+        const auto transportRight   = deck.getRight() - deckRightInset;
 
-        transportStopButton.setBounds  (line1, transportRowY, transportKeyWidth, controlHeight);
-        transportPlayButton.setBounds  (line2, transportRowY, transportKeyWidth, controlHeight);
-        transportStartButton.setBounds (line3, transportRowY, transportKeyWidth, controlHeight);
-        // SPINDOWN sits to the left of MODE so the two never overlap.
-        spindownButton.setBounds       (line4 - transportSpinWidth, transportRowY, transportSpinWidth, controlHeight);
-        modeCycleButton.setBounds      (line4 - transportModeWidth, transportRowY, transportModeWidth, controlHeight);
+        // Left bank: STOP | PLAY | START — packed from the left.
+        transportStopButton.setBounds  (transportLeft,
+                                        transportRowY, transportKeyWidth, controlHeight);
+        transportPlayButton.setBounds  (transportLeft + transportKeyWidth + transportGap,
+                                        transportRowY, transportKeyWidth, controlHeight);
+        transportStartButton.setBounds (transportLeft + 2 * (transportKeyWidth + transportGap),
+                                        transportRowY, transportKeyWidth, controlHeight);
 
-        deckHintLabel.setBounds (line3 + transportKeyWidth + transportGap, transportRowY,
-                                 juce::jmax (0, spindownButton.getX() - transportGap - (line3 + transportKeyWidth)), controlHeight);
+        // Right bank: SPINDOWN | MODE — packed from the right.
+        // MODE is wider; SPINDOWN sits immediately to its left.
+        modeCycleButton.setBounds (transportRight - transportModeWidth,
+                                   transportRowY, transportModeWidth, controlHeight);
+        spindownButton.setBounds  (modeCycleButton.getX() - transportGap - transportSpinWidth,
+                                   transportRowY, transportSpinWidth, controlHeight);
 
+        // Hint text fills the space between the two banks.
+        const auto hintLeft  = transportStartButton.getRight() + transportGap;
+        const auto hintRight = spindownButton.getX() - transportGap;
+        deckHintLabel.setBounds (hintLeft, transportRowY,
+                                 juce::jmax (0, hintRight - hintLeft), controlHeight);
+
+        // Caption labels sit one captionHeight above their bank.
         transportLabel.setBounds (transportStopButton.getX(), transportRowY - captionHeight,
                                   transportStartButton.getRight() - transportStopButton.getX(),
                                   captionHeight - 2);
-        spindownLabel.setBounds (spindownButton.getX(), transportRowY - captionHeight,
-                                 spindownButton.getWidth(), captionHeight - 2);
+        spindownLabel.setBounds  (spindownButton.getX(), transportRowY - captionHeight,
+                                  spindownButton.getWidth(), captionHeight - 2);
 
-        // The two transport captions sit ABOVE the key bank rather than beside
-        // their own key, so they cannot be a column of the row - they are placed
-        // from the buttons the row just gave them. Reading the placed bounds
-        // back is what keeps them correct at every width: written as
-        // `keyWidth * 3 + gap * 2` they would name a span three keys wider than
-        // the bank actually is once the row starts growing them.
-        transportLabel.setBounds (transportStopButton.getX(), transportRowY - captionHeight,
-                                  transportStartButton.getRight() - transportStopButton.getX(),
-                                  captionHeight - 2);
-        spindownLabel.setBounds (spindownButton.getX(), transportRowY - captionHeight,
-                                 spindownButton.getWidth(), captionHeight - 2);
-
-        // 9 px, the deck's caption size, rather than the 7 px these two were fitted
-        // to: at 7 they were the smallest type on the panel and sat directly under
-        // 9 px captions, which read as two different faces on one row. shrinkingFont
-        // still fits them into the bank if a narrow window demands it.
         transportLabel.setFont (shrinkingFont (transportLabel.getText(), 9.0f,
-                                              juce::Font::plain,
-                                              static_cast<float> (transportLabel.getWidth()) - 3.0f));
-        spindownLabel.setFont (shrinkingFont (spindownLabel.getText(), 9.0f,
-                                              juce::Font::plain,
-                                              static_cast<float> (spindownLabel.getWidth()) - 3.0f));
+                                               juce::Font::plain,
+                                               static_cast<float> (transportLabel.getWidth()) - 3.0f));
+        spindownLabel.setFont  (shrinkingFont (spindownLabel.getText(), 9.0f,
+                                               juce::Font::plain,
+                                               static_cast<float> (spindownLabel.getWidth()) - 3.0f));
     }
 
-    // The preset workflow chain is eleven items and it did not fit: written as
-    // a left-to-right chain of `previous.getRight() + gap`, the last item - the
-    // compare badge - ended sixteen pixels past the deck's right edge at the
-    // 780 px minimum, so it was drawn over the panel border and the frame.
-    //
-    // It is walked from BOTH ends: the head of the chain from the deck's left
-    // inset, the tail from its right inset, each with the same cursor
-    // discipline as the header's switch rows. Every item's width is written
-    // once, next to its own name, and the two chains meet in the middle - so
-    // adding a button to either end costs one line and cannot push the other
-    // end off the panel, which is the failure a single chain always has. It is
-    // not spread like the rows above because it already spans the full width at
-    // the minimum: there is no slack to share, and a gap that grew with the
-    // window would only pull its two halves further apart.
+    // The preset workflow chain: walked from both ends so neither side can
+    // push the other off the panel. The left half holds the preset selectors
+    // and SAVE; the right half holds the compare/undo/A-B cluster. A fixed
+    // inter-group gap keeps the two halves visually separated at every width.
     const auto presetRowY = deckTop (j37panel::DeckBands::preset);
     const auto presetRowHeight = deckBandHeight (j37panel::DeckBands::preset);
+    const auto presetRowYCtl = presetRowY + captionHeight;
+    const auto presetCtlH    = presetRowHeight - captionHeight;
 
-    // 4 vertical lines: every preset element starts on one of them.
+    // Anchors: left and right insets shared with every other deck row.
     const auto line1 = deck.getX() + 18;
     const auto line4 = deck.getRight() - deckRightInset;
-    const auto span = line4 - line1;
-    const auto line2 = line1 + span / 4;
-    const auto line3 = line1 + span * 2 / 4;
 
-    // PRESET caption sits top-left above the factory list; MATCHED badge top-right.
-    presetHeadingLabel.setBounds (line1, presetRowY, 46, 14);
-
-    // Head, from the left on the 4 vertical lines. Controls live below their
-    // caption at presetRowY + captionHeight, same as every other deck row.
+    // ----- Left half (head) ------------------------------------------------
+    // FACTORY list | USER list | SAVE  — fixed widths, butted with a 6 px gap.
     constexpr int presetBoxWidth  = 130;
     constexpr int userPresetWidth = 100;
-    const auto presetRowYCtl = presetRowY + captionHeight;
-    presetBox.setBounds       (line1, presetRowYCtl, presetBoxWidth, presetRowHeight - captionHeight);
-    userPresetBox.setBounds   (line2, presetRowYCtl, userPresetWidth, presetRowHeight - captionHeight);
-    savePresetButton.setBounds(line3, presetRowYCtl, 46, presetRowHeight - captionHeight);
-    deletePresetButton.setBounds(line4 - 44, presetRowYCtl, 44, presetRowHeight - captionHeight);
+    constexpr int savePresetWidth =  46;
+    constexpr int presetGap       =   6;
 
-    // Tail, from the right on the 4 vertical lines.
-    copyAButton.setBounds (line4 - 70, presetRowYCtl, 70, presetRowHeight - captionHeight);
-    copyBButton.setBounds (line4 - 140, presetRowYCtl, 70, presetRowHeight - captionHeight);
-    compareButton.setBounds (line4 - 204, presetRowYCtl, 64, presetRowHeight - captionHeight);
-    undoButton.setBounds    (line4 - 268, presetRowYCtl, 54, presetRowHeight - captionHeight);
-    redoButton.setBounds    (line4 - 322, presetRowYCtl, 54, presetRowHeight - captionHeight);
+    presetBox.setBounds      (line1, presetRowYCtl, presetBoxWidth,  presetCtlH);
+    userPresetBox.setBounds  (line1 + presetBoxWidth  + presetGap, presetRowYCtl,
+                              userPresetWidth, presetCtlH);
+    savePresetButton.setBounds (line1 + presetBoxWidth + presetGap
+                                     + userPresetWidth + presetGap,
+                                presetRowYCtl, savePresetWidth, presetCtlH);
 
-    // MATCHED/EDITED badge at top-right under its own column.
-    compareBadgeLabel.setBounds (line4 - 54, presetRowY, 54, 14);
+    // ----- Right half (tail) -----------------------------------------------
+    // A (LIVE) | COPY B | A/B: B | UNDO | REDO  — anchored from the right.
+    // Widths chosen to match the visible captions; the group is tight (6 px gap).
+    constexpr int copyAWidth   =  70;
+    constexpr int copyBWidth   =  70;
+    constexpr int compareWidth =  64;
+    constexpr int undoWidth    =  54;
+    constexpr int redoWidth    =  54;
+    constexpr int tailGap      =   4;
+
+    // Build right→left so each button's left edge is clean.
+    int cursor = line4;
+    copyAButton.setBounds    (cursor - copyAWidth,   presetRowYCtl, copyAWidth,   presetCtlH);
+    cursor -= copyAWidth + tailGap;
+    copyBButton.setBounds    (cursor - copyBWidth,   presetRowYCtl, copyBWidth,   presetCtlH);
+    cursor -= copyBWidth + tailGap;
+    compareButton.setBounds  (cursor - compareWidth, presetRowYCtl, compareWidth, presetCtlH);
+    cursor -= compareWidth + tailGap;
+    undoButton.setBounds     (cursor - undoWidth,    presetRowYCtl, undoWidth,    presetCtlH);
+    cursor -= undoWidth + tailGap;
+    redoButton.setBounds     (cursor - redoWidth,    presetRowYCtl, redoWidth,    presetCtlH);
+
+    // DELETE sits immediately to the left of the right cluster with an 8 px gap.
+    deletePresetButton.setBounds (cursor - redoWidth - 8 - 44, presetRowYCtl,
+                                  44, presetCtlH);
+
+    // PRESET caption top-left; MATCHED badge top-right.
+    presetHeadingLabel.setBounds (line1, presetRowY, 46, 14);
+    compareBadgeLabel.setBounds  (line4 - copyAWidth, presetRowY, copyAWidth, 14);
 
     // The artwork gets a 20 px cell at the band's 22 px inset; the caption starts
     // six pixels after it and keeps the same 22 px inset at the right edge. The
