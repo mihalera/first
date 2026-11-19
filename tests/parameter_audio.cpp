@@ -1923,6 +1923,42 @@ static const Row table[] = {
         check (maxDifference (active, off) > 1e-3, "valve type changes output");
         return failures == fail0;
     } },
+{ "pentode_type", "pentode type changes the output", [] (std::string& note) {
+        const int F = 2 * framesPerSecond;
+        const auto t = sine (440.0, F, 0.5f);
+        const auto a = renderMono ({{ "pentode_source", 1.0f }, { "drive", 0.9f }, { "pentode_type", 0.0f }}, t);
+        const auto b = renderMono ({{ "pentode_source", 1.0f }, { "drive", 0.9f }, { "pentode_type", 3.0f }}, t);
+        const auto sa = 9600, sb = 38400;
+        const double ga = goertzel (a.left, 880.0, sa, sb), gb = goertzel (b.left, 880.0, sa, sb);
+        note = "type0=" + std::to_string (ga) + " type3=" + std::to_string (gb);
+        const auto fail0 = failures;
+        check (maxDifference (a, b) > 1e-4, "pentode type changes output");
+        return failures == fail0;
+    } },
+{ "triode_type", "triode type changes the output", [] (std::string& note) {
+        const int F = 2 * framesPerSecond;
+        const auto t = sine (440.0, F, 0.5f);
+        const auto a = renderMono ({{ "triode_source", 1.0f }, { "drive", 0.9f }, { "triode_type", 0.0f }}, t);
+        const auto b = renderMono ({{ "triode_source", 1.0f }, { "drive", 0.9f }, { "triode_type", 3.0f }}, t);
+        const auto sa = 9600, sb = 38400;
+        const double ga = goertzel (a.left, 880.0, sa, sb), gb = goertzel (b.left, 880.0, sa, sb);
+        note = "type0=" + std::to_string (ga) + " type3=" + std::to_string (gb);
+        const auto fail0 = failures;
+        check (maxDifference (a, b) > 1e-4, "triode type changes output");
+        return failures == fail0;
+    } },
+{ "transistor_type", "transistor type changes the output", [] (std::string& note) {
+        const int F = 2 * framesPerSecond;
+        const auto t = sine (440.0, F, 0.5f);
+        const auto a = renderMono ({{ "transistor_source", 1.0f }, { "drive", 0.9f }, { "transistor_type", 0.0f }}, t);
+        const auto b = renderMono ({{ "transistor_source", 1.0f }, { "drive", 0.9f }, { "transistor_type", 3.0f }}, t);
+        const auto sa = 9600, sb = 38400;
+        const double ga = goertzel (a.left, 880.0, sa, sb), gb = goertzel (b.left, 880.0, sa, sb);
+        note = "type0=" + std::to_string (ga) + " type3=" + std::to_string (gb);
+        const auto fail0 = failures;
+        check (maxDifference (a, b) > 1e-4, "transistor type changes output");
+        return failures == fail0;
+    } },
 { "transformer_type", "transformer type changes the output", [] (std::string& note) {
         const int F = 2 * framesPerSecond;
         const auto t = sine (440.0, F, 0.5f);

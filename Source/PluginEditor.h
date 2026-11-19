@@ -373,6 +373,61 @@ class J37InlineLookAndFeel final : public juce::LookAndFeel_V4 {
 // because the class below sizes its sliders, labels and attachments from the count.
 #include "GUI/PanelText.h"
 
+// -----------------------------------------------------------------------------
+//  The preset list, and the one thing a plain ComboBox cannot do.
+//
+//  juce::ComboBox reports a change only when the id CHANGES: choosing the entry
+//  that is already selected sends nothing at all. That is exactly the gesture the
+//  deck needs, though - a preset that has been edited (the badge says so) is put
+//  back by picking it again from the list - and a stock ComboBox made that
+//  gesture silently do nothing, so the only way back to a factory sound was to
+//  choose another preset first and then return.
+//
+//  showPopup() is virtual (juce_ComboBox.h), so this class shows the same list
+//  itself and reports EVERY pick - including the one that was already selected -
+//  to one callback. The box's own selection is written without a notification:
+//  the callback is the single path, so a preset cannot be applied twice.
+// -----------------------------------------------------------------------------
+class PresetComboBox final : public juce::ComboBox
+{
+  public:
+    /** Called with the picked item's id, every time the list is used. */
+    std::function<void (int)> onItemPicked;
+
+    void showPopup() override
+    {
+        if (! isEnabled() || getNumItems() == 0)
+            return;
+
+        const auto selectedId = getSelectedId();
+
+        juce::PopupMenu menu;
+        for (int i = 0; i < getNumItems(); ++i)
+        {
+            const auto id = getItemId (i);
+            menu.addItem (id, getItemText (i), true, id == selectedId);
+        }
+
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this)
+                                .withMinimumWidth (getWidth()),
+                            [safe = SafePointer<PresetComboBox> (this)] (int result)
+                            {
+                                if (safe == nullptr)
+                                    return;
+
+                                safe->hidePopup();
+
+                                if (result <= 0)
+                                    return;
+
+                                safe->setSelectedId (result, juce::dontSendNotification);
+
+                                if (safe->onItemPicked != nullptr)
+                                    safe->onItemPicked (result);
+                            });
+    }
+};
+
 class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, private juce::Timer {
   public:
     explicit FirstAudioProcessorEditor(FirstAudioProcessor &);
@@ -980,6 +1035,12 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
 
     juce::ComboBox tapeTypeBox;
     juce::ComboBox valveTypeBox;
+    // The three valve-family circuits' own voice lists: PENTODE, TRIODE and
+    // TRANSISTOR each re-voice the curve their SOURCE knob blends in, exactly the
+    // way VALVE TYPE voices the valve.
+    juce::ComboBox pentodeTypeBox;
+    juce::ComboBox triodeTypeBox;
+    juce::ComboBox transistorTypeBox;
     juce::ComboBox transformerTypeBox;
     juce::ComboBox digitalTypeBox;
     juce::ComboBox vinylTypeBox;
@@ -1250,8 +1311,10 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
 #endif
 
     // Premium workflow bar: oversampling switch, factory + user presets, A/B compare,
-    // undo/redo, polarity and auto-gain switches.
-    juce::ComboBox presetBox;
+    // undo/redo, polarity and auto-gain switches. The factory list is the
+    // PresetComboBox above, because re-picking the selected preset is how an
+    // edited one is put back.
+    PresetComboBox presetBox;
     juce::ComboBox userPresetBox;
     juce::TextButton savePresetButton{"SAVE"};
     juce::TextButton deletePresetButton{"DEL"};
@@ -1327,6 +1390,10 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     bool lastShownPresetDirty = false;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tapeTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> valveTypeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> pentodeTypeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> triodeTypeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        transistorTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         transformerTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> digitalTypeAttachment;
@@ -1357,6 +1424,9 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     juce::Label buildLabel;
     juce::Label tapeTypeLabel;
     juce::Label valveTypeLabel;
+    juce::Label pentodeTypeLabel;
+    juce::Label triodeTypeLabel;
+    juce::Label transistorTypeLabel;
     juce::Label transformerTypeLabel;
     juce::Label digitalTypeLabel;
     juce::Label vinylTypeLabel;
@@ -1468,6 +1538,17 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     //  displayed curve rises quickly and falls slowly, so a transient is still
     //  immediate and a single empty frame cannot collapse the line.
     std::array<float, SpectrumAnalyser::bandCount> displayedSpectrumDb {
+        [] {
+            std::array<float, SpectrumAnalyser::bandCount> values {};
+            values.fill (-72.0f);
+            return values;
+        }() };
+    //  The curve's PEAK HOLD: each band's highest recent reading, rising with the
+    //  measurement and falling at a fixed rate. A spectrum drawn from a single
+    //  frame per tick is unreadable at the speed a transient goes by - the hold
+    //  is what lets the eye see that the band was ever hit, and how hard, without
+    //  freezing the live curve that says what is happening now.
+    std::array<float, SpectrumAnalyser::bandCount> spectrumPeakDb {
         [] {
             std::array<float, SpectrumAnalyser::bandCount> values {};
             values.fill (-72.0f);

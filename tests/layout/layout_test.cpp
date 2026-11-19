@@ -429,7 +429,7 @@ float oldCompressorDisc (const juce::Rectangle<int>& grid, int W, int H, int kno
     return disc;
 }
 
-// ---- the deck's seven bands -------------------------------------------------
+// ---- the deck's six bands -------------------------------------------------
 //
 // The deck is elastic between 236 and 278 px (see getEditorLayout), and the rows
 // inside it are captions over controls. The band table it replaced placed a 15 +
@@ -469,10 +469,10 @@ void checkDeckBands()
                     ordered = false;
             }
 
-            // The four control rows hold a caption and a control; the others hold
+            // The three control rows hold a caption and a control; the others hold
             // what their own constant says. A row taller than its band is the bug.
-            if (band == DeckBands::model || band == DeckBands::switches
-                || band == DeckBands::types || band == DeckBands::transport)
+            if (band == DeckBands::readouts || band == DeckBands::types
+                || band == DeckBands::transport)
                 if (tall < bands.captionHeight + bands.controlHeight)
                     rowsFit = false;
         }

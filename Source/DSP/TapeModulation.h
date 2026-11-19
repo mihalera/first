@@ -82,9 +82,21 @@ inline TapeModulation makeTapeModulation (float drive, float bias, float wow, fl
     // makes a coast read as the transport losing speed rather than as a fade. At
     // speed this is exactly the SPEED control's number, so a running machine is
     // unchanged by it.
-    const auto speedChoiceScale = (speedChoice == 0) ? 0.76f
-                                   : (speedChoice == 1) ? 1.0f : 1.34f;
-    modulation.speedScale = speedChoiceScale * (0.76f + 0.24f * platter);
+    //  The list's fourth entry is OFF (appended, never inserted - the index is
+    //  the preset ABI). With the speed OFF the deck's speed is not modelled at
+    //  all: the scale is the neutral 1.0 and the platter term is dropped with it,
+    //  so a capstan coming up no longer sweeps the head's bandwidth or the
+    //  wander's rate. That is the reference the three speeds are heard against.
+    if (speedChoice >= 3)
+    {
+        modulation.speedScale = 1.0f;
+    }
+    else
+    {
+        const auto speedChoiceScale = (speedChoice == 0) ? 0.76f
+                                       : (speedChoice == 1) ? 1.0f : 1.34f;
+        modulation.speedScale = speedChoiceScale * (0.76f + 0.24f * platter);
+    }
 
     // The wow rate is tempo-locked. A machine's speed irregularities read as
     // musical when they land on the track's own timing, so the LFO is anchored to

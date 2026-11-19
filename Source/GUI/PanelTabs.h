@@ -137,9 +137,10 @@ namespace j37panel
         //  IN FRONT of the tape. The DI pad/load combo rides this page beside
         //  the knob row in resized(), with the DI it belongs to.
         { "FRONT END", "The gain stages in front of the tape: DISTORT and PREAMP "
-                       "push the front end, and the DI loads, pads and colours "
-                       "the instrument before any of it - with its PAD and LOAD "
-                       "selector beside the row.",
+                       "push the front end, the DI loads, pads and colours the "
+                       "instrument before any of it, and the machine's own TRACKS "
+                       "layout decides how wide a track all of it is recorded on - "
+                       "the DI PAD and TRACKS selectors ride the band under the row.",
                      5, 0, { 51, 52, 53, 28, 29 } },
         //  drive, bias - the head's magnetic saturation itself.
         { "SATURATION", "The magnetic saturation the head applies: DRIVE sets how "
@@ -154,10 +155,10 @@ namespace j37panel
         //  lays out, under the knobs here; the NEURAL model picker takes the
         //  band's fourth column.
         { "CHARACTER", "The head and the medium's tone: FLUX drives the head, "
-                       "CABINET and PRESENCE place the machine's voice. The "
-                       "record's GENERATION / TURNTABLE / CARTRIDGE re-voice the "
-                       "whole vinyl stage from under this row, and the NEURAL "
-                       "model picker takes the band's last column.",
+                       "CABINET and PRESENCE place the machine's voice, and the "
+                       "NEURAL model picker takes the band's last column. The "
+                       "record's own three voicing selectors moved to VINYL, the "
+                       "page whose stage they re-voice.",
                      3, 0, { 30, 21, 22 } },
         //  noise, noise_lvl, wow, flutter, wear, mechanics - the MACHINE's own
         //  departures from a clean signal. The record's five FAULTS are on the
@@ -185,8 +186,8 @@ namespace j37panel
         { "VINYL", "The record-playing stage: VINYL MIX is how much of it is in "
                    "the output, CRACKLE the surface's granular texture and RUMBLE "
                    "the platter's own low thump. GENERATION / TURNTABLE / "
-                   "CARTRIDGE re-voice it all from CHARACTER; the FAULTS are on "
-                   "RECORD.",
+                   "CARTRIDGE re-voice it all, and LOAD PRINT replaces the surface "
+                   "it plays; the FAULTS are on RECORD.",
                      3, 0, { 35, 36, 37 } },
         //  The nine SOURCE knobs alone: the saturation mix IS the page, so the
         //  user dialling TAPE up against VALVE is looking at the whole mix and
@@ -318,7 +319,7 @@ namespace j37panel
     inline constexpr std::array<const char*, numTabPages> tabSubtitles { {
         "in, out and the stereo field of the whole machine",
         "what this machine is: every TYPE list and both speeds",
-        "the gain stages in front of the tape: DI, preamp, distortion",
+        "the gain stages in front of the tape: DI, preamp, distortion, tracks",
         "the head's own saturation: DRIVE and where BIAS sits",
         "the head's drive and the machine's two voicing controls",
         "the machine's own departures from a clean signal",

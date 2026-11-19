@@ -326,8 +326,13 @@ namespace
         layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "tape_type", 1 }, "Tape Type",
                                                                 tapeStockNameList(),
                                                                 0));
+        //  OFF is appended LAST, like every other model list's: the choice index
+        //  IS the preset ABI, so inserting an entry would load a different speed
+        //  into every saved session. OFF means the speed is not modelled at all -
+        //  the machine keeps its reference response whatever the capstan is doing,
+        //  which is the state the three speeds are heard against.
         layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "speed", 1 }, "Speed",
-                                                                juce::StringArray { "7.5 ips", "15 ips", "30 ips" },
+                                                                juce::StringArray { "7.5 ips", "15 ips", "30 ips", "Off" },
                                                                 1));
 
         // INSTRUMENT re-voices the machine for the source in front of it, the way an
@@ -1206,8 +1211,12 @@ namespace
         // than a disc property: the type selectors describe the record, this describes
         // the motor driving it. Each speed carries its own wow rate and depth, so the
         // same record wanders differently at 33 and 45.
+        //  OFF is appended LAST for the same reason SPEED's is: the index is the
+        //  preset ABI. OFF means the platter's rotation is not modelled - no
+        //  wander, no platter-locked fault rate of its own - so the disc's own
+        //  faults are heard without the motor's signature on top of them.
         layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "vinyl_speed", 1 }, "Vinyl Speed",
-                                                                juce::StringArray { "33 RPM", "45 RPM", "78 RPM" },
+                                                                juce::StringArray { "33 RPM", "45 RPM", "78 RPM", "Off" },
                                                                 0));
 
         // -------------------------------------------------------------------------
@@ -1353,6 +1362,18 @@ namespace
         // -------------------------------------------------------------------------
         layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "valve_type", 1 }, "Valve Type",
                                                                 valveTypeNameList(),
+                                                                0));
+        //  The three valve-family circuits each carry their own voice list, on
+        //  exactly the pattern VALVE established: the type sets the curve's own
+        //  constants and OFF removes the principle from the mixture entirely.
+        layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "pentode_type", 1 }, "Pentode Type",
+                                                                pentodeTypeNameList(),
+                                                                0));
+        layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "triode_type", 1 }, "Triode Type",
+                                                                triodeTypeNameList(),
+                                                                0));
+        layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "transistor_type", 1 }, "Transistor Type",
+                                                                transistorTypeNameList(),
                                                                 0));
         layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "transformer_type", 1 }, "Transformer Type",
                                                                 transformerTypeNameList(),

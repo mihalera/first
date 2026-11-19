@@ -133,8 +133,20 @@ inline constexpr int userThemePresetRows =
 inline constexpr int userThemePresetBandHeight =
     userThemePresetRows * (userThemePresetRowHeight + userThemePresetGap) + 6;
 
-/** Where the first colour row starts: below the header and the preset band. */
-inline constexpr int userThemeRowsTop = userThemeHeaderHeight + userThemePresetBandHeight;
+// The backdrop band: which art slot the chassis is painted from. One named row of
+// four keys under the starting points, in the same four-column rhythm, so the window
+// grows by one band rather than by a fifth row of colour. Four is the length of
+// assets::backgroundChoices, so the band and the table cannot drift apart.
+inline constexpr int userThemeBackdropLabelHeight = 13;
+inline constexpr int userThemeBackdropRowHeight = 20;
+inline constexpr int userThemeBackdropGap = 4;
+inline constexpr int userThemeBackdropBandHeight =
+    userThemeBackdropLabelHeight + userThemeBackdropRowHeight + 8;
+
+/** Where the first colour row starts: below the header, the preset band and the
+    backdrop band. */
+inline constexpr int userThemeRowsTop =
+    userThemeHeaderHeight + userThemePresetBandHeight + userThemeBackdropBandHeight;
 
 /** The window's content height, grown from those numbers rather than measured. */
 inline constexpr int userThemePaneHeight =
@@ -165,7 +177,13 @@ class UserThemePane final : public juce::Component {
         itself; the pane only knows a key was pressed. */
     std::function<void()> onClose;
 
-    explicit UserThemePane(UiPalette initial) : palette(initial) {
+    /** Called with the NAME of the backdrop the user pressed. The pane does not
+        rebuild the panel itself - the editor owns that - so the same key works in a
+        window that is only ever one of several ways into the setting. */
+    std::function<void(const juce::String&)> onBackgroundChanged;
+
+    explicit UserThemePane(UiPalette initial, juce::String backgroundIn = "THEME")
+        : palette(initial), background(std::move(backgroundIn)) {
         // The pane paints its whole face from the palette (see paint()), so it is
         // opaque - which is what stops the window's own background colour from
         // showing through as a flat card before the first paint, or wherever a
@@ -182,6 +200,13 @@ class UserThemePane final : public juce::Component {
     }
 
     const UiPalette &getPalette() const noexcept { return palette; }
+
+    /** Adopts the backdrop the panel is painted from, so a window reopened after a
+        RESET (or after the settings file was edited) marks the live one. */
+    void setBackground(const juce::String &next) {
+        background = next;
+        repaint();
+    }
 
     /** The RESET key: back to the seed, through the same callback an edit uses, so
         the caller has one code path rather than two. */
@@ -235,6 +260,7 @@ class UserThemePane final : public juce::Component {
         }
 
         paintPresets(g);
+        paintBackdrop(g);
 
         for (int row = 0; row < themeColourFieldCount; ++row) {
             const auto bounds = rowBounds(row);
@@ -279,17 +305,20 @@ class UserThemePane final : public juce::Component {
     void mouseMove(const juce::MouseEvent &event) override {
         const auto row = rowAt(event.y);
         const auto preset = presetAt(event.getPosition());
-        if (row != hoveredRow || preset != hoveredPreset) {
+        const auto backdrop = backdropAt(event.getPosition());
+        if (row != hoveredRow || preset != hoveredPreset || backdrop != hoveredBackdrop) {
             hoveredRow = row;
             hoveredPreset = preset;
+            hoveredBackdrop = backdrop;
             repaint();
         }
     }
 
     void mouseExit(const juce::MouseEvent &) override {
-        if (hoveredRow >= 0 || hoveredPreset >= 0) {
+        if (hoveredRow >= 0 || hoveredPreset >= 0 || hoveredBackdrop >= 0) {
             hoveredRow = -1;
             hoveredPreset = -1;
+            hoveredBackdrop = -1;
             repaint();
         }
     }
@@ -309,6 +338,12 @@ class UserThemePane final : public juce::Component {
         const auto preset = presetAt(event.getPosition());
         if (preset >= 0) {
             applyPreset(preset);
+            return;
+        }
+
+        const auto backdrop = backdropAt(event.getPosition());
+        if (backdrop >= 0) {
+            applyBackdrop(backdrop);
             return;
         }
 
@@ -348,6 +383,29 @@ class UserThemePane final : public juce::Component {
     int presetAt(juce::Point<int> point) const {
         for (int index = 0; index < userThemePresetCount; ++index)
             if (presetBounds(index).contains(point))
+                return index;
+
+        return -1;
+    }
+
+    /** The backdrop key: the band's row of four, one per entry in the table. */
+    juce::Rectangle<int> backdropBounds(int index) const {
+        const auto columns = j37panel::assets::backgroundChoiceCount;
+        const auto bandLeft = 8;
+        const auto bandWidth = getWidth() - 16;
+        const auto backdropKeyWidth =
+            (bandWidth - (columns - 1) * userThemeBackdropGap) / juce::jmax(1, columns);
+
+        return { bandLeft + index * (backdropKeyWidth + userThemeBackdropGap),
+                 userThemeHeaderHeight + userThemePresetBandHeight
+                     + userThemeBackdropLabelHeight,
+                 backdropKeyWidth, userThemeBackdropRowHeight };
+    }
+
+    /** Which backdrop key, if any, the point is on. -1 when it is on none. */
+    int backdropAt(juce::Point<int> point) const {
+        for (int index = 0; index < j37panel::assets::backgroundChoiceCount; ++index)
+            if (backdropBounds(index).contains(point))
                 return index;
 
         return -1;
@@ -414,6 +472,47 @@ class UserThemePane final : public juce::Component {
 
             g.setColour(index == hoveredPreset ? palette.accent : palette.border);
             g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 3.0f, 1.0f);
+        }
+    }
+
+    /** A backdrop key: adopt it here, then report the NAME. The panel is rebuilt by
+        the editor, so this pane has no image of its own to refresh. */
+    void applyBackdrop(int index) {
+        if (index < 0 || index >= j37panel::assets::backgroundChoiceCount)
+            return;
+
+        background = j37panel::assets::backgroundChoices[index].name;
+        repaint();
+
+        if (onBackgroundChanged != nullptr)
+            onBackgroundChanged(background);
+    }
+
+    /** The band: a caption and four keys, the live one filled in the accent. */
+    void paintBackdrop(juce::Graphics &g) const {
+        const auto label = juce::Rectangle<int>(
+            14, userThemeHeaderHeight + userThemePresetBandHeight, getWidth() - 28,
+            userThemeBackdropLabelHeight);
+
+        g.setColour(palette.secondary);
+        g.setFont (panelFont (9.0f, juce::Font::bold));
+        g.drawText("BACKGROUND ASSET", label, juce::Justification::centredLeft, false);
+
+        for (int index = 0; index < j37panel::assets::backgroundChoiceCount; ++index) {
+            const auto bounds = backdropBounds(index);
+            const auto &choice = j37panel::assets::backgroundChoices[index];
+            const auto active = background.equalsIgnoreCase(choice.name);
+
+            g.setColour(active ? palette.accent
+                               : index == hoveredBackdrop ? palette.raised.brighter(0.10f)
+                                                          : palette.raised);
+            g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
+            g.setColour(active ? palette.accent : palette.border);
+            g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 3.0f, 1.0f);
+
+            g.setColour(active ? palette.readout : palette.text);
+            g.setFont (panelFont (9.0f, juce::Font::bold));
+            g.drawText(choice.name, bounds, juce::Justification::centred, false);
         }
     }
 
@@ -498,8 +597,10 @@ class UserThemePane final : public juce::Component {
     }
 
     UiPalette palette;
+    juce::String background;
     int hoveredRow = -1;
     int hoveredPreset = -1;
+    int hoveredBackdrop = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UserThemePane)
 };
@@ -564,15 +665,22 @@ class UserThemeWindow final : public juce::DocumentWindow {
     /** "The palette changed" - set once by the editor. */
     std::function<void(const UiPalette &)> onPaletteChanged;
 
-    explicit UserThemeWindow(UiPalette start)
+    /** "The backdrop changed", with the entry's name - set once by the editor. */
+    std::function<void(const juce::String &)> onBackgroundChanged;
+
+    explicit UserThemeWindow(UiPalette start, juce::String background = "THEME")
         : juce::DocumentWindow("USER THEME", start.background, juce::DocumentWindow::closeButton,
                                true) {
-        auto content = std::make_unique<UserThemePane>(start);
+        auto content = std::make_unique<UserThemePane>(start, std::move(background));
         pane = content.get();
 
         pane->onPaletteChanged = [this](const UiPalette &edited) {
             if (onPaletteChanged != nullptr)
                 onPaletteChanged(edited);
+        };
+        pane->onBackgroundChanged = [this](const juce::String &edited) {
+            if (onBackgroundChanged != nullptr)
+                onBackgroundChanged(edited);
         };
         pane->onClose = [this] { setVisible(false); };
 
@@ -601,6 +709,8 @@ class UserThemeWindow final : public juce::DocumentWindow {
     ~UserThemeWindow() override { pane = nullptr; }
 
     void setPalette(const UiPalette &next) { pane->setPalette(next); }
+
+    void setBackground(const juce::String &next) { pane->setBackground(next); }
 
     void show() {
         setVisible(true);

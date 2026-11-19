@@ -193,10 +193,11 @@ every other curve in this plugin is hand-written from physics, a **neural model*
 *measurement* of a space; RTNeural and the convolver each run fast enough to sit inside
 the per-sample loop.
 
-The same page carries the machine's own **TAPE SPECTRUM**, which is the one readout
+The same page carries the machine's own **SPECTRUM**, which is the one readout
 there that is not about a file: it is the magnetic shaper's **output** drawn as a
-24-band curve, measured on the same sample the deck's HARMONICS readout is measured on,
-so the curve and the number describe one block of audio rather than two. The cells
+24-band curve with a peak-hold trace over it, measured on the same sample the deck's
+HARMONICS readout is measured on, so the curve and the number describe one block of
+audio rather than two. The cells
 under the MODELS knobs already hold the two loaders; the spectrum takes the one cell
 nothing else claims, and it is drawn rather than built as a control because it has no
 value to set - it is a window on what the machine just did.

@@ -1738,6 +1738,15 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     valveTypeCached = juce::jlimit (0, valveTypeCount - 1,
                           valveTypeParam != nullptr
                               ? static_cast<int> (valveTypeParam->load()) : 0);
+    pentodeTypeCached = juce::jlimit (0, pentodeTypeCount - 1,
+                            pentodeTypeParam != nullptr
+                                ? static_cast<int> (pentodeTypeParam->load()) : 0);
+    triodeTypeCached = juce::jlimit (0, triodeTypeCount - 1,
+                           triodeTypeParam != nullptr
+                               ? static_cast<int> (triodeTypeParam->load()) : 0);
+    transistorTypeCached = juce::jlimit (0, transistorTypeCount - 1,
+                               transistorTypeParam != nullptr
+                                   ? static_cast<int> (transistorTypeParam->load()) : 0);
     transformerTypeCached = juce::jlimit (0, transformerTypeCount - 1,
                                 transformerTypeParam != nullptr
                                     ? static_cast<int> (transformerTypeParam->load()) : 0);
@@ -1756,7 +1765,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             float dust, scratch, warp, electrical, clicks;
         };
         const VinylSetup setup { vinylTypeCached,
-            vinylSpeedParam != nullptr ? juce::jlimit (0, 2, static_cast<int> (vinylSpeedParam->load())) : 0,
+            vinylSpeedParam != nullptr ? juce::jlimit (0, 3, static_cast<int> (vinylSpeedParam->load())) : 0,
             vinylGenerationParam != nullptr ? juce::jlimit (0, 3, static_cast<int> (vinylGenerationParam->load())) : 0,
             vinylTurntableParam != nullptr ? juce::jlimit (0, 3, static_cast<int> (vinylTurntableParam->load())) : 0,
             vinylCartridgeParam != nullptr ? juce::jlimit (0, 3, static_cast<int> (vinylCartridgeParam->load())) : 0,
@@ -1767,7 +1776,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             vinylClicksParam != nullptr ? vinylClicksParam->load() : 0.0f };
         const auto configureVinyl = [&] (VinylStage& left, VinylStage& right, float rate, const VinylSetup& values)
         {
-            const int vinylSpeedIndex = juce::jlimit (0, 2, values.speed);
+            const int vinylSpeedIndex = juce::jlimit (0, 3, values.speed);
+            //  OFF is the fourth entry: the platter's ROTATION is not modelled,
+            //  so what is left is the disc itself - no wander, and the fault
+            //  rates at their neutral 33 rpm reference instead of a choice's own.
+            const bool platterOff = vinylSpeedIndex >= 3;
+            const int platterIndex = platterOff ? 0 : vinylSpeedIndex;
             VinylStage* vinylStages[2] = { &left, &right };
             // riaa, rumble, crackle, decay, surface
             static constexpr float vinylVoices[6][5] =
@@ -1834,11 +1848,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
         for (auto* stage : vinylStages)
         {
-            stage->vinylWowIncrement = wanderRate[vinylSpeedIndex] / rate;
+            stage->vinylWowIncrement = wanderRate[platterIndex] / rate;
             // The turntable scales the depth (see the voicing below, which runs
             // after this and overwrites it with the scale applied) - the deck's
             // stability is what decides how much of the disc's wander you hear.
-            stage->speedModulation = wanderDepth[vinylSpeedIndex];
+            // With the platter's speed OFF there is no wander to scale.
+            stage->speedModulation = platterOff ? 0.0f : wanderDepth[platterIndex];
 
             // Every one of the four faults' rates is derived from the SAME platter
             // speed the wander uses, because they are all consequences of how fast
@@ -1847,7 +1862,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // winding that is not synchronised to a 33's at all. Deriving them from
             // one number is what makes the faults belong to the SAME record instead
             // of being four unrelated generators.
-            const float revolutionHz = wanderRate[vinylSpeedIndex];
+            const float revolutionHz = wanderRate[platterIndex];
 
             stage->scratchIncrement = revolutionHz / rate;
             stage->warpIncrement = revolutionHz / rate;
@@ -1857,7 +1872,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // coefficient here is. It also opens slightly with the platter speed,
             // because a faster stylus excites finer grit.
             stage->dustCoefficient = onePoleCoefficientHz (
-                6000.0f + 2000.0f * static_cast<float> (vinylSpeedIndex), rate);
+                6000.0f + 2000.0f * static_cast<float> (platterIndex), rate);
 
             // Mains hum is the one rate that is NOT the disc's: it is the supply's.
             // 50 Hz is the standard outside North America and 60 Hz inside it; the
@@ -2976,6 +2991,9 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         // control mid-note lands the same way the curve does: sample-locked
         // to the block the host handed us, with no extra state to unwind.
         saturation.setValveVoice (valveTypeCached);
+        saturation.setPentodeVoice (pentodeTypeCached);
+        saturation.setTriodeVoice (triodeTypeCached);
+        saturation.setTransistorVoice (transistorTypeCached);
         saturation.setTransformerVoice (transformerTypeCached);
         saturation.setDigitalVoice (digitalTypeCached);
 

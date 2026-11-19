@@ -79,7 +79,8 @@ CONSTANT_ANCHORS = [
 # function that turns it into the juce::StringArray a choice parameter takes -
 # the same list the panel's combo box reads, which is why they are cut rather
 # than restated here.
-NAME_LISTS = ["tapeStock", "valveType", "transformerType", "digitalType", "vinylType"]
+NAME_LISTS = ["tapeStock", "valveType", "pentodeType", "triodeType", "transistorType",
+              "transformerType", "digitalType", "vinylType"]
 
 # The processor's own definitions the harness runs. Each is cut whole, from its
 # signature through its closing brace.
