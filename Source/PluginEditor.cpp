@@ -2187,7 +2187,7 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
                                   20, deckBandHeight (j37panel::DeckBands::badge));
     presetArtworkBadge.setVisible (true);
     presetBadgeLabel.setBounds (deck.getX() + 48, deckTop (j37panel::DeckBands::badge),
-                                deck.getWidth() - 70,
+                                deck.getWidth() - 130,
                                 deckBandHeight (j37panel::DeckBands::badge));
     presetBadgeLabel.setFont (shrinkingFont (presetBadgeLabel.getText(), 8.0f,
                                              juce::Font::plain,
@@ -2231,7 +2231,7 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     //  text they were hurt by.
     // ------------------------------------------------------------------
     deckParticleCorridorX = { juce::jmax (deck.getX() + 24, presetBadgeLabel.getRight() + 12),
-                              deck.getRight() - 24 };
+                              deck.getRight() - 12 };
     deckParticleCorridorY = { deckTop (j37panel::DeckBands::badge) + 1,
                               deckTop (j37panel::DeckBands::badge)
                                   + deckBandHeight (j37panel::DeckBands::badge) - 1 };
