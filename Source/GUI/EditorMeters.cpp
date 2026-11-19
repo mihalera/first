@@ -392,13 +392,11 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
         g.drawFittedText (formatDb (value), valueArea, juce::Justification::centredLeft, 1);
     };
 
-    // The clipping lamp: only the peak view can clip, so it is flagged next to that row.
-    const auto peakColour = clipping ? juce::Colour::fromRGB (208, 82, 58) : palette.text;
-    //  The peak row's NAME is in the accent ink while the three below it stay
-    //  secondary: PEAK is the reading the dial, the clip lamp and every gain
-    //  decision on the panel are made from, and in the same grey as RMS/LUFS/VU it
-    //  was read as one row of four rather than as the meter's headline.
-    drawReadoutRow ("PEAK dB", peakHoldDb, peakColour, 0, palette.accent);
+    //  PEAK is the reading the dial, the clip lamp and every gain decision on the
+    //  panel are made from; its value is drawn in the accent ink so it reads as
+    //  the meter's headline, matching the LUFS and AVG rows. The clipping lamp
+    //  (below) still flags an actual clip in red.
+    drawReadoutRow ("PEAK dB", peakHoldDb, palette.accent, 0, palette.secondary);
     drawReadoutRow ("RMS", displayedRms, palette.text, 1, palette.secondary);
     drawReadoutRow ("LUFS", displayedLufs, palette.accent, 2, palette.secondary);
     drawReadoutRow ("VU", displayedVu, palette.text, 3, palette.secondary);
