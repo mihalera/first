@@ -2095,11 +2095,13 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         transportStopButton.setBounds  (line1, transportRowY, transportKeyWidth, controlHeight);
         transportPlayButton.setBounds  (line2, transportRowY, transportKeyWidth, controlHeight);
         transportStartButton.setBounds (line3, transportRowY, transportKeyWidth, controlHeight);
-        spindownButton.setBounds       (line4 - transportSpinWidth, transportRowY, transportSpinWidth, controlHeight);
+        // SPINDOWN sits to the left of MODE so the two never overlap.
+        spindownButton.setBounds       (line4 - transportModeWidth - transportSpinWidth - transportGap,
+                                        transportRowY, transportSpinWidth, controlHeight);
 
         const auto modeLeft = transportRight - transportModeWidth;
         deckHintLabel.setBounds (line3 + transportKeyWidth + transportGap, transportRowY,
-                                 juce::jmax (0, modeLeft - transportGap - (line3 + transportKeyWidth)), controlHeight);
+                                 juce::jmax (0, spindownButton.getX() - transportGap - (line3 + transportKeyWidth)), controlHeight);
         modeCycleButton.setBounds (modeLeft, transportRowY, transportModeWidth, controlHeight);
 
         transportLabel.setBounds (transportStopButton.getX(), transportRowY - captionHeight,
@@ -2156,42 +2158,25 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     const auto line2 = line1 + span / 4;
     const auto line3 = line1 + span * 2 / 4;
 
-    // PRESET caption moves to the bottom of the band, under its own column.
+    // PRESET caption sits at the bottom of the band under its own column.
     presetHeadingLabel.setBounds (line1, presetRowY + presetRowHeight - 14, 46, 14);
 
-    {
-        // Head, from the left: the factory list, the user list, save, delete.
-        // 120 and 94 rather than 128 and 100: at the 780 px minimum the two
-        // chains meet with two pixels between DELETE and COPY A, which is a
-        // clearance, not a margin. Fourteen pixels taken off the two widest
-        // items - both of them lists that shorten their own font before they
-        // clip - buys sixteen, and the chain then has room for a button added
-        // at either end without the two ends touching.
-        //
-        //  THE WIDE-WINDOW HOLE. Both chains were laid out against the 780 px
-        //  minimum, and on anything wider the unspent width sat between them
-        //  as one hole that grew with the panel - the deck's last "random
-        //  gap". The hole belongs to the two LISTS: they are the chain's
-        //  widest members and the only two items a wider bounds actually
-        //  improves (a longer preset name shown instead of a longer emptiness;
-        //  a button or a badge would only read as stretched). The lists absorb
-        //  it in shares - 60/40, each capped - and at the minimum the shares
-        //  are zero by construction, so the tight layout is untouched.
-        constexpr int presetBoxWidth  = 120;
-        constexpr int userPresetWidth =  94;
-        presetBox.setBounds       (line1, presetRowY, presetBoxWidth, presetRowHeight);
-        userPresetBox.setBounds   (line2, presetRowY, userPresetWidth, presetRowHeight);
-        savePresetButton.setBounds(line3, presetRowY, 40, presetRowHeight);
-        deletePresetButton.setBounds(line4 - 38, presetRowY, 38, presetRowHeight);
-    }
+    // Head, from the left on the 4 vertical lines.
+    constexpr int presetBoxWidth  = 130;
+    constexpr int userPresetWidth = 100;
+    presetBox.setBounds       (line1, presetRowY, presetBoxWidth, presetRowHeight);
+    userPresetBox.setBounds   (line2, presetRowY, userPresetWidth, presetRowHeight);
+    savePresetButton.setBounds(line3, presetRowY, 46, presetRowHeight);
+    deletePresetButton.setBounds(line4 - 44, presetRowY, 44, presetRowHeight);
 
-    // Tail, from the right on the 4 vertical lines. MATCHED badge sits under
-    // its own column at the bottom of the band.
-    copyAButton.setBounds (line4 - 64, presetRowY, 64, presetRowHeight);
-    copyBButton.setBounds (line4 - 128, presetRowY, 64, presetRowHeight);
-    compareButton.setBounds (line4 - 182, presetRowY, 54, presetRowHeight);
-    undoButton.setBounds    (line4 - 226, presetRowY, 44, presetRowHeight);
-    redoButton.setBounds    (line4 - 270, presetRowY, 44, presetRowHeight);
+    // Tail, from the right on the 4 vertical lines.
+    copyAButton.setBounds (line4 - 70, presetRowY, 70, presetRowHeight);
+    copyBButton.setBounds (line4 - 140, presetRowY, 70, presetRowHeight);
+    compareButton.setBounds (line4 - 204, presetRowY, 64, presetRowHeight);
+    undoButton.setBounds    (line4 - 268, presetRowY, 54, presetRowHeight);
+    redoButton.setBounds    (line4 - 322, presetRowY, 54, presetRowHeight);
+
+    // MATCHED/EDITED badge at the bottom under its own column.
     compareBadgeLabel.setBounds (line4 - 54, presetRowY + presetRowHeight - 14, 54, 14);
 
     // The artwork gets a 20 px cell at the band's 22 px inset; the caption starts
