@@ -2087,11 +2087,11 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         const auto transportRowY = deckTop (j37panel::DeckBands::transport) + captionHeight;
         const auto transportRight = deck.getRight() - deckRightInset;
 
-        auto cursor = deck.getX() + 18;
+        auto keyCursor = deck.getX() + 18;
         const auto placeKey = [&] (juce::Component& key, int width)
         {
-            key.setBounds (cursor, transportRowY, width, controlHeight);
-            cursor += width + transportGap;
+            key.setBounds (keyCursor, transportRowY, width, controlHeight);
+            keyCursor += width + transportGap;
         };
 
         placeKey (transportStopButton,  transportKeyWidth);
@@ -2100,8 +2100,8 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         placeKey (spindownButton,       transportSpinWidth);
 
         const auto modeLeft = transportRight - transportModeWidth;
-        deckHintLabel.setBounds (cursor, transportRowY,
-                                 juce::jmax (0, modeLeft - transportGap - cursor), controlHeight);
+        deckHintLabel.setBounds (keyCursor, transportRowY,
+                                 juce::jmax (0, modeLeft - transportGap - keyCursor), controlHeight);
         modeCycleButton.setBounds (modeLeft, transportRowY, transportModeWidth, controlHeight);
 
         // The two transport captions sit ABOVE the key bank rather than beside
