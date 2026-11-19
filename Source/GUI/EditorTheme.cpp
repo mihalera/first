@@ -134,7 +134,7 @@ void FirstAudioProcessorEditor::applyTheme() {
     // the machine readouts and the tab-member captions all kept ivory-brown text
     // on the charcoal and metal panels until this block existed.
     languageLabel.setColour(juce::Label::textColourId, palette.secondary);
-    bpmLabel.setColour(juce::Label::textColourId, palette.secondary);
+    bpmLabel.setColour(juce::Label::textColourId, palette.accent);
     bpmReadout.setColour(juce::Label::textColourId, palette.secondary);
     vinylTypeLabel.setColour(juce::Label::textColourId, palette.secondary);
     vinylSpeedLabel.setColour(juce::Label::textColourId, palette.secondary);

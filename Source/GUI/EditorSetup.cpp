@@ -619,8 +619,13 @@ void FirstAudioProcessorEditor::stylePanelLabels() {
                juce::Justification::left);
     styleLabel(controlsHintLabel, "Shift = fine tune", 9.0f, paletteFor(false).secondary, false,
                juce::Justification::right);
-    styleLabel(bpmLabel, "BPM", 9.0f, paletteFor(false).secondary, true, juce::Justification::left);
-    styleLabel(bpmReadout, xlat("-"), 9.0f, paletteFor(false).secondary, false,
+    // BPM belongs to the deck's readouts row now (see placeDeck), so it is inked
+    // and aligned like the three beside it: an accent caption over a centred
+    // value. In the grey they did not share it read as the label of a control
+    // whose box had gone missing.
+    styleLabel(bpmLabel, "BPM", 10.0f, paletteFor(false).accent, true,
+               juce::Justification::centredLeft);
+    styleLabel(bpmReadout, xlat("-"), 8.0f, paletteFor(false).secondary, false,
                juce::Justification::centredLeft);
     styleLabel(metersHeadingLabel, "LEVELS", 10.0f, paletteFor(false).accent, true,
                juce::Justification::left);
@@ -630,11 +635,9 @@ void FirstAudioProcessorEditor::stylePanelLabels() {
                juce::Justification::right);
     styleLabel(compressorReadout, "one meter per stage", 8.0f, paletteFor(false).secondary, false,
                juce::Justification::right);
-    // The three readout pairs share one alignment discipline: the caption is
-    // centred over its value, and every pair uses the SAME scheme. BPM read
-    // left while these three read right, so a caption sat over the right half
-    // of its number while BPM's sat over nothing - the four looked staggered
-    // against each other even though each pair was internally consistent.
+    // The four readout pairs share one alignment discipline: the caption is
+    // centred over its value, and every pair uses the SAME scheme - BPM included,
+    // which used to read left while these three read from the centre.
     styleLabel(harmonicsLabel, "HARMONICS", 10.0f, paletteFor(false).accent, true,
                juce::Justification::centredLeft);
     styleLabel(harmonicsReadout, xlat("even / odd"), 8.0f, paletteFor(false).secondary, false,

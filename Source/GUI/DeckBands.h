@@ -39,14 +39,13 @@ namespace j37panel {
 struct DeckBands {
     // The deck, top to bottom. The names are the headings drawn on the panel.
     enum Band {
-        heading = 0,  // "DECK" and the build id
-        model = 1,    // SPEED / VINYL SPEED / BPM
-        switches = 2, // INSTRUMENT, HARMONICS, SUBFUND, ANTI-PHASE
-        types = 3,    // the five type selectors
-        transport = 4, // the transport keys and the mode switch
-        preset = 5,   // the preset chain
-        badge = 6,    // the preset badge line
-        bandCount = 7
+        heading = 0,   // "DECK" and the build id
+        readouts = 1,  // BPM, SUBFUND TRACK, ANTI-PHASE, HARMONICS
+        types = 2,     // the five type selectors
+        transport = 3, // the transport keys and the mode switch
+        preset = 4,    // the preset chain
+        badge = 5,     // the preset badge line
+        bandCount = 6
     };
 
     // Where the first band starts, inside the deck. Six pixels of air under the
@@ -72,7 +71,7 @@ struct DeckBands {
     // The gap between two bands. Compresses to minimumGap before any row does.
     int gap = 5;
     static constexpr int minimumGap = 2;
-    static constexpr int maximumGap = 10;
+    static constexpr int maximumGap = 12;
 
     // The deck heights this is written for: the panel's floor and the size it
     // prefers. Between them the control row slides from its floor to its
@@ -103,7 +102,7 @@ struct DeckBands {
         // leave one pixel too little for six minimum gaps at a few intermediate
         // heights. Keep the promised bottom inset by trimming that pixel from the
         // control row, down to its 24 px floor, before solving the gaps.
-        auto content = headingHeight + 4 * bands.rowHeight + presetHeight + badgeHeight;
+        auto content = headingHeight + 3 * bands.rowHeight + presetHeight + badgeHeight;
         const auto roomWithMinimumGaps = deckHeight - topOffset - bottomInset
                                          - minimumGap * (bandCount - 1);
         while (content > roomWithMinimumGaps && bands.controlHeight > 24)
@@ -111,7 +110,7 @@ struct DeckBands {
             --bands.controlHeight;
             bands.captionHeight = std::clamp (bands.controlHeight / 2, 12, 15);
             bands.rowHeight = bands.controlHeight + bands.captionHeight;
-            content = headingHeight + 4 * bands.rowHeight + presetHeight + badgeHeight;
+            content = headingHeight + 3 * bands.rowHeight + presetHeight + badgeHeight;
         }
 
         // Then the gaps take the remainder, floored and capped. Capping them means

@@ -1943,45 +1943,64 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     // ends above them.
     constexpr int reelCorridor = 70;
 
-    // ---- row 1: RATE / KEY --------------------------------------------------
-    //  Everything that sets what the machine plays lives in one row: tape speed,
-    //  motor speed, host tempo, and the key the OSC ring and the corrector share.
-    //  TONIC and MODE used to be inside the AUTOTUNE tab, which meant the ring on
-    //  the deck was drawing a key the user could only change after opening that
-    //  page. They are deck controls because both readers are: the ring here and
-    //  the corrector on AUTOTUNE.
-    //
-    //  The rate columns are narrower than the two key lists: "Pentatonic Minor"
-    //  is the widest value any list in the row carries, and a 108 px column would
-    //  ellipsise it at the 780 px floor. 96 / 96 / 96 / 150 / 150 plus four gaps
-    //  is 644 px of the 664 px available there, and the solver shares the
-    //  remainder across all five.
+    // ---- row 1: THE READOUTS -------------------------------------------------
+    //  BPM, SUBFUND TRACK, ANTI-PHASE and HARMONICS are one row now. They were
+    //  two rows in two bands - the tempo and the harmonic split above, the two
+    //  tracking readouts below - so the four captions the user reads as a set
+    //  stood on two different baselines, with HARMONICS alone against the row's
+    //  right edge. They are the same kind of thing: a caption over a value that
+    //  only reports. So one row of four equal columns, in the order the signal
+    //  meets them: the tempo the machine is following, the note the subharmonic
+    //  cascade has locked to, what the stereo pair does at the output, and the
+    //  split the harmonic engine settled on.
     {
-        //  Every height in the table is the band's own: the caption band, the
-        //  control band, and the two pixels a readout gives back under it. A
-        //  literal here is what put the boxes thirteen pixels into the row below.
-        //  TONIC and MODE moved down to the type row, beside the OSC ring they
-        //  describe; what is left up here is the deck's READOUTS - the tempo and
-        //  the harmonic split - so the two rows above the keys are one block of
-        //  numbers and the row under them is one block of settings. BPM was a
-        //  caption plus a readout alone on this line, which read as a setting the
-        //  user could turn; pairing it with the harmonics it sits beside says
-        //  what it is.
+        constexpr int readoutGap = 14;
+
+        //  The four captions share one scheme: centred over their values, so
+        //  every caption starts on the same grid line of its column and the
+        //  readouts under them are the same width by construction. A caption
+        //  that read left while the three beside it read right put the row's
+        //  first label under nothing - the four looked staggered against each
+        //  other even though each pair was internally consistent.
+        //
+        //  The caption takes the band's caption height and the value the control
+        //  band's, the same arithmetic every other deck row uses: at caption
+        //  height the tempo readout was a stub of type under a caption, and the
+        //  row read as four boxes and a fragment.
         const std::vector<DeckRowItem> row {
-            { &bpmLabel,          120, -1,  0, captionHeight, false },
-            // The tempo readout is a VALUE like the readout beside it, so it
-            // takes the control band's height rather than the 13 px a caption
-            // line would give it: at caption height it was a stub of type under
-            // a caption, and the row behind it read as four boxes and a fragment.
-            { &bpmReadout,          0, -1, captionHeight, controlHeight, true  },
-            { &harmonicsLabel,    120, -1,  0, captionHeight, false },
-            { &harmonicsReadout,    0, -1, captionHeight, controlHeight, true  }
+            { &bpmLabel,        120, -1,  0, captionHeight, false },
+            { &bpmReadout,        0, -1, captionHeight, controlHeight, true  },
+            { &subfundLabel,    120, -1,  0, captionHeight, false },
+            { &subfundReadout,    0, -1, captionHeight, controlHeight, true  },
+            { &antiPhaseLabel,  120, -1,  0, captionHeight, false },
+            { &antiPhaseReadout,  0, -1, captionHeight, controlHeight, true  },
+            { &harmonicsLabel,  120, -1,  0, captionHeight, false },
+            { &harmonicsReadout,  0, -1, captionHeight, controlHeight, true  }
         };
 
+        //  The ribbon still crosses this band, so the row still stops at its
+        //  corridor rather than at the deck's own inset.
         placeDeckRow (row, deck.getX() + 18, deck.getRight() - reelCorridor,
-                      deckTop (j37panel::DeckBands::model), 14, true);
+                      deckTop (j37panel::DeckBands::readouts), readoutGap, true);
+
+        // The readouts are the only deck text whose width depends on the panel,
+        // so they are the only ones that can run out of room - and they are also
+        // the only ones whose TEXT changes while the editor is open ("idle - no
+        // note tracked", "412.5 Hz 87 %"). setMinimumHorizontalScale is the one
+        // fit that keeps working: it is a property of the label, so every later
+        // setText is measured against the width the row gave it, rather than
+        // being clipped at whatever size it happened to be at when the last
+        // resize happened to run.
+        for (auto* label : { &bpmLabel, &bpmReadout,
+                             &subfundLabel, &subfundReadout,
+                             &antiPhaseLabel, &antiPhaseReadout,
+                             &harmonicsLabel, &harmonicsReadout })
+            label->setMinimumHorizontalScale (0.55f);
     }
 
+    //  The band that held SUBFUND TRACK and ANTI-PHASE is gone with them: the
+    //  two moved up into the readouts row, and the height the band gave back is
+    //  spread over the deck's gaps (see DeckBands.h).
     // ---- THE DECK'S GRID -----------------------------------------------------
     //  One column width, solved once from the type row - the widest row on the
     //  deck, and the one whose six equal selectors set the rhythm - and then used
@@ -2005,57 +2024,7 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     const auto deckTypeColumn = juce::jmax (60, juce::jmin (150,
         (deckRowRight - deckRowLeft - 2 * 14) / 3));
 
-    // ---- row 2: SWITCHES ----------------------------------------------------
-    // OVERSAMPLING is a SETTINGS-tab member and lives in the member row under
-    // that tab's knobs (placeDeckSwitch below).
-    //
-    //  INSTRUMENT takes one TYPE column and the three readouts share what is
-    //  left between them. They are STATUS, not settings - a caption over a value
-    //  that only reports - so they are one group off the instrument's right edge
-    //  rather than three columns pretending to be controls: the old row gave them
-    //  the same 108 px as a selector, which is what made HARMONICS read as a knob
-    //  the user could turn.
-    {
-        constexpr int readoutGap = 12;
-        const auto readoutWidth = juce::jmax (44, (deckRowRight - deckRowLeft - readoutGap) / 2);
-
-        //  The two tracking readouts, in the same order the signal meets them:
-        //  SUBFUND follows the note the machine is generating, ANTI-PHASE
-        //  watches the stereo pair at the output. Each takes half the row now
-        //  that INSTRUMENT has moved to the key row beside the ring.
-        const std::vector<DeckRowItem> row {
-            { &subfundLabel,    readoutWidth, -1,  0, captionHeight, false },
-            { &subfundReadout,             0, -1, captionHeight, controlHeight, true  },
-            { &antiPhaseLabel,  readoutWidth, -1,  0, captionHeight, false },
-            { &antiPhaseReadout,           0, -1, captionHeight, controlHeight, true  }
-        };
-
-        placeDeckRow (row, deckRowLeft, deckRowRight,
-                      deckTop (j37panel::DeckBands::switches), readoutGap, true);
-
-        // The readouts are the only deck text whose width now depends on the
-        // panel, so they are the only ones that can run out of room - and they
-        // are also the only ones whose TEXT changes while the editor is open
-        // ("idle - no note tracked", "412.5 Hz 87 %"). setMinimumHorizontalScale
-        // is the one fit that keeps working: it is a property of the label, so
-        // every later setText is measured against the width the row gave it,
-        // rather than being clipped at whatever size it happened to be at when
-        // the last resize happened to run.
-        for (auto* label : { &harmonicsLabel, &harmonicsReadout,
-                             &subfundLabel, &subfundReadout,
-                             &antiPhaseLabel, &antiPhaseReadout })
-            label->setMinimumHorizontalScale (0.55f);
-
-        // The particles are NOT placed here any more. This row's leftover gap
-        // was where they drifted, and at every real width it was a single 50-70
-        // px slot between two readouts: six orbs bouncing inside it read as a
-        // handful of dots stuck in one corner of the deck rather than as dust
-        // moving through the machine. They get the deck's foot instead - see the
-        // badge band below - where the strip is a thousand pixels wide and only
-        // the badge's text sits in it.
-    }
-
-    // ---- row 3: the six type selectors, and the OSC ring --------------------
+    // ---- row 2: the six type selectors, and the OSC ring --------------------
     {
         // The model selector (renamed TAPE, its old caption read MODEL) joined
         // the row of type selectors - the user read MODEL | SPEED | BPM as
@@ -2096,7 +2065,7 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
                            deckRingSize, deckRingSize);
     }
 
-    // ---- row 4: TRANSPORT ---------------------------------------------------
+    // ---- row 3: TRANSPORT ---------------------------------------------------
     {
         const std::vector<DeckRowItem> row {
             { &transportStopButton,   62,  4,  0, controlHeight, false },
@@ -2236,13 +2205,13 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     // heading band starts six px down, so the scene gets a 64 x 58 block that is
     // the same size at every panel size - which is what lets the scene be laid out
     // in its own units and framed by the camera rather than by a pixel count.
-    // It stops 8 px short of the switches row below it, so the two never touch.
-    // Its height is capped by the switches band above it, so the eight pixels of
+    // It stops 8 px short of the readouts row below it, so the two never touch.
+    // Its height is capped by the readouts band above it, so the eight pixels of
     // clearance the comment above promises hold at the deck's 236 px floor too -
     // where the solved bands start higher and a fixed 58 px block would have met
     // the row instead of stopping short of it.
     const auto sceneTop = deck.getY() + 6;
-    const auto sceneBottom = deckTop (j37panel::DeckBands::switches) - 8;
+    const auto sceneBottom = deckTop (j37panel::DeckBands::readouts) - 8;
     tapeScene.setBounds (deck.getRight() - reelCorridor,
                          sceneTop,
                          reelCorridor - 6,
