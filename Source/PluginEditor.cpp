@@ -2096,13 +2096,11 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         transportPlayButton.setBounds  (line2, transportRowY, transportKeyWidth, controlHeight);
         transportStartButton.setBounds (line3, transportRowY, transportKeyWidth, controlHeight);
         // SPINDOWN sits to the left of MODE so the two never overlap.
-        spindownButton.setBounds       (line4 - transportModeWidth - transportSpinWidth - transportGap,
-                                        transportRowY, transportSpinWidth, controlHeight);
+        spindownButton.setBounds       (line4 - transportSpinWidth, transportRowY, transportSpinWidth, controlHeight);
+        modeCycleButton.setBounds      (line4 - transportModeWidth, transportRowY, transportModeWidth, controlHeight);
 
-        const auto modeLeft = transportRight - transportModeWidth;
         deckHintLabel.setBounds (line3 + transportKeyWidth + transportGap, transportRowY,
                                  juce::jmax (0, spindownButton.getX() - transportGap - (line3 + transportKeyWidth)), controlHeight);
-        modeCycleButton.setBounds (modeLeft, transportRowY, transportModeWidth, controlHeight);
 
         transportLabel.setBounds (transportStopButton.getX(), transportRowY - captionHeight,
                                   transportStartButton.getRight() - transportStopButton.getX(),
@@ -2158,8 +2156,8 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     const auto line2 = line1 + span / 4;
     const auto line3 = line1 + span * 2 / 4;
 
-    // PRESET caption sits at the bottom of the band under its own column.
-    presetHeadingLabel.setBounds (line1, presetRowY + presetRowHeight - 14, 46, 14);
+    // PRESET caption sits top-left above the factory list; MATCHED badge top-right.
+    presetHeadingLabel.setBounds (line1, presetRowY, 46, 14);
 
     // Head, from the left on the 4 vertical lines.
     constexpr int presetBoxWidth  = 130;
@@ -2176,8 +2174,8 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     undoButton.setBounds    (line4 - 268, presetRowY, 54, presetRowHeight);
     redoButton.setBounds    (line4 - 322, presetRowY, 54, presetRowHeight);
 
-    // MATCHED/EDITED badge at the bottom under its own column.
-    compareBadgeLabel.setBounds (line4 - 54, presetRowY + presetRowHeight - 14, 54, 14);
+    // MATCHED/EDITED badge at top-right under its own column.
+    compareBadgeLabel.setBounds (line4 - 54, presetRowY, 54, 14);
 
     // The artwork gets a 20 px cell at the band's 22 px inset; the caption starts
     // six pixels after it and keeps the same 22 px inset at the right edge. The
