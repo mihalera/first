@@ -394,9 +394,10 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
 
     //  PEAK is the reading the dial, the clip lamp and every gain decision on the
     //  panel are made from; its value is drawn in the accent ink so it reads as
-    //  the meter's headline, matching the LUFS and AVG rows. The clipping lamp
-    //  (below) still flags an actual clip in red.
-    drawReadoutRow ("PEAK dB", peakHoldDb, palette.accent, 0, palette.secondary);
+    //  the meter's headline, matching the LUFS and AVG rows. When the signal
+    //  actually clips, the value turns red so the overload is visible on the
+    //  number as well as on the clip lamp.
+    drawReadoutRow ("PEAK dB", peakHoldDb, clipping ? juce::Colour::fromRGB (208, 82, 58) : palette.accent, 0, palette.secondary);
     drawReadoutRow ("RMS", displayedRms, palette.text, 1, palette.secondary);
     drawReadoutRow ("LUFS", displayedLufs, palette.accent, 2, palette.secondary);
     drawReadoutRow ("VU", displayedVu, palette.text, 3, palette.secondary);
