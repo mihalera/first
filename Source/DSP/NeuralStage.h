@@ -42,6 +42,7 @@
     #include <nlohmann/json.hpp>
 #endif
 
+#include <algorithm>
 #include <atomic>
 #include <exception>
 #include <limits>
@@ -173,13 +174,16 @@ struct NeuralStage
     //  Under the harness, or in a build without either engine, these members do
     //  not exist and every method below is the pass-through.
     // -----------------------------------------------------------------------
-    std::unique_ptr<InferenceModel> model;
-    std::unique_ptr<InferenceModel> pendingModel;
-    std::unique_ptr<InferenceModel> retiredModel;
-        std::atomic<bool> modelSwapRequested { false };
+    // Ownership remains on the control thread. The audio thread only transfers
+    // raw pointers between the pending and active atomics; retired owners are
+    // reclaimed by the control thread after the hazard pointer no longer names
+    // them. Model-loading and clearing calls must be serialized on that thread.
+    std::vector<std::unique_ptr<InferenceModel>> modelOwners;
+    std::atomic<InferenceModel*> pendingModel { nullptr };
+    std::atomic<bool> modelSwapRequested { false };
     std::atomic<InferenceModel*> activeModel { nullptr };
+    std::atomic<InferenceModel*> audioModelHazard { nullptr };
     std::atomic<bool> clearRequested { false };
-    std::atomic<bool> audioQuiescent { true };
     std::atomic<bool> resetRequested { false };
 
     //  True from the moment a built model has been PUBLISHED - which happens on
@@ -319,20 +323,16 @@ struct NeuralStage
     }
 
     /** Releases the model, returning the stage to the pass-through. The control
-        thread first closes the stage and waits for any in-flight sample to leave;
-        the outgoing model is then retired by the next audio-thread handoff. */
+        thread withdraws pending work; the audio thread clears its active pointer at
+        the next block boundary. Owners remain alive until reclamation sees that no
+        audio read can still reference them. */
     void clear() noexcept
     {
 #if J37_HAS_RTNEURAL || J37_HAS_NAMCORE
-        std::unique_ptr<InferenceModel> discard;
-        {
-                discard = std::move (pendingModel);
-                clearRequested.store (true, std::memory_order_release);
-                modelSwapRequested.store (true, std::memory_order_release);
-            activeModel.store (nullptr, std::memory_order_release);
-        }
+        pendingModel.exchange (nullptr, std::memory_order_seq_cst);
+        clearRequested.store (true, std::memory_order_release);
+        modelSwapRequested.store (true, std::memory_order_release);
         modelInstalled.store (false, std::memory_order_release);
-        discard.reset();
         reclaimRetiredModel();
 #endif
     }
@@ -654,71 +654,87 @@ struct NeuralStage
     #endif
 
     /** Publishes a completed model for adoption at the next audio-thread block.
-        It never replaces an object that process() may currently be using. */
+        Model ownership stays on the control thread; only a raw pointer crosses the
+        boundary, and displaced owners remain alive until safe reclamation. Calls
+        that load or clear models are serialized on the control thread. */
     void publish (std::unique_ptr<InferenceModel> built)
     {
-        std::unique_ptr<InferenceModel> displaced;
-        {
-                displaced = std::move (pendingModel);
-                pendingModel = std::move (built);
-                modelInstalled.store (pendingModel != nullptr, std::memory_order_release);
-                clearRequested.store (false, std::memory_order_release);
-                resetRequested.store (false, std::memory_order_relaxed);
-            }
-            modelSwapRequested.store (true, std::memory_order_release);
-        displaced.reset();
+        modelOwners.push_back (std::move (built));
+        auto* published = modelOwners.back().get();
+        pendingModel.exchange (published, std::memory_order_seq_cst);
+        modelInstalled.store (published != nullptr, std::memory_order_release);
+        clearRequested.store (false, std::memory_order_release);
+        resetRequested.store (false, std::memory_order_relaxed);
+        modelSwapRequested.store (true, std::memory_order_release);
         reclaimRetiredModel();
     }
 
-    /** Handoff called before a block. The outgoing model is not destroyed here:
-        destruction can allocate/free or acquire library locks, so control-thread
-        code reclaims it only after observing the audio thread's quiescent epoch. */
+    /** Handoff called before a block. It transfers only raw pointers; modelOwners
+        retains every object until the control thread proves it is neither active,
+        pending, nor protected by the audio thread's hazard pointer. */
     void adoptPendingModel()
     {
-            if (! modelSwapRequested.exchange (false, std::memory_order_acq_rel))
-                return;
+        if (! modelSwapRequested.exchange (false, std::memory_order_acq_rel))
+            return;
 
-            std::unique_ptr<InferenceModel> previous;
-            bool adopt = false;
-            bool clear = false;
-
-            clear = clearRequested.load (std::memory_order_acquire);
-            adopt = pendingModel != nullptr;
-            if (! clear && ! adopt)
-                return;
-
-            activeModel.store (nullptr, std::memory_order_release);
-            previous = std::move (model);
-            if (adopt)
-                model = std::move (pendingModel);
-            clearRequested.store (false, std::memory_order_release);
-
-            if (adopt)
+        const auto clear = clearRequested.exchange (false, std::memory_order_acq_rel);
+        auto* next = pendingModel.load (std::memory_order_seq_cst);
+        if (next != nullptr)
+        {
+            // Protect the pending owner before removing the queue's reference; the
+            // control thread may otherwise reclaim it in the gap before activation.
+            audioModelHazard.store (next, std::memory_order_seq_cst);
+            if (pendingModel.load (std::memory_order_seq_cst) != next)
             {
-                model->reset();
+                audioModelHazard.store (nullptr, std::memory_order_seq_cst);
+                modelSwapRequested.store (true, std::memory_order_release);
+                return;
+            }
+
+            auto* expected = next;
+            if (! pendingModel.compare_exchange_strong (expected, nullptr,
+                                                        std::memory_order_seq_cst))
+            {
+                audioModelHazard.store (nullptr, std::memory_order_seq_cst);
+                modelSwapRequested.store (true, std::memory_order_release);
+                return;
+            }
+        }
+
+        if (clear || next != nullptr)
+        {
+            activeModel.store (nullptr, std::memory_order_seq_cst);
+            if (next != nullptr)
+            {
+                next->reset();
                 bridge.reset();
-                activeModel.store (model.get(), std::memory_order_release);
+                activeModel.store (next, std::memory_order_seq_cst);
             }
             else
             {
                 resetRequested.store (false, std::memory_order_relaxed);
                 bridge.reset();
             }
+        }
+        audioModelHazard.store (nullptr, std::memory_order_seq_cst);
+    }
 
-            if (previous != nullptr)
-                            retiredModel = std::move (previous);
-                }
+    /** Control-thread reclamation. Sequentially consistent hazard publication
+        closes the load-before-protect race: if audio loaded a stale active pointer,
+        it validates the active pointer before dereferencing it. */
+    void reclaimRetiredModel() noexcept
+    {
+        const auto* active = activeModel.load (std::memory_order_seq_cst);
+        const auto* pending = pendingModel.load (std::memory_order_seq_cst);
+        const auto* hazard = audioModelHazard.load (std::memory_order_seq_cst);
 
-                /** Whether a .nam document declares the one architecture the converter above
-                    covers. Every other architecture is NAM Core's, and a build without NAM
-                    Core refuses it. */
-                void reclaimRetiredModel() noexcept
-                {
-                    std::unique_ptr<InferenceModel> retired;
-                    if (! audioQuiescent.load (std::memory_order_seq_cst))
-                        return;
-                    retired = std::move (retiredModel);
-                }
+        modelOwners.erase (std::remove_if (modelOwners.begin(), modelOwners.end(),
+            [active, pending, hazard] (const auto& owner)
+            {
+                const auto* pointer = owner.get();
+                return pointer != active && pointer != pending && pointer != hazard;
+            }), modelOwners.end());
+    }
 
     static bool isLstm (const nlohmann::json& namJson)
     {
@@ -754,26 +770,24 @@ struct NeuralStage
         if (amount <= 1.0e-5f)
             return x;
 
-        // Announce the read before loading the pointer. A control-thread
-        // reclamation that observes this flag must defer; the acquire/release
-        // pair also ensures a concurrently published model remains visible.
-        audioQuiescent.store (false, std::memory_order_seq_cst);
-        auto* active = activeModel.load (std::memory_order_seq_cst);
-        if (active == nullptr)
+        // Protect the active model with a hazard pointer. Validate after publishing
+        // the hazard so control-thread reclamation cannot free a model loaded just
+        // before it was replaced. No lock, wait, or allocation enters the callback.
+        InferenceModel* active = nullptr;
+        do
         {
-            audioQuiescent.store (true, std::memory_order_seq_cst);
-            return x;
+            active = activeModel.load (std::memory_order_seq_cst);
+            audioModelHazard.store (active, std::memory_order_seq_cst);
         }
-        struct QuiescentGuard
+        while (active != activeModel.load (std::memory_order_seq_cst));
+
+        if (active == nullptr)
+            return x;
+        struct HazardGuard
         {
-            std::atomic<bool>& state;
-            int exceptionsOnEntry = std::uncaught_exceptions();
-            ~QuiescentGuard()
-            {
-                if (std::uncaught_exceptions() > exceptionsOnEntry)
-                    state.store (true, std::memory_order_seq_cst);
-            }
-        } quiescentGuard { audioQuiescent };
+            std::atomic<InferenceModel*>& hazard;
+            ~HazardGuard() { hazard.store (nullptr, std::memory_order_seq_cst); }
+        } hazardGuard { audioModelHazard };
 
         // The rates, latched here rather than written into the bridge by the
         // thread that knows them: see `setSampleRates`. Checked per sample because
@@ -805,8 +819,6 @@ struct NeuralStage
 
         const auto output = converted.dry
                           + (converted.wet - converted.dry) * juce::jlimit (0.0f, 1.0f, amount);
-        audioQuiescent.store (true, std::memory_order_seq_cst);
-        quiescentGuard.exceptionsOnEntry = std::uncaught_exceptions();
         return output;
 #else
         juce::ignoreUnused (amount);

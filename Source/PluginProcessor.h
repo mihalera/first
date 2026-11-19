@@ -1116,6 +1116,9 @@ private:
 #if DEBUG
     void auditFactoryPresets();
 #endif
+    /** Fills every cached raw-parameter pointer from one static id-to-member
+        table; see the definition in PluginProcessor.cpp. */
+    void cacheRawParameterPointers();
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
     /** Rebuilds every time-domain constant from the current sample rate. */
@@ -1267,6 +1270,10 @@ private:
     // editor, but a parameter like every other setting so it survives in a
     // session and can be automated.
     std::atomic<float>* uiSoundsParam = nullptr;
+    // The interface-language choice. No engine stage reads it (the editor reads
+    // the parameter object itself), but the dirty-badge list tracks it, so it
+    // is cached here like every other parameter rather than left null.
+    std::atomic<float>* languageParam = nullptr;
     std::atomic<float>* tuningTonicParam = nullptr;
     std::atomic<float>* tuningModeParam = nullptr;
     // The corrector has no on/off parameter: TUNE AMOUNT is the switch, and zero

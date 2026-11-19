@@ -979,18 +979,11 @@ void FirstAudioProcessor::publishBlockTelemetry (const BlockContext& context,
         frame.bypassActive = bypassActive.load (std::memory_order_relaxed);
 
 #if J37_HAS_RWQ
-        // Non-blocking: if the editor has not drained the ring, the OLDEST frame
-        // is dropped rather than the audio thread waiting. An old meter reading is
-        // worthless, so dropping is the right answer. pop() first is not needed -
-        // ReaderWriterQueue's try_enqueue overwrites nothing and simply fails when
-        // full, so a full ring stops being a problem the moment the editor reads.
-        if (! telemetryQueue.try_enqueue (frame))
-        {
-            // Full ring: make room by discarding the oldest frame, then retry once.
-            TelemetryFrame discarded;
-            telemetryQueue.try_dequeue (discarded);
-            telemetryQueue.try_enqueue (frame);
-        }
+        // The editor is the queue's sole consumer. The audio thread is only the
+        // producer, so a full ring drops this newest frame instead of waiting or
+        // dequeuing on the producer side; the atomic telemetry mirror below still
+        // publishes the latest meter values regardless of queue capacity.
+        juce::ignoreUnused (telemetryQueue.try_enqueue (frame));
 #endif
 
         // The always-present mirror. These are the three the editor needs even when

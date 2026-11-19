@@ -59,12 +59,19 @@ inline int& resetCount()
     return count;
 }
 
+inline std::atomic<bool>& shouldLogInputs()
+{
+    static std::atomic<bool> enabled { true };
+    return enabled;
+}
+
 template <typename T>
 struct Model
 {
     T forward (const T* input)
     {
-        loggedInputs().push_back (input[0]);
+        if (shouldLogInputs().load (std::memory_order_relaxed))
+            loggedInputs().push_back (input[0]);
         return input[0];
     }
 
@@ -299,11 +306,54 @@ void testTheStageIsUnchangedAtMatchingRates()
     check (! stage.isActive(), "the replacement model can be cleared and retired after inference");
 }
 
+void testConcurrentModelHandoffs()
+{
+    std::printf ("model swaps and clears stay safe while inference runs\n");
+
+    RTNeural::shouldLogInputs().store (false, std::memory_order_relaxed);
+    NeuralStage stage;
+    std::atomic<bool> done { false };
+    std::atomic<bool> finiteOutput { true };
+
+    std::thread audioThread ([&]
+    {
+        int sample = 0;
+        while (! done.load (std::memory_order_acquire))
+        {
+            stage.adoptPendingModel();
+            const auto output = stage.process (sineSample (sample++), 1.0f);
+            if (! std::isfinite (output))
+                finiteOutput.store (false, std::memory_order_relaxed);
+        }
+        stage.adoptPendingModel();
+    });
+
+    for (int iteration = 0; iteration < 1000; ++iteration)
+    {
+        stage.setSampleRates (kModelRate, kEngineRate);
+        check (stage.buildFromNam (minimalNamFile()), "concurrent handoff model builds");
+        if ((iteration % 2) == 0)
+            stage.clear();
+        stage.reclaimRetiredModel();
+    }
+
+    done.store (true, std::memory_order_release);
+    audioThread.join();
+    stage.clear();
+    stage.adoptPendingModel();
+    stage.reclaimRetiredModel();
+
+    check (finiteOutput.load (std::memory_order_relaxed),
+           "outputs remain finite during repeated concurrent swaps and clears");
+    check (! stage.isActive(), "final clear leaves no active model");
+}
+
 int run()
 {
     testMutedStageIsUntouched();
     testModelIsDrivenAtItsOwnRate();
     testTheStageIsUnchangedAtMatchingRates();
+    testConcurrentModelHandoffs();
 
     if (failures == 0)
         std::printf ("NEURAL STAGE CHECK PASSED (0 failures)\n");

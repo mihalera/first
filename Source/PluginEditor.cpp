@@ -2004,177 +2004,143 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     //  The band that held SUBFUND TRACK and ANTI-PHASE is gone with them: the
     //  two moved up into the readouts row, and the height the band gave back is
     //  spread over the deck's gaps (see DeckBands.h).
-    // ---- THE DECK'S GRID -----------------------------------------------------
-    //  One column width, solved once from the type row - the widest row on the
-    //  deck, and the one whose six equal selectors set the rhythm - and then used
-    //  by EVERY row that can hold it. The rows used to carry their own literals
-    //  (96/96/96/150/150 in the rate row, four 108s in the switches row, 87s in
-    //  the type row), so nothing lined up across a band boundary and the panel
-    //  read as controls dropped into rows rather than as a console. A single
-    //  number shared by the rows is what makes the columns stand above each other.
-    const auto deckTypesRight = deck.getRight() - deckRightInset;
-    const auto deckRingSize = deckBandHeight (j37panel::DeckBands::types);
-    const auto deckRowLeft = deck.getX() + 18;
-    constexpr int deckRingGap = 10;
-    //  Rows 1 to 3 all end on this edge. It is the ring's corridor at the type row
-    //  and the tape ribbon's at the rate row - the two happen to be the same 70 px,
-    //  which is why one number serves them and why the deck's right edge is a
-    //  single vertical line rather than three near-misses.
-    const auto deckRowRight = deckTypesRight - deckRingSize - deckRingGap;
-    //  Three selectors share this row with the ring: INSTRUMENT, TONIC and MODE
-    //  are the three things the ring's key is made of, so they stand on the row
-    //  the ring draws on rather than two rows above it.
-    const auto deckTypeColumn = juce::jmax (60, juce::jmin (150,
-        (deckRowRight - deckRowLeft - 2 * 14) / 3));
+    // ---- THE DECK'S UNIFIED 4-COLUMN CONSOLE GRID ----------------------------
+    //  All four floors of the deck (Row 1: Readouts, Row 2: Selectors,
+    //  Row 3: Transport, Row 4: Presets) snap directly to the same four column
+    //  vertical grid lines established by Row 1. This guarantees that controls
+    //  on every floor share identical left edges, identical widths, and identical
+    //  dividers, producing an architectural console layout where no row looks
+    //  staggered or crooked relative to the rows above and below it.
+    const auto col0X = bpmReadout.getX();
+    const auto col0W = bpmReadout.getWidth();
+    const auto col1X = subfundReadout.getX();
+    const auto col1W = subfundReadout.getWidth();
+    const auto col2X = antiPhaseReadout.getX();
+    const auto col2W = antiPhaseReadout.getWidth();
+    const auto deckRight = deck.getRight() - deckRightInset;
 
-    // ---- row 2: the six type selectors, and the OSC ring --------------------
+    // ---- row 2: SELECTORS & OSC RING -----------------------------------------
+    //  INSTRUMENT lines up flush with BPM (Col 0).
+    //  TONIC lines up flush with SUBFUND TRACK (Col 1).
+    //  MODE lines up flush with ANTI-PHASE (Col 2).
+    //  OSC RING sits in Column 3 / corridor anchored on the right.
     {
-        // The model selector (renamed TAPE, its old caption read MODEL) joined
-        // the row of type selectors - the user read MODEL | SPEED | BPM as
-        // three unrelated things on one line, when the selector is a TYPE like
-        // VINYL or VALVE and belongs with them.
-        //
-        //  THE OSC RING takes the row's right end, where the user asked for it:
-        //  to the right of the TYPE boxes. It is a square as tall as the whole
-        //  band (the caption strip is part of the band, so the ring is not
-        //  squeezed into the control strip alone), which makes it the same size
-        //  as a knob and leaves the row one number to solve instead of two.
-        //
-        //  THE COLUMNS ARE SOLVED, NOT WRITTEN DOWN. 108 was the width the six
-        //  selectors wanted and the largest the row held at the old 780 px
-        //  minimum; with the ring standing in the row that number is no longer
-        //  true, and a literal here would have run the boxes straight under the
-        //  ring on the narrowest window. So 108 is a CEILING and what is left
-        //  after the ring and the minimum gaps is the column - the longest
-        //  stock values ellipsise a little sooner on a minimum-width panel and
-        //  every window above it is the row it always was.
-        // The TYPE lists that used to stand in this band moved to the MACHINE
-        // page, where the user asked for them: this row keeps the OSC ring and
-        // the band it stands in, so the deck's rows below do not shift.
-        const std::vector<DeckRowItem> row {
-            { &instrumentLabel,  deckTypeColumn, -1,  0, captionHeight, false },
-            { &instrumentBox,              0, -1, captionHeight, controlHeight, true  },
-            { &tuningTonicLabel, deckTypeColumn, -1,  0, captionHeight, false },
-            { &tuningTonicBox,             0, -1, captionHeight, controlHeight, true  },
-            { &tuningModeLabel,  deckTypeColumn, -1,  0, captionHeight, false },
-            { &tuningModeBox,              0, -1, captionHeight, controlHeight, true  }
-        };
+        const auto typesTop    = deckTop (j37panel::DeckBands::types);
+        const auto typesTopCtl = typesTop + captionHeight;
+        const auto deckRingSize = deckBandHeight (j37panel::DeckBands::types);
 
-        placeDeckRow (row, deckRowLeft, deckRowRight,
-                      deckTop (j37panel::DeckBands::types), 14, true);
+        instrumentLabel.setBounds  (col0X, typesTop, col0W, captionHeight);
+        instrumentBox.setBounds    (col0X, typesTopCtl, col0W, controlHeight);
 
-        const auto typesTop = deckTop (j37panel::DeckBands::types);
-        oscRing.setBounds (deckTypesRight - deckRingSize, typesTop,
+        tuningTonicLabel.setBounds (col1X, typesTop, col1W, captionHeight);
+        tuningTonicBox.setBounds   (col1X, typesTopCtl, col1W, controlHeight);
+
+        tuningModeLabel.setBounds  (col2X, typesTop, col2W, captionHeight);
+        tuningModeBox.setBounds    (col2X, typesTopCtl, col2W, controlHeight);
+
+        oscRing.setBounds (deckRight - deckRingSize, typesTop,
                            deckRingSize, deckRingSize);
     }
 
     // ---- row 3: TRANSPORT ---------------------------------------------------
+    //  Column 0: TRANSPORT bank (STOP | PLAY | START) fills Col 0 completely.
+    //  Column 1: live machine status readout (PLAY / AT SPEED) fills Col 1.
+    //  Column 2: SPINDOWN FX button starts at Col 2.
+    //  Right: MACHINE MODE switch anchors to the right edge.
     {
-        //  Fixed-width keys placed from both ends so STOP/PLAY/START never
-        //  collide with MODE/SPINDOWN regardless of panel width. The at-speed
-        //  hint fills the gap that is left between the two key banks.
-        constexpr int transportKeyWidth  = 62;
-        constexpr int transportSpinWidth = 74;
-        constexpr int transportModeWidth = 150;
-        constexpr int transportGap       = 10;
+        constexpr int transportModeWidth = 146;
+        constexpr int spinWidth          = 84;
+        constexpr int tBtnGap            = 4;
 
-        const auto transportRowY    = deckTop (j37panel::DeckBands::transport) + captionHeight;
-        const auto transportLeft    = deck.getX() + 18;
-        const auto transportRight   = deck.getRight() - deckRightInset;
+        const auto transportRowY    = deckTop (j37panel::DeckBands::transport);
+        const auto transportRowYCtl = transportRowY + captionHeight;
 
-        // Left bank: STOP | PLAY | START — packed from the left.
-        transportStopButton.setBounds  (transportLeft,
-                                        transportRowY, transportKeyWidth, controlHeight);
-        transportPlayButton.setBounds  (transportLeft + transportKeyWidth + transportGap,
-                                        transportRowY, transportKeyWidth, controlHeight);
-        transportStartButton.setBounds (transportLeft + 2 * (transportKeyWidth + transportGap),
-                                        transportRowY, transportKeyWidth, controlHeight);
+        // Transport keys: STOP | PLAY | START span Column 0 flush with Col 0 above
+        const auto tBtnW = (col0W - 2 * tBtnGap) / 3;
 
-        // Right bank: SPINDOWN | MODE — packed from the right.
-        // MODE is wider; SPINDOWN sits immediately to its left.
-        modeCycleButton.setBounds (transportRight - transportModeWidth,
-                                   transportRowY, transportModeWidth, controlHeight);
-        spindownButton.setBounds  (modeCycleButton.getX() - transportGap - transportSpinWidth,
-                                   transportRowY, transportSpinWidth, controlHeight);
+        transportStopButton.setBounds  (col0X, transportRowYCtl, tBtnW, controlHeight);
+        transportPlayButton.setBounds  (col0X + tBtnW + tBtnGap, transportRowYCtl, tBtnW, controlHeight);
+        transportStartButton.setBounds (col0X + 2 * (tBtnW + tBtnGap), transportRowYCtl,
+                                        col0W - 2 * (tBtnW + tBtnGap), controlHeight);
 
-        // Hint text fills the space between the two banks.
-        const auto hintLeft  = transportStartButton.getRight() + transportGap;
-        const auto hintRight = spindownButton.getX() - transportGap;
-        deckHintLabel.setBounds (hintLeft, transportRowY,
-                                 juce::jmax (0, hintRight - hintLeft), controlHeight);
-
-        // Caption labels sit one captionHeight above their bank.
-        transportLabel.setBounds (transportStopButton.getX(), transportRowY - captionHeight,
-                                  transportStartButton.getRight() - transportStopButton.getX(),
-                                  captionHeight - 2);
-        spindownLabel.setBounds  (spindownButton.getX(), transportRowY - captionHeight,
-                                  spindownButton.getWidth(), captionHeight - 2);
-
+        // TRANSPORT caption spans Column 0 flush
+        transportLabel.setBounds (col0X, transportRowY, col0W, captionHeight - 2);
         transportLabel.setFont (shrinkingFont (transportLabel.getText(), 9.0f,
                                                juce::Font::plain,
                                                static_cast<float> (transportLabel.getWidth()) - 3.0f));
-        spindownLabel.setFont  (shrinkingFont (spindownLabel.getText(), 9.0f,
+
+        // Column 1: Live transport status readout flush with Col 1
+        deckHintLabel.setBounds (col1X, transportRowYCtl, col1W, controlHeight);
+        deckHintLabel.setJustificationType (juce::Justification::centred);
+
+        // Column 2: SPINDOWN starts at Col 2
+        spindownButton.setBounds (col2X, transportRowYCtl, spinWidth, controlHeight);
+        spindownLabel.setBounds  (col2X, transportRowY, spinWidth, captionHeight - 2);
+        spindownLabel.setFont   (shrinkingFont (spindownLabel.getText(), 9.0f,
                                                juce::Font::plain,
                                                static_cast<float> (spindownLabel.getWidth()) - 3.0f));
+
+        // Right side: MACHINE MODE switch anchored to deckRight
+        modeCycleButton.setBounds (deckRight - transportModeWidth,
+                                   transportRowYCtl, transportModeWidth, controlHeight);
     }
 
-    // The preset workflow chain: walked from both ends so neither side can
-    // push the other off the panel. The left half holds the preset selectors
-    // and SAVE; the right half holds the compare/undo/A-B cluster. A fixed
-    // inter-group gap keeps the two halves visually separated at every width.
-    const auto presetRowY = deckTop (j37panel::DeckBands::preset);
+    // ---- row 4: PRESET & COMPARISON ------------------------------------------
+    //  Column 0: FACTORY preset list spans Col 0 flush with Col 0 above.
+    //  Column 1: USER preset list spans Col 1 flush with Col 1 above.
+    //  Column 2: SAVE & DEL preset actions start at Col 2.
+    //  Right: Undo/Redo & A/B Comparison cluster anchored to deckRight.
+    const auto presetRowY      = deckTop (j37panel::DeckBands::preset);
     const auto presetRowHeight = deckBandHeight (j37panel::DeckBands::preset);
-    const auto presetRowYCtl = presetRowY + captionHeight;
-    const auto presetCtlH    = presetRowHeight - captionHeight;
+    const auto presetRowYCtl   = presetRowY + captionHeight;
+    const auto presetCtlH      = presetRowHeight - captionHeight;
 
-    // Anchors: left and right insets shared with every other deck row.
-    const auto line1 = deck.getX() + 18;
-    const auto line4 = deck.getRight() - deckRightInset;
+    // Col 0: FACTORY presets
+    presetHeadingLabel.setBounds (col0X, presetRowY, col0W, captionHeight);
+    presetBox.setBounds          (col0X, presetRowYCtl, col0W, presetCtlH);
 
-    // ----- Left half (head) ------------------------------------------------
-    // FACTORY list | USER list | SAVE  — fixed widths, butted with a 6 px gap.
-    constexpr int presetBoxWidth  = 130;
-    constexpr int userPresetWidth = 100;
-    constexpr int savePresetWidth =  46;
-    constexpr int presetGap       =   6;
+    // Col 1: USER presets
+    userPresetBox.setBounds      (col1X, presetRowYCtl, col1W, presetCtlH);
 
-    presetBox.setBounds      (line1, presetRowYCtl, presetBoxWidth,  presetCtlH);
-    userPresetBox.setBounds  (line1 + presetBoxWidth  + presetGap, presetRowYCtl,
-                              userPresetWidth, presetCtlH);
-    savePresetButton.setBounds (line1 + presetBoxWidth + presetGap
-                                     + userPresetWidth + presetGap,
-                                presetRowYCtl, savePresetWidth, presetCtlH);
+    // Col 2: SAVE & DEL preset actions
+    constexpr int savePresetWidth   = 54;
+    constexpr int deletePresetWidth = 44;
+    constexpr int presetActionGap   = 6;
 
-    // ----- Right half (tail) -----------------------------------------------
-    // A (LIVE) | COPY B | A/B: B | UNDO | REDO  — anchored from the right.
-    // Widths chosen to match the visible captions; the group is tight (6 px gap).
-    constexpr int copyAWidth   =  70;
-    constexpr int copyBWidth   =  70;
-    constexpr int compareWidth =  64;
-    constexpr int undoWidth    =  54;
-    constexpr int redoWidth    =  54;
-    constexpr int tailGap      =   4;
+    savePresetButton.setBounds   (col2X, presetRowYCtl, savePresetWidth, presetCtlH);
+    deletePresetButton.setBounds (col2X + savePresetWidth + presetActionGap, presetRowYCtl,
+                                  deletePresetWidth, presetCtlH);
 
-    // Build right→left so each button's left edge is clean.
-    // Named tailCursor (not cursor) to avoid shadowing the editor's own member.
-    int tailCursor = line4;
-    copyAButton.setBounds    (tailCursor - copyAWidth,   presetRowYCtl, copyAWidth,   presetCtlH);
+    // Right: Undo/Redo pair + A/B Comparison cluster (anchored right-to-left)
+    // [ UNDO ]  [ REDO ]    [ A/B: B ]  [ COPY B ]  [ A (LIVE) ]
+    constexpr int undoWidth    = 52;
+    constexpr int redoWidth    = 52;
+    constexpr int compareWidth = 64;
+    constexpr int copyBWidth   = 68;
+    constexpr int copyAWidth   = 72;
+    constexpr int tailGap      = 4;
+    constexpr int groupSep     = 10;
+
+    int tailCursor = deckRight;
+
+    // A/B Comparison cluster
+    copyAButton.setBounds   (tailCursor - copyAWidth, presetRowYCtl, copyAWidth, presetCtlH);
     tailCursor -= copyAWidth + tailGap;
-    copyBButton.setBounds    (tailCursor - copyBWidth,   presetRowYCtl, copyBWidth,   presetCtlH);
+
+    copyBButton.setBounds   (tailCursor - copyBWidth, presetRowYCtl, copyBWidth, presetCtlH);
     tailCursor -= copyBWidth + tailGap;
-    compareButton.setBounds  (tailCursor - compareWidth, presetRowYCtl, compareWidth, presetCtlH);
-    tailCursor -= compareWidth + tailGap;
-    undoButton.setBounds     (tailCursor - undoWidth,    presetRowYCtl, undoWidth,    presetCtlH);
-    tailCursor -= undoWidth + tailGap;
-    redoButton.setBounds     (tailCursor - redoWidth,    presetRowYCtl, redoWidth,    presetCtlH);
 
-    // DELETE sits immediately to the left of the right cluster with an 8 px gap.
-    deletePresetButton.setBounds (redoButton.getX() - 8 - 44, presetRowYCtl,
-                                  44, presetCtlH);
+    compareButton.setBounds (tailCursor - compareWidth, presetRowYCtl, compareWidth, presetCtlH);
+    tailCursor -= compareWidth + groupSep;
 
-    // PRESET caption top-left; MATCHED badge top-right.
-    presetHeadingLabel.setBounds (line1, presetRowY, 46, 14);
-    compareBadgeLabel.setBounds  (line4 - copyAWidth, presetRowY, copyAWidth, 14);
+    // History pair: REDO then UNDO so left-to-right is [ UNDO ] [ REDO ]
+    redoButton.setBounds    (tailCursor - redoWidth, presetRowYCtl, redoWidth, presetCtlH);
+    tailCursor -= redoWidth + tailGap;
+
+    undoButton.setBounds    (tailCursor - undoWidth, presetRowYCtl, undoWidth, presetCtlH);
+
+    // MATCHED/EDITED badge at top-right directly above A (LIVE)
+    compareBadgeLabel.setBounds (copyAButton.getX(), presetRowY, copyAWidth, captionHeight);
 
     // The artwork gets a 20 px cell at the band's 22 px inset; the caption starts
     // six pixels after it and keeps the same 22 px inset at the right edge. The

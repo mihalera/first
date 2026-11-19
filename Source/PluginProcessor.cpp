@@ -90,7 +90,7 @@ namespace
             "character", "delta", "delay_time", "delay_feedback",
             "delay_pingpong", "delay_tone", "delay_lowcut", "delay_damp",
             "st_offset", "noise", "noise_lvl", "transport", "spindown",
-            "ui_sounds", "language", "anti_phase_guard", "osc_on", "osc_note",
+            "ui_sounds", "language", "anti_phase_guard", "osc_on",
             "tape_source", "valve_source", "pentode_source", "triode_source",
             "transistor_source", "fold_source", "glass_source",
             "transformer_source", "digital_source",
@@ -114,8 +114,16 @@ namespace
             "digital_type", "vinyl_type",
             "delay_sync", "delay_rate", "tuning_tonic", "tuning_mode", "autotune_amount",
             "autotune_speed", "autotune_range", "autotune_octave", "autotune_tolerance", "autotune_gate",
-            "comp_threshold", "comp_ratio", "comp_attack", "comp_release", "comp_makeup", "comp_mix"
-        };
+            "comp_threshold", "comp_ratio", "comp_attack", "comp_release", "comp_makeup", "comp_mix",
+            "transient_attack", "transient_sustain", "transient_mix", "neural_mix", "ir_mix",
+            "glue_on",
+            "fx_wah", "fx_anti_spike", "fx_gate", "fx_overdrive", "fx_fuzz",
+            "fx_wavefolder", "fx_bitcrusher", "fx_rate_crusher", "fx_ring_mod", "fx_octaver",
+            "fx_pitch", "fx_comb", "fx_formant", "fx_dynamic_eq", "fx_de_esser",
+            "fx_chorus", "fx_flanger", "fx_phaser", "fx_tremolo", "fx_vibrato",
+            "fx_rotary", "fx_vocoder", "fx_granular", "fx_spectral", "fx_stutter", "fx_speed",
+            "comp_upward"
+        }; 
 
         return ids;
     }
@@ -199,28 +207,15 @@ FirstAudioProcessor::FirstAudioProcessor()
 {
     startTimer (50);
 
-    inputDbParam  = parameters.getRawParameterValue ("input");
-    driveParam    = parameters.getRawParameterValue ("drive");
-    biasParam     = parameters.getRawParameterValue ("bias");
-    toneParam     = parameters.getRawParameterValue ("tone");
-    characterParam = parameters.getRawParameterValue ("character");
-    wowParam      = parameters.getRawParameterValue ("wow");
-    flutterParam  = parameters.getRawParameterValue ("flutter");
-    mixParam      = parameters.getRawParameterValue ("mix");
-    tracksParam   = parameters.getRawParameterValue ("tracks");
-    outputDbParam = parameters.getRawParameterValue ("output");
-    widthParam    = parameters.getRawParameterValue ("stereo_width");
-    tapeTypeParam  = parameters.getRawParameterValue ("tape_type");
-    speedParam     = parameters.getRawParameterValue ("speed");
-    instrumentParam = parameters.getRawParameterValue ("instrument");
-    bypassParam   = parameters.getRawParameterValue ("bypass");
-    deltaParam    = parameters.getRawParameterValue ("delta");
-    oversamplingParam = parameters.getRawParameterValue ("oversampling");
-    polarityParam  = parameters.getRawParameterValue ("polarity");
-    autoGainParam  = parameters.getRawParameterValue ("auto_gain");
-    // OSC, the note generator on the deck: the header's own switch, read by the
-    // engine once per block (to gate the oscillator) and by the panel every frame.
-    oscOnParam     = parameters.getRawParameterValue ("osc_on");
+    // Every cached raw-parameter pointer, filled by one loop through a static
+    // id-to-member table (see cacheRawParameterPointers below) instead of ~130
+    // hand-written getRawParameterValue calls. Each miss is reported in debug
+    // builds; every member stays nullptr-initialised so a miss is a visible
+    // meter read of zero, never a dereference of a bad pointer.
+    cacheRawParameterPointers();
+
+    spindownHeld.store (spindownParam != nullptr && spindownParam->load() >= 0.5f,
+                        std::memory_order_relaxed);
 
     // The module's address map, built once here from the two things it publishes.
     // It is a Surface rather than two string literals because the address is the
@@ -238,148 +233,6 @@ FirstAudioProcessor::FirstAudioProcessor()
             { "osc_note", "osc/note", 0.0f, 127.0f },
         },
         "/mibox");
-    // SUBFUND's depth parameter. Without this the pointer stayed null and the engine
-    // read depth 0 through the nullptr guard - the generator was built, fed and
-    // scaled correctly but multiplied by zero forever, so no subharmonic ever left it
-    // no matter where the control was set (the "SUBFUND does nothing" report).
-    subFundamentalParam = parameters.getRawParameterValue ("subfund");
-    delayTimeParam = parameters.getRawParameterValue ("delay_time");
-    delayFeedbackParam = parameters.getRawParameterValue ("delay_feedback");
-    delayPingPongParam = parameters.getRawParameterValue ("delay_pingpong");
-    delayToneParam = parameters.getRawParameterValue ("delay_tone");
-    delayLowCutParam = parameters.getRawParameterValue ("delay_lowcut");
-    delayDampParam = parameters.getRawParameterValue ("delay_damp");
-    stOffsetParam = parameters.getRawParameterValue ("st_offset");
-    noiseParam = parameters.getRawParameterValue ("noise");
-    noiseLvlParam = parameters.getRawParameterValue ("noise_lvl");
-    transportParam = parameters.getRawParameterValue ("transport");
-    spindownParam = parameters.getRawParameterValue ("spindown");
-    spindownHeld.store (spindownParam != nullptr && spindownParam->load() >= 0.5f,
-                        std::memory_order_relaxed);
-    uiSoundsParam = parameters.getRawParameterValue ("ui_sounds");
-    antiPhaseGuardParam = parameters.getRawParameterValue ("anti_phase_guard");
-    tuningTonicParam = parameters.getRawParameterValue ("tuning_tonic");
-    tuningModeParam = parameters.getRawParameterValue ("tuning_mode");
-    autoTuneAmountParam = parameters.getRawParameterValue ("autotune_amount");
-    autoTuneSpeedParam = parameters.getRawParameterValue ("autotune_speed");
-    autoTuneRangeParam = parameters.getRawParameterValue ("autotune_range");
-    autoTuneOctaveParam = parameters.getRawParameterValue ("autotune_octave");
-    autoTuneToleranceParam = parameters.getRawParameterValue ("autotune_tolerance");
-    autoTuneGateParam = parameters.getRawParameterValue ("autotune_gate");
-    compressorThresholdParam = parameters.getRawParameterValue ("comp_threshold");
-    compressorRatioParam = parameters.getRawParameterValue ("comp_ratio");
-    compressorAttackParam = parameters.getRawParameterValue ("comp_attack");
-    compressorReleaseParam = parameters.getRawParameterValue ("comp_release");
-    compressorMakeupParam = parameters.getRawParameterValue ("comp_makeup");
-    compressorMixParam = parameters.getRawParameterValue ("comp_mix");
-    tapeSourceParam = parameters.getRawParameterValue ("tape_source");
-    valveSourceParam = parameters.getRawParameterValue ("valve_source");
-    pentodeSourceParam = parameters.getRawParameterValue ("pentode_source");
-    triodeSourceParam = parameters.getRawParameterValue ("triode_source");
-    transistorSourceParam = parameters.getRawParameterValue ("transistor_source");
-    foldSourceParam = parameters.getRawParameterValue ("fold_source");
-    glassSourceParam = parameters.getRawParameterValue ("glass_source");
-    transformerSourceParam = parameters.getRawParameterValue ("transformer_source");
-    digitalSourceParam = parameters.getRawParameterValue ("digital_source");
-    sagParam = parameters.getRawParameterValue ("sag");
-    presenceParam = parameters.getRawParameterValue ("presence");
-    cabinetParam = parameters.getRawParameterValue ("cabinet");
-    ampBiasParam = parameters.getRawParameterValue ("amp_bias");
-    preampParam = parameters.getRawParameterValue ("preamp");
-    diParam = parameters.getRawParameterValue ("di");
-    diLoadParam = parameters.getRawParameterValue ("di_load");
-    diTransformerParam = parameters.getRawParameterValue ("di_transformer");
-    diPadParam = parameters.getRawParameterValue ("di_pad");
-    fluxParam = parameters.getRawParameterValue ("flux");
-    wearParam = parameters.getRawParameterValue ("wear");
-    mechanicsParam = parameters.getRawParameterValue ("mechanics");
-    reverbParam = parameters.getRawParameterValue ("reverb");
-    reverbSizeParam = parameters.getRawParameterValue ("reverb_size");
-    reverbPreDelayParam = parameters.getRawParameterValue ("reverb_predelay");
-    reverbDampParam = parameters.getRawParameterValue ("reverb_damp");
-    reverbWidthParam = parameters.getRawParameterValue ("reverb_width");
-    reverbLowCutParam = parameters.getRawParameterValue ("reverb_lowcut");
-    delayTypeParam = parameters.getRawParameterValue ("delay_type");
-    distortionParam = parameters.getRawParameterValue ("distortion");
-    modernModeParam = parameters.getRawParameterValue ("modern_mode");
-    lofiModeParam = parameters.getRawParameterValue ("lofi_mode");
-    vinylParam = parameters.getRawParameterValue ("vinyl");
-    vinylCrackleParam = parameters.getRawParameterValue ("vinyl_crackle");
-    vinylRumbleParam = parameters.getRawParameterValue ("vinyl_rumble");
-    vinylSpeedParam = parameters.getRawParameterValue ("vinyl_speed");
-    vinylDustParam = parameters.getRawParameterValue ("vinyl_dust");
-    vinylScratchParam = parameters.getRawParameterValue ("vinyl_scratch");
-    vinylWarpParam = parameters.getRawParameterValue ("vinyl_warp");
-    vinylElectricalParam = parameters.getRawParameterValue ("vinyl_electrical");
-    vinylClicksParam = parameters.getRawParameterValue ("vinyl_clicks");
-    vinylGenerationParam = parameters.getRawParameterValue ("vinyl_generation");
-    vinylTurntableParam = parameters.getRawParameterValue ("vinyl_turntable");
-    vinylCartridgeParam = parameters.getRawParameterValue ("vinyl_cartridge");
-    inputEqLowParam = parameters.getRawParameterValue ("in_low");
-    inputEqMidParam = parameters.getRawParameterValue ("in_mid");
-    inputEqHighParam = parameters.getRawParameterValue ("in_high");
-    outputEqLowParam = parameters.getRawParameterValue ("out_low");
-    outputEqMidParam = parameters.getRawParameterValue ("out_mid");
-    outputEqHighParam = parameters.getRawParameterValue ("out_high");
-    inputEqHpFreqParam = parameters.getRawParameterValue ("in_hp_freq");
-    inputEqLpFreqParam = parameters.getRawParameterValue ("in_lp_freq");
-    inputEqHpOnParam = parameters.getRawParameterValue ("in_hp_on");
-    inputEqLpOnParam = parameters.getRawParameterValue ("in_lp_on");
-    inputEqOrderParam = parameters.getRawParameterValue ("in_eq_order");
-    inputEqQParam = parameters.getRawParameterValue ("in_eq_q");
-    outputEqHpFreqParam = parameters.getRawParameterValue ("out_hp_freq");
-    outputEqLpFreqParam = parameters.getRawParameterValue ("out_lp_freq");
-    outputEqHpOnParam = parameters.getRawParameterValue ("out_hp_on");
-    outputEqLpOnParam = parameters.getRawParameterValue ("out_lp_on");
-    outputEqOrderParam = parameters.getRawParameterValue ("out_eq_order");
-    outputEqQParam = parameters.getRawParameterValue ("out_eq_q");
-    valveTypeParam = parameters.getRawParameterValue ("valve_type");
-    pentodeTypeParam = parameters.getRawParameterValue ("pentode_type");
-    triodeTypeParam = parameters.getRawParameterValue ("triode_type");
-    transistorTypeParam = parameters.getRawParameterValue ("transistor_type");
-    transformerTypeParam = parameters.getRawParameterValue ("transformer_type");
-    digitalTypeParam = parameters.getRawParameterValue ("digital_type");
-    vinylTypeParam = parameters.getRawParameterValue ("vinyl_type");
-    stLinkParam = parameters.getRawParameterValue ("st_link");
-    delaySyncParam = parameters.getRawParameterValue ("delay_sync");
-    delayRateParam = parameters.getRawParameterValue ("delay_rate");
-    transientAttackParam = parameters.getRawParameterValue ("transient_attack");
-    transientSustainParam = parameters.getRawParameterValue ("transient_sustain");
-    transientMixParam = parameters.getRawParameterValue ("transient_mix");
-    neuralMixParam = parameters.getRawParameterValue ("neural_mix");
-    irMixParam = parameters.getRawParameterValue ("ir_mix");
-
-    // The creative effects rack. One handle per stage, fetched by name here and
-    // read once per block into fxTargets; a misspelt id returns nullptr and the
-    // stage stays out of the path rather than taking the plugin down.
-    fxWahParam = parameters.getRawParameterValue ("fx_wah");
-    fxAntiSpikeParam = parameters.getRawParameterValue ("fx_anti_spike");
-    fxGateParam = parameters.getRawParameterValue ("fx_gate");
-    fxOverdriveParam = parameters.getRawParameterValue ("fx_overdrive");
-    fxFuzzParam = parameters.getRawParameterValue ("fx_fuzz");
-    fxWavefolderParam = parameters.getRawParameterValue ("fx_wavefolder");
-    fxBitcrusherParam = parameters.getRawParameterValue ("fx_bitcrusher");
-    fxRateCrusherParam = parameters.getRawParameterValue ("fx_rate_crusher");
-    fxRingModParam = parameters.getRawParameterValue ("fx_ring_mod");
-    fxOctaverParam = parameters.getRawParameterValue ("fx_octaver");
-    fxPitchParam = parameters.getRawParameterValue ("fx_pitch");
-    fxCombParam = parameters.getRawParameterValue ("fx_comb");
-    fxFormantParam = parameters.getRawParameterValue ("fx_formant");
-    fxDynamicEqParam = parameters.getRawParameterValue ("fx_dynamic_eq");
-    fxDeEsserParam = parameters.getRawParameterValue ("fx_de_esser");
-    fxChorusParam = parameters.getRawParameterValue ("fx_chorus");
-    fxFlangerParam = parameters.getRawParameterValue ("fx_flanger");
-    fxPhaserParam = parameters.getRawParameterValue ("fx_phaser");
-    fxTremoloParam = parameters.getRawParameterValue ("fx_tremolo");
-    fxVibratoParam = parameters.getRawParameterValue ("fx_vibrato");
-    fxRotaryParam = parameters.getRawParameterValue ("fx_rotary");
-    fxVocoderParam = parameters.getRawParameterValue ("fx_vocoder");
-    fxGranularParam = parameters.getRawParameterValue ("fx_granular");
-    fxSpectralParam = parameters.getRawParameterValue ("fx_spectral");
-    fxStutterParam = parameters.getRawParameterValue ("fx_stutter");
-    fxSpeedParam = parameters.getRawParameterValue ("fx_speed");
-    glueOnParam = parameters.getRawParameterValue ("glue_on");
-    compUpwardParam = parameters.getRawParameterValue ("comp_upward");
 
     // Four fixed oversampling engines (off / 2x / 4x / 8x). Each owns its own filter
     // state, so switching between them is glitch-free even mid-render, and the
@@ -415,6 +268,186 @@ FirstAudioProcessor::FirstAudioProcessor()
 #if DEBUG
     auditFactoryPresets();
 #endif
+}
+
+// -----------------------------------------------------------------------------
+//  cacheRawParameterPointers: one loop over a static id-to-member table.
+//
+//  Every cached `*Param` pointer in the header used to be assigned by its own
+//  hand-written `parameters.getRawParameterValue ("...")` line in the
+//  constructor - ~130 of them, each an opportunity to misspell an id and cache
+//  a null that only a dead control would ever reveal. The table below is the
+//  one place the id and the member meet; the loop assigns them all, and a miss
+//  is named in debug builds.
+// -----------------------------------------------------------------------------
+void FirstAudioProcessor::cacheRawParameterPointers()
+{
+    struct CacheEntry { const char* id; std::atomic<float>* FirstAudioProcessor::* member; };
+
+    static const CacheEntry entries[] =
+    {
+        { "input", &FirstAudioProcessor::inputDbParam },
+        { "output", &FirstAudioProcessor::outputDbParam },
+        { "bypass", &FirstAudioProcessor::bypassParam },
+        { "polarity", &FirstAudioProcessor::polarityParam },
+        { "auto_gain", &FirstAudioProcessor::autoGainParam },
+        { "subfund", &FirstAudioProcessor::subFundamentalParam },
+        { "stereo_width", &FirstAudioProcessor::widthParam },
+        { "tape_type", &FirstAudioProcessor::tapeTypeParam },
+        { "speed", &FirstAudioProcessor::speedParam },
+        { "instrument", &FirstAudioProcessor::instrumentParam },
+        { "drive", &FirstAudioProcessor::driveParam },
+        { "bias", &FirstAudioProcessor::biasParam },
+        { "oversampling", &FirstAudioProcessor::oversamplingParam },
+        { "tone", &FirstAudioProcessor::toneParam },
+        { "wow", &FirstAudioProcessor::wowParam },
+        { "flutter", &FirstAudioProcessor::flutterParam },
+        { "mix", &FirstAudioProcessor::mixParam },
+        { "tracks", &FirstAudioProcessor::tracksParam },
+        { "character", &FirstAudioProcessor::characterParam },
+        { "delta", &FirstAudioProcessor::deltaParam },
+        { "delay_time", &FirstAudioProcessor::delayTimeParam },
+        { "delay_feedback", &FirstAudioProcessor::delayFeedbackParam },
+        { "delay_pingpong", &FirstAudioProcessor::delayPingPongParam },
+        { "delay_tone", &FirstAudioProcessor::delayToneParam },
+        { "delay_lowcut", &FirstAudioProcessor::delayLowCutParam },
+        { "delay_damp", &FirstAudioProcessor::delayDampParam },
+        { "st_offset", &FirstAudioProcessor::stOffsetParam },
+        { "noise", &FirstAudioProcessor::noiseParam },
+        { "noise_lvl", &FirstAudioProcessor::noiseLvlParam },
+        { "transport", &FirstAudioProcessor::transportParam },
+        { "spindown", &FirstAudioProcessor::spindownParam },
+        { "ui_sounds", &FirstAudioProcessor::uiSoundsParam },
+        { "language", &FirstAudioProcessor::languageParam },
+        { "anti_phase_guard", &FirstAudioProcessor::antiPhaseGuardParam },
+        { "osc_on", &FirstAudioProcessor::oscOnParam },
+        { "tape_source", &FirstAudioProcessor::tapeSourceParam },
+        { "valve_source", &FirstAudioProcessor::valveSourceParam },
+        { "pentode_source", &FirstAudioProcessor::pentodeSourceParam },
+        { "triode_source", &FirstAudioProcessor::triodeSourceParam },
+        { "transistor_source", &FirstAudioProcessor::transistorSourceParam },
+        { "fold_source", &FirstAudioProcessor::foldSourceParam },
+        { "glass_source", &FirstAudioProcessor::glassSourceParam },
+        { "transformer_source", &FirstAudioProcessor::transformerSourceParam },
+        { "digital_source", &FirstAudioProcessor::digitalSourceParam },
+        { "sag", &FirstAudioProcessor::sagParam },
+        { "presence", &FirstAudioProcessor::presenceParam },
+        { "cabinet", &FirstAudioProcessor::cabinetParam },
+        { "amp_bias", &FirstAudioProcessor::ampBiasParam },
+        { "preamp", &FirstAudioProcessor::preampParam },
+        { "flux", &FirstAudioProcessor::fluxParam },
+        { "wear", &FirstAudioProcessor::wearParam },
+        { "mechanics", &FirstAudioProcessor::mechanicsParam },
+        { "reverb", &FirstAudioProcessor::reverbParam },
+        { "reverb_size", &FirstAudioProcessor::reverbSizeParam },
+        { "reverb_predelay", &FirstAudioProcessor::reverbPreDelayParam },
+        { "reverb_damp", &FirstAudioProcessor::reverbDampParam },
+        { "reverb_width", &FirstAudioProcessor::reverbWidthParam },
+        { "reverb_lowcut", &FirstAudioProcessor::reverbLowCutParam },
+        { "di", &FirstAudioProcessor::diParam },
+        { "di_load", &FirstAudioProcessor::diLoadParam },
+        { "di_transformer", &FirstAudioProcessor::diTransformerParam },
+        { "di_pad", &FirstAudioProcessor::diPadParam },
+        { "delay_type", &FirstAudioProcessor::delayTypeParam },
+        { "distortion", &FirstAudioProcessor::distortionParam },
+        { "modern_mode", &FirstAudioProcessor::modernModeParam },
+        { "lofi_mode", &FirstAudioProcessor::lofiModeParam },
+        { "vinyl", &FirstAudioProcessor::vinylParam },
+        { "vinyl_crackle", &FirstAudioProcessor::vinylCrackleParam },
+        { "vinyl_rumble", &FirstAudioProcessor::vinylRumbleParam },
+        { "vinyl_speed", &FirstAudioProcessor::vinylSpeedParam },
+        { "vinyl_dust", &FirstAudioProcessor::vinylDustParam },
+        { "vinyl_scratch", &FirstAudioProcessor::vinylScratchParam },
+        { "vinyl_warp", &FirstAudioProcessor::vinylWarpParam },
+        { "vinyl_electrical", &FirstAudioProcessor::vinylElectricalParam },
+        { "vinyl_clicks", &FirstAudioProcessor::vinylClicksParam },
+        { "vinyl_generation", &FirstAudioProcessor::vinylGenerationParam },
+        { "vinyl_turntable", &FirstAudioProcessor::vinylTurntableParam },
+        { "vinyl_cartridge", &FirstAudioProcessor::vinylCartridgeParam },
+        { "in_low", &FirstAudioProcessor::inputEqLowParam },
+        { "in_mid", &FirstAudioProcessor::inputEqMidParam },
+        { "in_high", &FirstAudioProcessor::inputEqHighParam },
+        { "in_hp_freq", &FirstAudioProcessor::inputEqHpFreqParam },
+        { "in_lp_freq", &FirstAudioProcessor::inputEqLpFreqParam },
+        { "in_eq_order", &FirstAudioProcessor::inputEqOrderParam },
+        { "in_eq_q", &FirstAudioProcessor::inputEqQParam },
+        { "in_hp_on", &FirstAudioProcessor::inputEqHpOnParam },
+        { "in_lp_on", &FirstAudioProcessor::inputEqLpOnParam },
+        { "out_low", &FirstAudioProcessor::outputEqLowParam },
+        { "out_mid", &FirstAudioProcessor::outputEqMidParam },
+        { "out_high", &FirstAudioProcessor::outputEqHighParam },
+        { "out_hp_freq", &FirstAudioProcessor::outputEqHpFreqParam },
+        { "out_lp_freq", &FirstAudioProcessor::outputEqLpFreqParam },
+        { "out_eq_order", &FirstAudioProcessor::outputEqOrderParam },
+        { "out_eq_q", &FirstAudioProcessor::outputEqQParam },
+        { "out_hp_on", &FirstAudioProcessor::outputEqHpOnParam },
+        { "out_lp_on", &FirstAudioProcessor::outputEqLpOnParam },
+        { "st_link", &FirstAudioProcessor::stLinkParam },
+        { "valve_type", &FirstAudioProcessor::valveTypeParam },
+        { "pentode_type", &FirstAudioProcessor::pentodeTypeParam },
+        { "triode_type", &FirstAudioProcessor::triodeTypeParam },
+        { "transistor_type", &FirstAudioProcessor::transistorTypeParam },
+        { "transformer_type", &FirstAudioProcessor::transformerTypeParam },
+        { "digital_type", &FirstAudioProcessor::digitalTypeParam },
+        { "vinyl_type", &FirstAudioProcessor::vinylTypeParam },
+        { "delay_sync", &FirstAudioProcessor::delaySyncParam },
+        { "delay_rate", &FirstAudioProcessor::delayRateParam },
+        { "tuning_tonic", &FirstAudioProcessor::tuningTonicParam },
+        { "tuning_mode", &FirstAudioProcessor::tuningModeParam },
+        { "autotune_amount", &FirstAudioProcessor::autoTuneAmountParam },
+        { "autotune_speed", &FirstAudioProcessor::autoTuneSpeedParam },
+        { "autotune_range", &FirstAudioProcessor::autoTuneRangeParam },
+        { "autotune_octave", &FirstAudioProcessor::autoTuneOctaveParam },
+        { "autotune_tolerance", &FirstAudioProcessor::autoTuneToleranceParam },
+        { "autotune_gate", &FirstAudioProcessor::autoTuneGateParam },
+        { "comp_threshold", &FirstAudioProcessor::compressorThresholdParam },
+        { "comp_ratio", &FirstAudioProcessor::compressorRatioParam },
+        { "comp_attack", &FirstAudioProcessor::compressorAttackParam },
+        { "comp_release", &FirstAudioProcessor::compressorReleaseParam },
+        { "comp_makeup", &FirstAudioProcessor::compressorMakeupParam },
+        { "comp_mix", &FirstAudioProcessor::compressorMixParam },
+        { "transient_attack", &FirstAudioProcessor::transientAttackParam },
+        { "transient_sustain", &FirstAudioProcessor::transientSustainParam },
+        { "transient_mix", &FirstAudioProcessor::transientMixParam },
+        { "neural_mix", &FirstAudioProcessor::neuralMixParam },
+        { "ir_mix", &FirstAudioProcessor::irMixParam },
+        { "glue_on", &FirstAudioProcessor::glueOnParam },
+        { "fx_wah", &FirstAudioProcessor::fxWahParam },
+        { "fx_anti_spike", &FirstAudioProcessor::fxAntiSpikeParam },
+        { "fx_gate", &FirstAudioProcessor::fxGateParam },
+        { "fx_overdrive", &FirstAudioProcessor::fxOverdriveParam },
+        { "fx_fuzz", &FirstAudioProcessor::fxFuzzParam },
+        { "fx_wavefolder", &FirstAudioProcessor::fxWavefolderParam },
+        { "fx_bitcrusher", &FirstAudioProcessor::fxBitcrusherParam },
+        { "fx_rate_crusher", &FirstAudioProcessor::fxRateCrusherParam },
+        { "fx_ring_mod", &FirstAudioProcessor::fxRingModParam },
+        { "fx_octaver", &FirstAudioProcessor::fxOctaverParam },
+        { "fx_pitch", &FirstAudioProcessor::fxPitchParam },
+        { "fx_comb", &FirstAudioProcessor::fxCombParam },
+        { "fx_formant", &FirstAudioProcessor::fxFormantParam },
+        { "fx_dynamic_eq", &FirstAudioProcessor::fxDynamicEqParam },
+        { "fx_de_esser", &FirstAudioProcessor::fxDeEsserParam },
+        { "fx_chorus", &FirstAudioProcessor::fxChorusParam },
+        { "fx_flanger", &FirstAudioProcessor::fxFlangerParam },
+        { "fx_phaser", &FirstAudioProcessor::fxPhaserParam },
+        { "fx_tremolo", &FirstAudioProcessor::fxTremoloParam },
+        { "fx_vibrato", &FirstAudioProcessor::fxVibratoParam },
+        { "fx_rotary", &FirstAudioProcessor::fxRotaryParam },
+        { "fx_vocoder", &FirstAudioProcessor::fxVocoderParam },
+        { "fx_granular", &FirstAudioProcessor::fxGranularParam },
+        { "fx_spectral", &FirstAudioProcessor::fxSpectralParam },
+        { "fx_stutter", &FirstAudioProcessor::fxStutterParam },
+        { "fx_speed", &FirstAudioProcessor::fxSpeedParam },
+        { "comp_upward", &FirstAudioProcessor::compUpwardParam },
+    };
+
+    for (const auto& entry : entries)
+    {
+        auto* value = parameters.getRawParameterValue (entry.id);
+        this->*entry.member = value;
+
+        jassert (value != nullptr); // cache table names a parameter that is not registered
+    }
 }
 
 #if DEBUG
@@ -480,6 +513,19 @@ void FirstAudioProcessor::auditFactoryPresets()
         for (const auto* parameter : getParameters())
             if (const auto* ranged = dynamic_cast<const juce::RangedAudioParameter*> (parameter))
                 registered.insert (ranged->paramID);
+
+        // Keep the dirty-badge cache complete as well as valid: every registered
+        // parameter must be tracked, and every tracked id must resolve in the host
+        // parameter set. This debug check catches omissions when new controls land.
+        std::set<juce::String> dirtyTracked;
+        for (const auto* id : parametersTrackedForDirtyBadge())
+        {
+            dirtyTracked.insert (id);
+            jassert (registered.count (id) != 0);
+        }
+        jassert (dirtyTracked.size() == parametersTrackedForDirtyBadge().size());
+        for (const auto& id : registered)
+            jassert (dirtyTracked.count (id) != 0);
 
         // On the list itself: an empty one would make every check below pass for
         //  the wrong reason, which is the one way a check written this way fails
