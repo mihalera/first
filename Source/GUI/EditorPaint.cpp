@@ -284,29 +284,6 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     inlineLookAndFeel.setPanelBounds(*this);
     drawPanel(g, layout.header, palette, 5.0f);
     drawPanel(g, layout.deck, palette, 5.0f);
-
-    //  The deck's sections, ruled off. One hairline above the type row and one above
-    //  the transport row is the cheapest structure a console can have, and it is
-    //  what the deck was missing: without them the five bands read as one column of
-    //  controls that happen to be stacked, which is the "everything put in at
-    //  random" the user described. The rules sit in the band gap, so they cross no
-    //  control and need no pixel of the solved rhythm.
-    if (!j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
-    {
-        //  The same solve placeDeck() places the rows from, so a rule can never sit
-        //  on a control: it is read from the band's own top, in the gap above it.
-        const auto bands = j37panel::DeckBands::solve (layout.deck.getHeight());
-
-        for (const auto band : { j37panel::DeckBands::types, j37panel::DeckBands::transport })
-        {
-            const auto bandY = static_cast<float> (layout.deck.getY()
-                + bands.top[static_cast<std::size_t> (band)]);
-            g.setColour (palette.border.withAlpha (0.28f));
-            g.drawHorizontalLine (juce::roundToInt (bandY - 1.0f),
-                                  static_cast<float> (layout.deck.getX() + 14),
-                                  static_cast<float> (layout.deck.getRight() - 14));
-        }
-    }
     drawPanel(g, layout.controls, palette, 5.0f);
     drawPanel(g, layout.meters, palette, 5.0f);
 

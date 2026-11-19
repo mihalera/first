@@ -2082,27 +2082,31 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         constexpr int transportModeWidth = 150;
         constexpr int transportGap = 14;
 
-        // The keys start where every other row's control starts: under the
-        // caption band the solve just gave this row.
+        // 4 vertical lines: every key starts on one of them, so the row reads
+        // as a grid instead of a drifting chain.
         const auto transportRowY = deckTop (j37panel::DeckBands::transport) + captionHeight;
         const auto transportRight = deck.getRight() - deckRightInset;
+        const auto line1 = deck.getX() + 18;
+        const auto line4 = deck.getRight() - deckRightInset;
+        const auto span = transportRight - line1;
+        const auto line2 = line1 + span / 4;
+        const auto line3 = line1 + span * 2 / 4;
 
-        auto keyCursor = deck.getX() + 18;
-        const auto placeKey = [&] (juce::Component& key, int width)
-        {
-            key.setBounds (keyCursor, transportRowY, width, controlHeight);
-            keyCursor += width + transportGap;
-        };
-
-        placeKey (transportStopButton,  transportKeyWidth);
-        placeKey (transportPlayButton,  transportKeyWidth);
-        placeKey (transportStartButton, transportKeyWidth);
-        placeKey (spindownButton,       transportSpinWidth);
+        transportStopButton.setBounds  (line1, transportRowY, transportKeyWidth, controlHeight);
+        transportPlayButton.setBounds  (line2, transportRowY, transportKeyWidth, controlHeight);
+        transportStartButton.setBounds (line3, transportRowY, transportKeyWidth, controlHeight);
+        spindownButton.setBounds       (line4 - transportSpinWidth, transportRowY, transportSpinWidth, controlHeight);
 
         const auto modeLeft = transportRight - transportModeWidth;
-        deckHintLabel.setBounds (keyCursor, transportRowY,
-                                 juce::jmax (0, modeLeft - transportGap - keyCursor), controlHeight);
+        deckHintLabel.setBounds (line3 + transportKeyWidth + transportGap, transportRowY,
+                                 juce::jmax (0, modeLeft - transportGap - (line3 + transportKeyWidth)), controlHeight);
         modeCycleButton.setBounds (modeLeft, transportRowY, transportModeWidth, controlHeight);
+
+        transportLabel.setBounds (transportStopButton.getX(), transportRowY - captionHeight,
+                                  transportStartButton.getRight() - transportStopButton.getX(),
+                                  captionHeight - 2);
+        spindownLabel.setBounds (spindownButton.getX(), transportRowY - captionHeight,
+                                 spindownButton.getWidth(), captionHeight - 2);
 
         // The two transport captions sit ABOVE the key bank rather than beside
         // their own key, so they cannot be a column of the row - they are placed
@@ -2144,26 +2148,16 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     // window would only pull its two halves further apart.
     const auto presetRowY = deckTop (j37panel::DeckBands::preset);
     const auto presetRowHeight = deckBandHeight (j37panel::DeckBands::preset);
-    constexpr int presetRowGap = 5;
 
-    // presetRowHeight IS captured now. It used to be a literal 32 with a constant
-    // initialiser, which a lambda can read without capturing; it is the solved
-    // band height, so the lambdas have to hold it like any other local.
-    const auto placeForward = [presetRowY, presetRowHeight]
-                                  (int& edge, juce::Component& component, int width)
-    {
-        component.setBounds (edge, presetRowY, width, presetRowHeight);
-        edge += width + presetRowGap;
-    };
+    // 4 vertical lines: every preset element starts on one of them.
+    const auto line1 = deck.getX() + 18;
+    const auto line4 = deck.getRight() - deckRightInset;
+    const auto span = line4 - line1;
+    const auto line2 = line1 + span / 4;
+    const auto line3 = line1 + span * 2 / 4;
 
-    const auto placeBackward = [presetRowY, presetRowHeight]
-                                   (int& edge, juce::Component& component, int width)
-    {
-        component.setBounds (edge - width, presetRowY, width, presetRowHeight);
-        edge -= width + presetRowGap;
-    };
-
-    presetHeadingLabel.setBounds (deck.getX() + 18, presetRowY + 9, 46, 16);
+    // PRESET caption moves to the bottom of the band, under its own column.
+    presetHeadingLabel.setBounds (line1, presetRowY + presetRowHeight - 14, 46, 14);
 
     {
         // Head, from the left: the factory list, the user list, save, delete.
@@ -2185,32 +2179,20 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         //  are zero by construction, so the tight layout is untouched.
         constexpr int presetBoxWidth  = 120;
         constexpr int userPresetWidth =  94;
-        constexpr int headWidths = presetBoxWidth + userPresetWidth + 40 + 38;
-        constexpr int tailWidths = 54 + 44 + 44 + 54 + 64 + 64;
-        const auto chainSpan = (deck.getRight() - 14)
-                                   - (deck.getX() + 66);
-        const auto chainVoid = juce::jmax (0, chainSpan - (headWidths + tailWidths
-                                                              + 9 * presetRowGap));
-        const auto presetGrowth = juce::jmin (chainVoid * 3 / 5, 160);
-        const auto userGrowth   = juce::jmin (chainVoid - presetGrowth, 120);
-
-        int headEdge = deck.getX() + 66;
-        placeForward (headEdge, presetBox,          presetBoxWidth  + presetGrowth);
-        placeForward (headEdge, userPresetBox,      userPresetWidth + userGrowth);
-        placeForward (headEdge, savePresetButton,  40);
-        placeForward (headEdge, deletePresetButton, 38);
+        presetBox.setBounds       (line1, presetRowY, presetBoxWidth, presetRowHeight);
+        userPresetBox.setBounds   (line2, presetRowY, userPresetWidth, presetRowHeight);
+        savePresetButton.setBounds(line3, presetRowY, 40, presetRowHeight);
+        deletePresetButton.setBounds(line4 - 38, presetRowY, 38, presetRowHeight);
     }
 
-    {
-        // Tail, from the right: the badge, REDO, UNDO, COMPARE, A, B.
-        int tailEdge = deck.getRight() - 14;
-        placeBackward (tailEdge, compareBadgeLabel, 54);
-        placeBackward (tailEdge, redoButton,        44);
-        placeBackward (tailEdge, undoButton,        44);
-        placeBackward (tailEdge, compareButton,     54);
-        placeBackward (tailEdge, copyBButton,       64);
-        placeBackward (tailEdge, copyAButton,       64);
-    }
+    // Tail, from the right on the 4 vertical lines. MATCHED badge sits under
+    // its own column at the bottom of the band.
+    copyAButton.setBounds (line4 - 64, presetRowY, 64, presetRowHeight);
+    copyBButton.setBounds (line4 - 128, presetRowY, 64, presetRowHeight);
+    compareButton.setBounds (line4 - 182, presetRowY, 54, presetRowHeight);
+    undoButton.setBounds    (line4 - 226, presetRowY, 44, presetRowHeight);
+    redoButton.setBounds    (line4 - 270, presetRowY, 44, presetRowHeight);
+    compareBadgeLabel.setBounds (line4 - 54, presetRowY + presetRowHeight - 14, 54, 14);
 
     // The artwork gets a 20 px cell at the band's 22 px inset; the caption starts
     // six pixels after it and keeps the same 22 px inset at the right edge. The
