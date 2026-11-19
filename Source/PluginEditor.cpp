@@ -914,6 +914,9 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // must not travel in a session.
     themeChoice = j37panel::rememberedThemeChoice();
     j37panel::userPalette = j37panel::rememberedUserPalette();
+    // The chassis surface is remembered with it, and for the same reason: it is a
+    // fact about the desk rather than about the mix, so it outlives the editor.
+    j37panel::assets::activeBackground = j37panel::rememberedBackground();
     // A size preference has to exist before setUpWindowAndSize() reads it, and it
     // is a machine preference for the same reason the theme is: a host rebuilds the
     // editor, but the eyes in front of the screen do not change with the session.
@@ -2067,21 +2070,39 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
 
     // ---- row 3: TRANSPORT ---------------------------------------------------
     {
-        const std::vector<DeckRowItem> row {
-            { &transportStopButton,   62,  4,  0, controlHeight, false },
-            { &transportPlayButton,   62,  4,  0, controlHeight, false },
-            { &transportStartButton,  62,  4,  0, controlHeight, false },
-            { &spindownButton,        74, -1,  0, controlHeight, false },
-            { &deckHintLabel,        190, -1,  2, controlHeight - 4, false },
-            { &modeCycleButton,      150, -1,  0, controlHeight, false }
-        };
+        //  ONE SPACING FOR THE WHOLE ROW. The keys used to be laid out by the
+        //  shared solver with elastic gaps, so every window wider than the minimum
+        //  opened a hole between SPINDOWN and the hint and a second one between the
+        //  hint and the mode switch - three gaps of three different widths on a
+        //  row of four equal keys. The gaps are now the deck's own 14 px, and the
+        //  one item that is TEXT - the at-speed hint - takes the room that is left
+        //  instead of the gaps taking it.
+        constexpr int transportKeyWidth = 62;
+        constexpr int transportSpinWidth = 74;
+        constexpr int transportModeWidth = 150;
+        constexpr int transportGap = 14;
 
         // The keys start where every other row's control starts: under the
         // caption band the solve just gave this row.
         const auto transportRowY = deckTop (j37panel::DeckBands::transport) + captionHeight;
+        const auto transportRight = deck.getRight() - deckRightInset;
 
-        placeDeckRow (row, deck.getX() + 18, deck.getRight() - deckRightInset,
-                      transportRowY, 14);
+        auto cursor = deck.getX() + 18;
+        const auto placeKey = [&] (juce::Component& key, int width)
+        {
+            key.setBounds (cursor, transportRowY, width, controlHeight);
+            cursor += width + transportGap;
+        };
+
+        placeKey (transportStopButton,  transportKeyWidth);
+        placeKey (transportPlayButton,  transportKeyWidth);
+        placeKey (transportStartButton, transportKeyWidth);
+        placeKey (spindownButton,       transportSpinWidth);
+
+        const auto modeLeft = transportRight - transportModeWidth;
+        deckHintLabel.setBounds (cursor, transportRowY,
+                                 juce::jmax (0, modeLeft - transportGap - cursor), controlHeight);
+        modeCycleButton.setBounds (modeLeft, transportRowY, transportModeWidth, controlHeight);
 
         // The two transport captions sit ABOVE the key bank rather than beside
         // their own key, so they cannot be a column of the row - they are placed
@@ -2095,10 +2116,14 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         spindownLabel.setBounds (spindownButton.getX(), transportRowY - captionHeight,
                                  spindownButton.getWidth(), captionHeight - 2);
 
-        transportLabel.setFont (shrinkingFont (transportLabel.getText(), 7.0f,
+        // 9 px, the deck's caption size, rather than the 7 px these two were fitted
+        // to: at 7 they were the smallest type on the panel and sat directly under
+        // 9 px captions, which read as two different faces on one row. shrinkingFont
+        // still fits them into the bank if a narrow window demands it.
+        transportLabel.setFont (shrinkingFont (transportLabel.getText(), 9.0f,
                                               juce::Font::plain,
                                               static_cast<float> (transportLabel.getWidth()) - 3.0f));
-        spindownLabel.setFont (shrinkingFont (spindownLabel.getText(), 7.0f,
+        spindownLabel.setFont (shrinkingFont (spindownLabel.getText(), 9.0f,
                                               juce::Font::plain,
                                               static_cast<float> (spindownLabel.getWidth()) - 3.0f));
     }
@@ -3692,9 +3717,15 @@ void FirstAudioProcessorEditor::randomiseAllParameters()
     //  STOP / PLAY / START / SPINDOWN (one choice parameter and one bool) are the
     //  transport. A draw that moved any of them would look like the plugin had
     //  crashed, stopped, or switched to a different instrument.
-    const std::array<const char*, 8> untouchedIds {
+    //
+    //  THE PANEL'S OWN PREFERENCES ARE NOT THE SOUND EITHER. ui_sounds and language
+    //  are host parameters only so that they persist and automate like the rest,
+    //  but a draw through them switched the interface language and the click sounds
+    //  - the machine re-labelled itself under the user's pointer for the sake of a
+    //  random instrument.
+    const std::array<const char*, 10> untouchedIds {
         "bypass", "delta", "polarity", "auto_gain", "osc_on", "glue_on",
-        "transport", "spindown"
+        "transport", "spindown", "ui_sounds", "language"
     };
 
     std::array<juce::AudioProcessorParameter*, untouchedIds.size()> untouched {};

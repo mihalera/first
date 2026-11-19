@@ -600,8 +600,8 @@ void FirstAudioProcessorEditor::updateWorkflowButtons() {
 
 void FirstAudioProcessorEditor::openUserThemeWindow() {
     if (userThemeWindow == nullptr) {
-        userThemeWindow =
-            std::make_unique<j37panel::UserThemeWindow>(j37panel::userPalette);
+        userThemeWindow = std::make_unique<j37panel::UserThemeWindow>(
+            j37panel::userPalette, j37panel::assets::activeBackground);
 
         // ONE edit is ONE applyTheme. The order is load-bearing: the palette first,
         // because applyTheme() derives darkTheme FROM the palette (a user who picks a
@@ -619,6 +619,16 @@ void FirstAudioProcessorEditor::openUserThemeWindow() {
             j37panel::userPalette = edited;
             themeChoice = j37panel::ThemeChoice::user;
             applyTheme();
+        };
+
+        // The backdrop is a MACHINE preference, not a colour of the palette: it is
+        // remembered by name and rebuilt in place, without switching the panel to
+        // USER - a user on IVORY who only changes the surface should stay on IVORY.
+        userThemeWindow->onBackgroundChanged = [this](const juce::String &name) {
+            j37panel::assets::activeBackground = name;
+            j37panel::rememberBackground (name);
+            rebuildPanelTextureLayers();
+            repaint();
         };
 
         // Placed over the editor ONCE, at construction, and left where it is dragged
@@ -642,5 +652,6 @@ void FirstAudioProcessorEditor::openUserThemeWindow() {
     // window left open across a RESET (or across a session in which the kit's palette
     // was replaced) would otherwise display colours the panel is not painted from.
     userThemeWindow->setPalette(j37panel::userPalette);
+    userThemeWindow->setBackground(j37panel::assets::activeBackground);
     userThemeWindow->show();
 }

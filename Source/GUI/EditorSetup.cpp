@@ -515,9 +515,9 @@ void FirstAudioProcessorEditor::setUpLanguageAndTuning() {
                    percentText, percentValue);
 
     styleLabel(tuningTonicLabel, "TONIC", 9.0f, paletteFor(false).secondary, true,
-               juce::Justification::left);
+               juce::Justification::centredLeft);
     styleLabel(tuningModeLabel, "MODE", 9.0f, paletteFor(false).secondary, true,
-               juce::Justification::left);
+               juce::Justification::centredLeft);
     addAndMakeVisible(tuningTonicLabel);
     addAndMakeVisible(tuningModeLabel);
     addAndMakeVisible(tuningTonicBox);
@@ -623,7 +623,7 @@ void FirstAudioProcessorEditor::stylePanelLabels() {
     // and aligned like the three beside it: an accent caption over a centred
     // value. In the grey they did not share it read as the label of a control
     // whose box had gone missing.
-    styleLabel(bpmLabel, "BPM", 10.0f, paletteFor(false).accent, true,
+    styleLabel(bpmLabel, "BPM", 9.0f, paletteFor(false).accent, true,
                juce::Justification::centredLeft);
     styleLabel(bpmReadout, xlat("-"), 8.0f, paletteFor(false).secondary, false,
                juce::Justification::centredLeft);
@@ -638,15 +638,15 @@ void FirstAudioProcessorEditor::stylePanelLabels() {
     // The four readout pairs share one alignment discipline: the caption is
     // centred over its value, and every pair uses the SAME scheme - BPM included,
     // which used to read left while these three read from the centre.
-    styleLabel(harmonicsLabel, "HARMONICS", 10.0f, paletteFor(false).accent, true,
+    styleLabel(harmonicsLabel, "HARMONICS", 9.0f, paletteFor(false).accent, true,
                juce::Justification::centredLeft);
     styleLabel(harmonicsReadout, xlat("even / odd"), 8.0f, paletteFor(false).secondary, false,
                juce::Justification::centredLeft);
-    styleLabel(subfundLabel, "SUBFUND TRACK", 10.0f, paletteFor(false).accent, true,
+    styleLabel(subfundLabel, "SUBFUND TRACK", 9.0f, paletteFor(false).accent, true,
                juce::Justification::centredLeft);
     styleLabel(subfundReadout, xlat("idle"), 8.0f, paletteFor(false).secondary, false,
                juce::Justification::centredLeft);
-    styleLabel(antiPhaseLabel, "ANTI-PHASE", 10.0f, paletteFor(false).accent, true,
+    styleLabel(antiPhaseLabel, "ANTI-PHASE", 9.0f, paletteFor(false).accent, true,
                juce::Justification::centredLeft);
     styleLabel(antiPhaseReadout, xlat("clean"), 8.0f, paletteFor(false).secondary, false,
                juce::Justification::centredLeft);
@@ -1237,7 +1237,7 @@ void FirstAudioProcessorEditor::setUpOversamplingAndInstrument() {
     //  Instrument voicing selector, on the deck's second row.
     // ---------------------------------------------------------------
     styleLabel(instrumentLabel, "INSTRUMENT", 9.0f, paletteFor(false).secondary, true,
-               juce::Justification::left);
+               juce::Justification::centredLeft);
     addAndMakeVisible(instrumentLabel);
     instrumentBox.addItemList(
         juce::StringArray{"Master Bus", "Vocal", "Bass", "Guitar", "Piano", "Drums"}, 1);
@@ -1351,7 +1351,7 @@ void FirstAudioProcessorEditor::setUpTransportRow() {
     //  stopped the machine before starting it would be a re-cue, not a start.
     // ---------------------------------------------------------------
     styleLabel(transportLabel, "TRANSPORT", 9.0f, paletteFor(false).secondary, true,
-               juce::Justification::left);
+               juce::Justification::centredLeft);
     addAndMakeVisible(transportLabel);
     setTip(transportStopButton, "STOP - brakes the capstan to rest and leaves it "
                                 "there. A machine that is not moving passes nothing, so "
@@ -1399,7 +1399,7 @@ void FirstAudioProcessorEditor::setUpTransportRow() {
     // engine atomic and the host-visible parameter, so an automation lane and a
     // finger on this button are the same event.
     styleLabel(spindownLabel, "SPINDOWN", 9.0f, paletteFor(false).secondary, true,
-               juce::Justification::left);
+               juce::Justification::centredLeft);
     addAndMakeVisible(spindownLabel);
     spindownButton.setLookAndFeel(&customLookAndFeel);
     setTip(spindownButton, "Hold to cut the platter's power: the machine winds down "
@@ -2230,7 +2230,7 @@ void FirstAudioProcessorEditor::setUpPresetBar() {
             refreshUserPresetList();
     };
 
-    styleLabel(presetBadgeLabel, "", 8.0f, paletteFor(false).secondary, false,
+    styleLabel(presetBadgeLabel, "", 9.0f, paletteFor(false).secondary, false,
                juce::Justification::centredLeft);
     addAndMakeVisible(presetBadgeLabel);
     addAndMakeVisible(presetArtworkBadge);
@@ -2305,7 +2305,7 @@ void FirstAudioProcessorEditor::setUpPresetBar() {
     };
     addAndMakeVisible (phoneActionsButton);
 
-    styleLabel(compareBadgeLabel, "", 8.5f, paletteFor(false).accent, true,
+    styleLabel(compareBadgeLabel, "", 9.0f, paletteFor(false).accent, true,
                juce::Justification::centred);
     addAndMakeVisible(compareBadgeLabel);
 }

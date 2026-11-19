@@ -91,36 +91,60 @@ void FirstAudioProcessorEditor::rebuildPanelTextureLayers() {
     // ThemeChoice's six values are the atlas's left-to-right material order.
     // applyTheme() updates liveThemeChoice before it rebuilds this image, so
     // changing themes changes the surface in the same frame as the palette.
-    // A malformed or absent atlas falls through to the generic texture and then
-    // to the arithmetic grain below.
-    if (const auto& materials = j37panel::assets::cachedImage ("panel_materials_png");
-        materials.isValid())
+    //
+    //  WHICH SURFACE IS NOW A CHOICE (see PanelAssets.h and the COLOURS window).
+    //  THEME is everything below and unchanged; a named slot paints the whole face
+    //  from that one image; DRAWN skips the art and keeps the arithmetic grain, so
+    //  the worst case of any choice is the panel this build draws with no Assets/
+    //  directory at all.
+    const auto &background =
+        j37panel::assets::backgroundChoiceFor (j37panel::assets::activeBackground);
+    const auto backgroundIsTheme =
+        background.symbol != nullptr && background.symbol[0] == '\0';
+
+    if (background.symbol != nullptr && background.symbol[0] != '\0')
     {
-        constexpr int materialCount = static_cast<int> (j37panel::ThemeChoice::user) + 1;
-        const auto materialIndex = static_cast<int> (j37panel::liveThemeChoice);
-
-        if (materials.getWidth() % materialCount == 0
-            && materialIndex >= 0 && materialIndex < materialCount)
+        if (const auto &chosen = j37panel::assets::cachedImage (background.symbol);
+            chosen.isValid())
         {
-            const auto materialWidth = materials.getWidth() / materialCount;
-            const auto material = materials.getClippedImage (
-                juce::Rectangle<int> (materialIndex * materialWidth, 0,
-                                      materialWidth, materials.getHeight()));
-
-            if (material.isValid())
-            {
-                panelTextureImage = material.rescaled (w, h, juce::Graphics::mediumResamplingQuality);
-                return;
-            }
+            panelTextureImage = chosen.rescaled (w, h, juce::Graphics::mediumResamplingQuality);
+            return;
         }
     }
 
-    // The generic hand-drawn surface is kept as a second fallback. It replaces
-    // the generated grain and wear at the same dose, without implying a theme.
-    if (const auto &surface = j37panel::assets::cachedImage("panel_texture_png");
-        surface.isValid()) {
-        panelTextureImage = surface.rescaled(w, h, juce::Graphics::mediumResamplingQuality);
-        return;
+    if (backgroundIsTheme)
+    {
+        // A malformed or absent atlas falls through to the generic texture and
+        // then to the arithmetic grain below.
+        if (const auto& materials = j37panel::assets::cachedImage ("panel_materials_png");
+            materials.isValid())
+        {
+            constexpr int materialCount = static_cast<int> (j37panel::ThemeChoice::user) + 1;
+            const auto materialIndex = static_cast<int> (j37panel::liveThemeChoice);
+
+            if (materials.getWidth() % materialCount == 0
+                && materialIndex >= 0 && materialIndex < materialCount)
+            {
+                const auto materialWidth = materials.getWidth() / materialCount;
+                const auto material = materials.getClippedImage (
+                    juce::Rectangle<int> (materialIndex * materialWidth, 0,
+                                          materialWidth, materials.getHeight()));
+
+                if (material.isValid())
+                {
+                    panelTextureImage = material.rescaled (w, h, juce::Graphics::mediumResamplingQuality);
+                    return;
+                }
+            }
+        }
+
+        // The generic hand-drawn surface is kept as a second fallback. It replaces
+        // the generated grain and wear at the same dose, without implying a theme.
+        if (const auto &surface = j37panel::assets::cachedImage("panel_texture_png");
+            surface.isValid()) {
+            panelTextureImage = surface.rescaled(w, h, juce::Graphics::mediumResamplingQuality);
+            return;
+        }
     }
 
     auto image = juce::Image(juce::Image::ARGB, w, h, true);

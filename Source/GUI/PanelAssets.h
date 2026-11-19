@@ -78,4 +78,50 @@ inline std::unique_ptr<juce::Drawable> loadDrawable (const char* symbol)
     return juce::Drawable::createFromImageData (data, static_cast<size_t> (size));
 }
 
+//==============================================================================
+/** Which art slot the chassis surface is painted from.
+
+    "THEME" is the default and means what the panel always did: the theme-indexed
+    tile out of panel_materials, then the generic texture, then the arithmetic
+    grain. A named slot paints the whole face from that one image. "DRAWN" skips
+    the art entirely and keeps the grain, which is what a build with no Assets/
+    directory shows already - so the list can never offer a choice the panel
+    cannot draw.
+
+    A null `symbol` means "no asset" and an empty one means "the theme's own
+    material": every reader goes through backgroundChoiceFor(), so the COLOURS
+    window that offers the names and the paint path that honours one cannot
+    disagree about what an entry means.
+*/
+struct BackgroundChoice
+{
+    const char* name;
+    const char* symbol;
+};
+
+inline constexpr BackgroundChoice backgroundChoices[] = {
+    { "THEME", "" },
+    { "PANEL", "panel_texture_png" },
+    { "DETAIL", "hardware_details_png" },
+    { "DRAWN", nullptr },
+};
+
+inline constexpr int backgroundChoiceCount =
+    static_cast<int> (sizeof (backgroundChoices) / sizeof (backgroundChoices[0]));
+
+/** The entry with this name; an unknown name - including the empty string a
+    settings file that never stored one yields - means THEME. */
+inline const BackgroundChoice& backgroundChoiceFor (const juce::String& name)
+{
+    for (const auto& choice : backgroundChoices)
+        if (name.equalsIgnoreCase (choice.name))
+            return choice;
+
+    return backgroundChoices[0];
+}
+
+/** The live choice. Read by rebuildPanelTextureLayers(); written by the COLOURS
+    window through the editor, which also remembers it in the preferences file. */
+inline juce::String activeBackground = "THEME";
+
 } // namespace j37panel::assets

@@ -218,4 +218,23 @@ inline void rememberUserPalette (const j37panel::UiPalette& palette)
     editorPreferences().saveIfNeeded();
 }
 
+/** The chassis surface chosen in COLOURS, by name. A machine preference for the
+    same reason the theme is: which art the desk is wearing is not the mix, so it
+    must not travel in a session or a preset. An unknown stored name - one a later
+    build dropped, or none at all - comes back as THEME. */
+constexpr const char* panelBackgroundKey = "panel_background";
+
+inline juce::String rememberedBackground()
+{
+    return j37panel::assets::backgroundChoiceFor (editorPreferences().getValue (panelBackgroundKey))
+        .name;
+}
+
+inline void rememberBackground (const juce::String& name)
+{
+    editorPreferences().setValue (panelBackgroundKey,
+                                 j37panel::assets::backgroundChoiceFor (name).name);
+    editorPreferences().saveIfNeeded();
+}
+
 } // namespace j37panel
