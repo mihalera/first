@@ -2159,20 +2159,22 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     // PRESET caption sits top-left above the factory list; MATCHED badge top-right.
     presetHeadingLabel.setBounds (line1, presetRowY, 46, 14);
 
-    // Head, from the left on the 4 vertical lines.
+    // Head, from the left on the 4 vertical lines. Controls live below their
+    // caption at presetRowY + captionHeight, same as every other deck row.
     constexpr int presetBoxWidth  = 130;
     constexpr int userPresetWidth = 100;
-    presetBox.setBounds       (line1, presetRowY, presetBoxWidth, presetRowHeight);
-    userPresetBox.setBounds   (line2, presetRowY, userPresetWidth, presetRowHeight);
-    savePresetButton.setBounds(line3, presetRowY, 46, presetRowHeight);
-    deletePresetButton.setBounds(line4 - 44, presetRowY, 44, presetRowHeight);
+    const auto presetRowYCtl = presetRowY + captionHeight;
+    presetBox.setBounds       (line1, presetRowYCtl, presetBoxWidth, presetRowHeight - captionHeight);
+    userPresetBox.setBounds   (line2, presetRowYCtl, userPresetWidth, presetRowHeight - captionHeight);
+    savePresetButton.setBounds(line3, presetRowYCtl, 46, presetRowHeight - captionHeight);
+    deletePresetButton.setBounds(line4 - 44, presetRowYCtl, 44, presetRowHeight - captionHeight);
 
     // Tail, from the right on the 4 vertical lines.
-    copyAButton.setBounds (line4 - 70, presetRowY, 70, presetRowHeight);
-    copyBButton.setBounds (line4 - 140, presetRowY, 70, presetRowHeight);
-    compareButton.setBounds (line4 - 204, presetRowY, 64, presetRowHeight);
-    undoButton.setBounds    (line4 - 268, presetRowY, 54, presetRowHeight);
-    redoButton.setBounds    (line4 - 322, presetRowY, 54, presetRowHeight);
+    copyAButton.setBounds (line4 - 70, presetRowYCtl, 70, presetRowHeight - captionHeight);
+    copyBButton.setBounds (line4 - 140, presetRowYCtl, 70, presetRowHeight - captionHeight);
+    compareButton.setBounds (line4 - 204, presetRowYCtl, 64, presetRowHeight - captionHeight);
+    undoButton.setBounds    (line4 - 268, presetRowYCtl, 54, presetRowHeight - captionHeight);
+    redoButton.setBounds    (line4 - 322, presetRowYCtl, 54, presetRowHeight - captionHeight);
 
     // MATCHED/EDITED badge at top-right under its own column.
     compareBadgeLabel.setBounds (line4 - 54, presetRowY, 54, 14);
