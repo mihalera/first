@@ -2156,19 +2156,20 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     constexpr int tailGap      =   4;
 
     // Build right→left so each button's left edge is clean.
-    int cursor = line4;
-    copyAButton.setBounds    (cursor - copyAWidth,   presetRowYCtl, copyAWidth,   presetCtlH);
-    cursor -= copyAWidth + tailGap;
-    copyBButton.setBounds    (cursor - copyBWidth,   presetRowYCtl, copyBWidth,   presetCtlH);
-    cursor -= copyBWidth + tailGap;
-    compareButton.setBounds  (cursor - compareWidth, presetRowYCtl, compareWidth, presetCtlH);
-    cursor -= compareWidth + tailGap;
-    undoButton.setBounds     (cursor - undoWidth,    presetRowYCtl, undoWidth,    presetCtlH);
-    cursor -= undoWidth + tailGap;
-    redoButton.setBounds     (cursor - redoWidth,    presetRowYCtl, redoWidth,    presetCtlH);
+    // Named tailCursor (not cursor) to avoid shadowing the editor's own member.
+    int tailCursor = line4;
+    copyAButton.setBounds    (tailCursor - copyAWidth,   presetRowYCtl, copyAWidth,   presetCtlH);
+    tailCursor -= copyAWidth + tailGap;
+    copyBButton.setBounds    (tailCursor - copyBWidth,   presetRowYCtl, copyBWidth,   presetCtlH);
+    tailCursor -= copyBWidth + tailGap;
+    compareButton.setBounds  (tailCursor - compareWidth, presetRowYCtl, compareWidth, presetCtlH);
+    tailCursor -= compareWidth + tailGap;
+    undoButton.setBounds     (tailCursor - undoWidth,    presetRowYCtl, undoWidth,    presetCtlH);
+    tailCursor -= undoWidth + tailGap;
+    redoButton.setBounds     (tailCursor - redoWidth,    presetRowYCtl, redoWidth,    presetCtlH);
 
     // DELETE sits immediately to the left of the right cluster with an 8 px gap.
-    deletePresetButton.setBounds (cursor - redoWidth - 8 - 44, presetRowYCtl,
+    deletePresetButton.setBounds (redoButton.getX() - 8 - 44, presetRowYCtl,
                                   44, presetCtlH);
 
     // PRESET caption top-left; MATCHED badge top-right.
