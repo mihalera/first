@@ -770,6 +770,21 @@ struct NeuralStage
         if (amount <= 1.0e-5f)
             return x;
 
+        //  A clear is honoured HERE as well as at the block boundary. The control
+        //  thread withdraws the model and marks the clear; adoptPendingModel() is
+        //  the block boundary that normally consumes it. But a host with the
+        //  transport stopped runs no blocks, and the panel's UNLOAD is then asking
+        //  for a pass-through the stage would keep denying - hasModel() already
+        //  answers false while the next sample would still be pushed through the
+        //  withdrawn model. Clearing it here keeps the two answers in step, and it
+        //  is the same store adoptPendingModel() makes.
+        if (clearRequested.exchange (false, std::memory_order_acq_rel))
+        {
+            activeModel.store (nullptr, std::memory_order_seq_cst);
+            resetRequested.store (false, std::memory_order_relaxed);
+            bridge.reset();
+        }
+
         // Protect the active model with a hazard pointer. Validate after publishing
         // the hazard so control-thread reclamation cannot free a model loaded just
         // before it was replaced. No lock, wait, or allocation enters the callback.
