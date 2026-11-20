@@ -57,7 +57,6 @@ bash tests/presets/check_ranges.sh               # every preset value against it
 python3 tests/theme/check_theme_wiring.py        # theme re-inking coverage
 python3 tests/translations/check_translations.py # the shipped translation tables
 python3 tests/parameters/check_parameters.py     # the table and the code that reads it
-python3 tests/parameters/check_dirty_badge.py    # the edited badge list, against the table
 python3 tests/parameters/check_tabs.py           # the page table: every knob on one page, the four families, SETUP last
 python3 tests/parameters/check_mix_wiring.py     # MIX page and MACHINE page, against the parameters and the core's weights
 python3 tests/shaders/check_shaders.py           # the GLSL and the uniforms it is fed

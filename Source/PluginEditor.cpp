@@ -2017,6 +2017,12 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     const auto col1W = subfundReadout.getWidth();
     const auto col2X = antiPhaseReadout.getX();
     const auto col2W = antiPhaseReadout.getWidth();
+    // The fourth column is the harmonics readout's, and it is named here rather
+    // than left implicit: the preset row's comparison cluster used to be anchored
+    // to the deck's own right inset instead, which is 56 px further right, so that
+    // one group started where no column starts and ended past every other row.
+    const auto col3X = harmonicsReadout.getX();
+    const auto col3W = harmonicsReadout.getWidth();
     const auto deckRight = deck.getRight() - deckRightInset;
 
     // ---- row 2: SELECTORS & OSC RING -----------------------------------------
@@ -2086,61 +2092,60 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     }
 
     // ---- row 4: PRESET & COMPARISON ------------------------------------------
-    //  Column 0: FACTORY preset list spans Col 0 flush with Col 0 above.
-    //  Column 1: USER preset list spans Col 1 flush with Col 1 above.
-    //  Column 2: SAVE & DEL preset actions start at Col 2.
-    //  Right: Undo/Redo & A/B Comparison cluster anchored to deckRight.
+    //  ONE GROUP PER COLUMN, the same four columns every row above stands on.
+    //  The row used to be a left chain (lists, SAVE, DEL) meeting a right chain
+    //  (UNDO, REDO, A/B, COPY B, A) in the middle, so SAVE and DEL sat in the
+    //  third column while the second held only the user list, and the right chain
+    //  began wherever its own widths left it - past the column, into the corridor.
+    //  Four groups now, each inside its own column, so nothing can be pushed out
+    //  of alignment by a wider window:
+    //      Col 0  the factory list            (PRESET caption)
+    //      Col 1  the user list, SAVE and DEL
+    //      Col 2  UNDO and REDO
+    //      Col 3  A/B, COPY B and A (LIVE)    (MATCHED / EDITED badge)
     const auto presetRowY      = deckTop (j37panel::DeckBands::preset);
     const auto presetRowHeight = deckBandHeight (j37panel::DeckBands::preset);
     const auto presetRowYCtl   = presetRowY + captionHeight;
     const auto presetCtlH      = presetRowHeight - captionHeight;
 
-    // Col 0: FACTORY presets
+    constexpr int presetKeyGap = 4;
+
+    // Col 0: FACTORY presets, flush with the column BPM and INSTRUMENT start on.
     presetHeadingLabel.setBounds (col0X, presetRowY, col0W, captionHeight);
     presetBox.setBounds          (col0X, presetRowYCtl, col0W, presetCtlH);
 
-    // Col 1: USER presets
-    userPresetBox.setBounds      (col1X, presetRowYCtl, col1W, presetCtlH);
+    // Col 1: the user list and the two things done to it. The pair used to stand
+    // in the next column with a hole beside the list it acts on; here they share
+    // one column, and the list gives up the room rather than the keys.
+    constexpr int savePresetWidth   = 40;
+    constexpr int deletePresetWidth = 36;
+    const auto userPresetWidth = juce::jmax (54, col1W - savePresetWidth
+                                                     - deletePresetWidth - 2 * presetKeyGap);
 
-    // Col 2: SAVE & DEL preset actions
-    constexpr int savePresetWidth   = 54;
-    constexpr int deletePresetWidth = 44;
-    constexpr int presetActionGap   = 6;
+    userPresetBox.setBounds (col1X, presetRowYCtl, userPresetWidth, presetCtlH);
+    savePresetButton.setBounds (col1X + userPresetWidth + presetKeyGap, presetRowYCtl,
+                                savePresetWidth, presetCtlH);
+    deletePresetButton.setBounds (col1X + userPresetWidth + savePresetWidth + 2 * presetKeyGap,
+                                  presetRowYCtl, deletePresetWidth, presetCtlH);
 
-    savePresetButton.setBounds   (col2X, presetRowYCtl, savePresetWidth, presetCtlH);
-    deletePresetButton.setBounds (col2X + savePresetWidth + presetActionGap, presetRowYCtl,
-                                  deletePresetWidth, presetCtlH);
+    // Col 2: the history pair, one half of the column each.
+    const auto historyWidth = juce::jmax (36, (col2W - presetKeyGap) / 2);
+    undoButton.setBounds (col2X, presetRowYCtl, historyWidth, presetCtlH);
+    redoButton.setBounds (col2X + historyWidth + presetKeyGap, presetRowYCtl,
+                          juce::jmax (36, col2W - historyWidth - presetKeyGap), presetCtlH);
 
-    // Right: Undo/Redo pair + A/B Comparison cluster (anchored right-to-left)
-    // [ UNDO ]  [ REDO ]    [ A/B: B ]  [ COPY B ]  [ A (LIVE) ]
-    constexpr int undoWidth    = 52;
-    constexpr int redoWidth    = 52;
-    constexpr int compareWidth = 64;
-    constexpr int copyBWidth   = 68;
-    constexpr int copyAWidth   = 72;
-    constexpr int tailGap      = 4;
-    constexpr int groupSep     = 10;
+    // Col 3: the A/B comparison cluster, a third of the column per key, with the
+    // MATCHED / EDITED badge on that column's caption line - above the A (LIVE)
+    // key it describes, and inside the column rather than past its end.
+    const auto compareKeyWidth = juce::jmax (34, (col3W - 2 * presetKeyGap) / 3);
+    compareButton.setBounds (col3X, presetRowYCtl, compareKeyWidth, presetCtlH);
+    copyBButton.setBounds (col3X + compareKeyWidth + presetKeyGap, presetRowYCtl,
+                           compareKeyWidth, presetCtlH);
+    copyAButton.setBounds (col3X + 2 * (compareKeyWidth + presetKeyGap), presetRowYCtl,
+                           juce::jmax (34, col3W - 2 * (compareKeyWidth + presetKeyGap)),
+                           presetCtlH);
 
-    int tailCursor = deckRight;
-
-    // A/B Comparison cluster
-    copyAButton.setBounds   (tailCursor - copyAWidth, presetRowYCtl, copyAWidth, presetCtlH);
-    tailCursor -= copyAWidth + tailGap;
-
-    copyBButton.setBounds   (tailCursor - copyBWidth, presetRowYCtl, copyBWidth, presetCtlH);
-    tailCursor -= copyBWidth + tailGap;
-
-    compareButton.setBounds (tailCursor - compareWidth, presetRowYCtl, compareWidth, presetCtlH);
-    tailCursor -= compareWidth + groupSep;
-
-    // History pair: REDO then UNDO so left-to-right is [ UNDO ] [ REDO ]
-    redoButton.setBounds    (tailCursor - redoWidth, presetRowYCtl, redoWidth, presetCtlH);
-    tailCursor -= redoWidth + tailGap;
-
-    undoButton.setBounds    (tailCursor - undoWidth, presetRowYCtl, undoWidth, presetCtlH);
-
-    // MATCHED/EDITED badge at top-right directly above A (LIVE)
-    compareBadgeLabel.setBounds (copyAButton.getX(), presetRowY, copyAWidth, captionHeight);
+    compareBadgeLabel.setBounds (col3X, presetRowY, col3W, captionHeight);
 
     // The artwork gets a 20 px cell at the band's 22 px inset; the caption starts
     // six pixels after it and keeps the same 22 px inset at the right edge. The

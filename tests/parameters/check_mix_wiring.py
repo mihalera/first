@@ -134,9 +134,16 @@ for machine in machines:
 # 3. The audio thread fetches one raw pointer per id, and the signal path hands
 #    the smoothers over in that same order.
 # ---------------------------------------------------------------------------
+#  The processor caches its handles through ONE id-to-member table rather than one
+#  `xxxParam = parameters.getRawParameterValue ("xxx")` line per control, so a row of
+#  that table is the fetch: `{ "tape_source", &FirstAudioProcessor::tapeSourceParam }`
+#  names the same pair the call-site spelling used to make explicit.
 for machine, parameter in zip(machines, principle_ids):
-    if not re.search(r"%sSourceParam\s*=\s*parameters\.getRawParameterValue\s*\(\s*\"%s\"\s*\)"
-                     % (machine, parameter), processor):
+    by_call = re.search(r"%sSourceParam\s*=\s*parameters\.getRawParameterValue\s*\(\s*\"%s\"\s*\)"
+                        % (machine, parameter), processor)
+    by_table = re.search(r"\{\s*\"%s\"\s*,\s*&FirstAudioProcessor::%sSourceParam\s*\}"
+                         % (parameter, machine), processor)
+    if not (by_call or by_table):
         fail("%sSourceParam is never fetched from \"%s\" - the knob would move nothing"
              % (machine, parameter))
 

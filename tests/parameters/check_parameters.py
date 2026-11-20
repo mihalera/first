@@ -133,7 +133,28 @@ for name in duplicates:
 # the other is what it KEEPS.
 fetch_ids = [name for name, _, _ in hits(r"getRawParameterValue\s*\(\s*\"([^\"]+)\"")]
 lookup_ids = [name for name, _, _ in hits(r"getParameter\s*\(\s*\"([^\"]+)\"")]
-reached = set(fetch_ids) | set(lookup_ids)
+
+# The processor caches its handles through ONE id-to-member table rather than one
+# `xxxParam = parameters.getRawParameterValue ("xxx")` line per control, so a row of
+# that table IS the fetch: `{ "drive", &FirstAudioProcessor::driveParam }` names the
+# same pair the call-site spelling used to make explicit. Reading the table is what
+# keeps the three questions below answerable now that the call site is a loop.
+TABLE_ROW = re.compile(r"\{\s*\"([^\"]+)\"\s*,\s*&FirstAudioProcessor::(\w+)\s*\}")
+table_rows = []
+for path, lines in FILES:
+    for number, line in enumerate(lines, 1):
+        for match in TABLE_ROW.finditer(line):
+            table_rows.append((match.group(1), match.group(2), path, number))
+
+# An id has to look like one: the source and the docs quote the call with a
+# placeholder in it - `getRawParameterValue ("...")` - and a quoted placeholder is
+# prose, not a lookup. Dropping those here keeps the answer about real names.
+LOOKS_LIKE_AN_ID = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
+fetch_ids = [name for name in fetch_ids if LOOKS_LIKE_AN_ID.match(name)]
+lookup_ids = [name for name in lookup_ids if LOOKS_LIKE_AN_ID.match(name)]
+table_rows = [row for row in table_rows if LOOKS_LIKE_AN_ID.match(row[0])]
+
+reached = set(fetch_ids) | set(lookup_ids) | {name for name, _, _, _ in table_rows}
 
 for name in sorted(reached - set(registered)):
     where = sorted({path for candidate, path, _ in hits(r"getParameter\s*\(\s*\"([^\"]+)\"")
@@ -179,6 +200,9 @@ for name, path, number in hits(r"(\w+Param)\s*=\s*(?:parameters|state|processor\
                                r"\.?\s*getRawParameterValue\s*\(\s*\"([^\"]+)\""):
     fetched_members.add(name)
 
+# ... and the table's rows are the other spelling of the same fetch.
+fetched_members |= {member for _, member, _, _ in table_rows}
+
 for member in sorted(fetched_members - declared):
     problems.append("%s is assigned from a parameter but is not declared as a member of the "
                     "processor in Source/PluginProcessor.h" % member)
@@ -193,7 +217,7 @@ for member in sorted(declared | fetched_members):
         for number, line in enumerate(lines, 1):
             if re.search(r"\b%s\b" % re.escape(member), line) is None:
                 continue
-            if DECLARATION.search(line) or FETCH_LINE.match(line):
+            if DECLARATION.search(line) or FETCH_LINE.match(line) or TABLE_ROW.search(line):
                 continue
             reads.append("%s:%d" % (path, number))
 

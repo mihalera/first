@@ -63,32 +63,67 @@
 
 namespace
 {
-    // The one hand-written id-to-member table: the single place a parameter id and
-    // the raw-pointer member that caches it meet. The dirty-badge id list below is
-    // DERIVED from it, so the badge list and the cached pointers can never drift
-    // apart the way two parallel lists could.
-    struct ParameterCacheEntry { const char* id; std::atomic<float>* FirstAudioProcessor::* member; };
 
-    static const ParameterCacheEntry parameterCacheEntries[];
-
-    // Every parameter whose change should light the editor's "edited" badge. The
-    // list is DERIVED from the parameter cache table (parameterCacheEntries,
-    // defined beside cacheRawParameterPointers() further down this file), so the
-    // badge list, the cached raw-parameter pointers and the ids the presets
-    // mention can never disagree: there is one hand-written list of id-to-member
-    // pairs and everything else reads it.
-    // The editor's own knobs are listed too: a host automation pass and a user
-    // drag arrive here by the same route, and both should mark the preset dirty.
-    const std::vector<const char*>& parametersTrackedForDirtyBadge()
+    // Every parameter whose change should light the editor's "edited" badge. One
+    // list, read by both the constructor and the destructor, so the listener and
+    // the removal can never disagree about which ids they cover. The editor's own
+    // knobs are listed too: a host automation pass and a user drag arrive here by
+    // the same route, and both should mark the preset dirty.
+    //
+    // Returned by reference from a function-local static, so the single list is
+    // also the single definition - no header, no duplicated initialiser, and the
+    // range-for in both callers reads it without copying.
+    // The element count is DEDUCED, not written down. It was a literal 83, and the
+    // four EQ on/off parameters added after it made the list 87 - which is a
+    // hard compile error ("too many initializers"), so the next parameter added
+    // would have been a build break rather than a line to update. Class template
+    // argument deduction reads the initialiser and sizes the array to it, which
+    // is the whole point of returning the list by reference from one definition.
+    const auto& parametersTrackedForDirtyBadge()
     {
-        static const auto ids = []
+        static const auto ids = std::array
         {
-            std::vector<const char*> built;
-            built.reserve (sizeof (parameterCacheEntries) / sizeof (parameterCacheEntries[0]));
-            for (const auto& entry : parameterCacheEntries)
-                built.push_back (entry.id);
-            return built;
-        }();
+            "input", "output", "bypass", "polarity", "auto_gain",
+            "subfund",
+            "stereo_width", "tape_type", "speed", "instrument", "drive", "bias",
+            "oversampling", "tone", "wow", "flutter", "mix", "tracks",
+            "character", "delta", "delay_time", "delay_feedback",
+            "delay_pingpong", "delay_tone", "delay_lowcut", "delay_damp",
+            "st_offset", "noise", "noise_lvl", "transport", "spindown",
+            "ui_sounds", "language", "anti_phase_guard", "osc_on",
+            "tape_source", "valve_source", "pentode_source", "triode_source",
+            "transistor_source", "fold_source", "glass_source",
+            "transformer_source", "digital_source",
+            "sag", "presence", "cabinet", "amp_bias",
+            "preamp", "flux", "wear", "mechanics", "reverb", "reverb_size",
+            "reverb_predelay", "reverb_damp", "reverb_width", "reverb_lowcut",
+            "di", "di_load", "di_transformer", "di_pad",
+            "delay_type", "distortion", "modern_mode", "lofi_mode",
+            "vinyl", "vinyl_crackle", "vinyl_rumble", "vinyl_speed",
+            "vinyl_dust", "vinyl_scratch", "vinyl_warp", "vinyl_electrical",
+            "vinyl_clicks", "vinyl_generation", "vinyl_turntable", "vinyl_cartridge",
+            "in_low", "in_mid", "in_high",
+            "in_hp_freq", "in_lp_freq", "in_eq_order", "in_eq_q",
+            "in_hp_on", "in_lp_on",
+            "out_low", "out_mid", "out_high",
+            "out_hp_freq", "out_lp_freq", "out_eq_order", "out_eq_q",
+            "out_hp_on", "out_lp_on",
+            "st_link",
+            "valve_type", "pentode_type", "triode_type", "transistor_type",
+            "transformer_type",
+            "digital_type", "vinyl_type",
+            "delay_sync", "delay_rate", "tuning_tonic", "tuning_mode", "autotune_amount",
+            "autotune_speed", "autotune_range", "autotune_octave", "autotune_tolerance", "autotune_gate",
+            "comp_threshold", "comp_ratio", "comp_attack", "comp_release", "comp_makeup", "comp_mix",
+            "transient_attack", "transient_sustain", "transient_mix", "neural_mix", "ir_mix",
+            "glue_on",
+            "fx_wah", "fx_anti_spike", "fx_gate", "fx_overdrive", "fx_fuzz",
+            "fx_wavefolder", "fx_bitcrusher", "fx_rate_crusher", "fx_ring_mod", "fx_octaver",
+            "fx_pitch", "fx_comb", "fx_formant", "fx_dynamic_eq", "fx_de_esser",
+            "fx_chorus", "fx_flanger", "fx_phaser", "fx_tremolo", "fx_vibrato",
+            "fx_rotary", "fx_vocoder", "fx_granular", "fx_spectral", "fx_stutter", "fx_speed",
+            "comp_upward"
+        }; 
 
         return ids;
     }
@@ -199,22 +234,16 @@ FirstAudioProcessor::FirstAudioProcessor()
         },
         "/mibox");
 
-    // Four fixed oversampling engines (off / 2x / 4x / 8x), inserted with
-    // make_unique so the array's ownership and its count are type-checked:
-    // OwnedArray::add takes a unique_ptr, so a raw `new` cannot quietly become
-    // a leak the way an OwnedArray::add(T*) accepted it, and the size the
-    // setOversamplingFactor/prepareToPlay loops index by is asserted below
-    // against the enum the rest of the engine switches on. Each owns its own
-    // filter state, so switching between them is glitch-free even mid-render,
-    // and the host is told the latency of whichever one is active.
-    oversamplers.add (std::make_unique<juce::dsp::Oversampling<float>> (2)); // dummy, factor 1
-    oversamplers.add (std::make_unique<juce::dsp::Oversampling<float>> (2, 1,
-                         juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true));
-    oversamplers.add (std::make_unique<juce::dsp::Oversampling<float>> (2, 2,
-                         juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true));
-    oversamplers.add (std::make_unique<juce::dsp::Oversampling<float>> (2, 3,
-                         juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true));
-    jassert (oversamplers.size() == static_cast<int> (oversamplingFactorCount));
+    // Four fixed oversampling engines (off / 2x / 4x / 8x). Each owns its own filter
+    // state, so switching between them is glitch-free even mid-render, and the
+    // host is told the latency of whichever one is active.
+    oversamplers.add (new juce::dsp::Oversampling<float> (2)); // dummy, factor 1
+    oversamplers.add (new juce::dsp::Oversampling<float> (2, 1,
+                        juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true));
+    oversamplers.add (new juce::dsp::Oversampling<float> (2, 2,
+                        juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true));
+    oversamplers.add (new juce::dsp::Oversampling<float> (2, 3,
+                        juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true));
 
     // The A/B slots start as copies of the default state so that toggling compare
     // before anything is stored recalls the same settings rather than an empty tree.
@@ -247,88 +276,16 @@ FirstAudioProcessor::FirstAudioProcessor()
 //  Every cached `*Param` pointer in the header used to be assigned by its own
 //  hand-written `parameters.getRawParameterValue ("...")` line in the
 //  constructor - ~130 of them, each an opportunity to misspell an id and cache
-//  a null that only a dead control would ever reveal. The table is the one place
-//  the id and the member meet; the loop assigns them all, and a miss
+//  a null that only a dead control would ever reveal. The table below is the
+//  one place the id and the member meet; the loop assigns them all, and a miss
 //  is named in debug builds.
 // -----------------------------------------------------------------------------
-void FirstAudioProcessor::resetTelemetryAtomics()
+void FirstAudioProcessor::cacheRawParameterPointers()
 {
-    // Every meter/telemetry reading starts at its idle value, so the editor's
-    // first frame shows silence rather than whatever the previous session left
-    // behind. All relaxed: the audio thread overwrites them every block.
-    inputPeakLevel.store (0.0f, std::memory_order_relaxed);
-    inputRmsLevel.store (0.0f, std::memory_order_relaxed);
-    inputPeakDb.store (-70.0f, std::memory_order_relaxed);
-    inputRmsDb.store (-70.0f, std::memory_order_relaxed);
-    inputLufs.store (-70.0f, std::memory_order_relaxed);
-    inputVuDb.store (-70.0f, std::memory_order_relaxed);
-    inputCombinedDb.store (-70.0f, std::memory_order_relaxed);
-    inputClipping.store (false, std::memory_order_relaxed);
-    outputPeakLevel.store (0.0f, std::memory_order_relaxed);
-    outputRmsLevel.store (0.0f, std::memory_order_relaxed);
-    outputPeakDb.store (-70.0f, std::memory_order_relaxed);
-    outputRmsDb.store (-70.0f, std::memory_order_relaxed);
-    outputLufs.store (-70.0f, std::memory_order_relaxed);
-    outputVuDb.store (-70.0f, std::memory_order_relaxed);
-    outputCombinedDb.store (-70.0f, std::memory_order_relaxed);
-    outputClipping.store (false, std::memory_order_relaxed);
-    inputGainReductionDb.store (0.0f, std::memory_order_relaxed);
-    outputGainReductionDb.store (0.0f, std::memory_order_relaxed);
-    inputCompressorActivity.store (0.0f, std::memory_order_relaxed);
-    outputCompressorActivity.store (0.0f, std::memory_order_relaxed);
-    compressorActivity.store (0.0f, std::memory_order_relaxed);
-    transportDrift.store (0.5f, std::memory_order_relaxed);
-    harmonicCharacter.store (0.0f, std::memory_order_relaxed);
-    bypassActive.store (false, std::memory_order_relaxed);
-}
+    struct CacheEntry { const char* id; std::atomic<float>* FirstAudioProcessor::* member; };
 
-void FirstAudioProcessor::resetDelayLine (int samplesPerBlock)
-{
-    juce::ignoreUnused (samplesPerBlock);
-
-    delayBuffer.setSize (juce::jmax (1, juce::jmin (2, getTotalNumOutputChannels())),
-                         delayBufferLength, false, true, true);
-    delayBuffer.clear();
-    delayWritePosition = 0;
-    delayToneLpState.fill (0.0f);
-    delayHpXState.fill (0.0f);
-    delayHpYState.fill (0.0f);
-    delayFeedbackDampState.fill (0.0f);
-    delayToneCurrent = 0.5f;
-    delayFeedbackHpRCurrent = 0.99f;
-
-    // The offset buffer is a fixed short window - a few hundred microseconds is far
-    // more than the tens the control asks for - so it is a plain array, not an
-    // allocation.
-    stOffsetBuffer.reset();
-}
-
-void FirstAudioProcessor::resetInputChainState()
-{
-    // The DI's own smoother starts from the value the parameter restores, so a
-    // session saved with the box engaged does not spend its first 20 ms sliding
-    // into it.
-    diSmoothed.setCurrentAndTargetValue (diParam != nullptr ? diParam->load() : 0.0f);
-    diLoadSmoothed.setCurrentAndTargetValue (diLoadParam != nullptr ? diLoadParam->load() : 0.0f);
-    diTransformerSmoothed.setCurrentAndTargetValue (diTransformerParam != nullptr
-                                                        ? diTransformerParam->load() : 0.0f);
-
-    // Reseeded rather than zeroed: zero is a degenerate LCG state, and the two
-    // channels get different seeds so their clock noise is uncorrelated - sharing
-    // one would put the BBD buzz in the centre of the image.
-    bbdNoiseStateL = 0x85ebca6bu;
-    bbdNoiseStateR = 0xc2b2ae35u;
-    bbdLowL = bbdLowR = 0.0f;
-    lofiLowL = lofiLowR = 0.0f;
-    lofiHoldL = lofiHoldR = 0.0f;
-    loFiHoldClock.reset();
-    wearModulation = 0.0f;
-}
-
-// The table itself, written out once at file scope so the dirty-badge id list
-// above is derived from the SAME rows (see parameterCacheEntries there).
-const ParameterCacheEntry parameterCacheEntries[] =
-{
+    static const CacheEntry entries[] =
+    {
         { "input", &FirstAudioProcessor::inputDbParam },
         { "output", &FirstAudioProcessor::outputDbParam },
         { "bypass", &FirstAudioProcessor::bypassParam },
@@ -484,9 +441,7 @@ const ParameterCacheEntry parameterCacheEntries[] =
         { "comp_upward", &FirstAudioProcessor::compUpwardParam },
     };
 
-void FirstAudioProcessor::cacheRawParameterPointers()
-{
-    for (const auto& entry : parameterCacheEntries)
+    for (const auto& entry : entries)
     {
         auto* value = parameters.getRawParameterValue (entry.id);
         this->*entry.member = value;
@@ -495,128 +450,65 @@ void FirstAudioProcessor::cacheRawParameterPointers()
     }
 }
 
-// ----------------------------------------------------------------------------
-//  The factory-preset audit, SHARED between the DEBUG constructor call and the
-//  tests/presets/preset_audit.cpp harness (which links the shipping plugin and
-//  runs in every CI build, not only debug ones).
-//
-//  The factory presets went wrong twice, in two different ways, and both
-//  produced the same user-visible report ("the presets do not work") with
-//  nothing in a release build to say why:
-//
-//    1. THE NAMES AND THE TABLE DISAGREED. getPresetNames() returned twenty
-//       names for a twenty-six row table, so six rows had no name and - because
-//       the box, the undo label and the badge all index by POSITION - every
-//       name below the gap was attached to the wrong sound. Nothing crashed;
-//       the list simply lied.
-//
-//    2. THE TABLE AND THE PARAMETERS DISAGREED. Fifteen sound-bearing
-//       parameters had no column, so they kept the session's value and every
-//       preset loaded "mostly".
-//
-//  Both are compile-time-shaped mistakes - a list length, a set of names, a
-//  set of ids - and both are invisible at runtime by construction. So they are
-//  checked from the three sources themselves rather than from a count written
-//  down beside them: the names, the table, and the parameters the processor
-//  actually registered. A fourth source of the same class of bug - a map key
-//  naming a parameter that does not exist - is checked too, as the keys are
-//  collected.
-//
-//  This instance-free variant costs O(presets x parameters) string-set work,
-//  which is nothing for a test harness and is skipped entirely in a shipping
-//  build (the DEBUG constructor call compiles to the same checks via jassert).
-// ----------------------------------------------------------------------------
-bool FirstAudioProcessor::verifyFactoryPresetStructure (juce::String& firstProblem)
-{
-    auto fail = [&firstProblem] (const juce::String& what)
-    {
-        if (firstProblem.isEmpty())
-            firstProblem = what;
-        return false;
-    };
-
-    const auto names = getPresetNames();
-
-    if (names.size() != FactoryPresets::count())
-        return fail ("preset name count " + juce::String (names.size())
-                     + " disagrees with the table's " + juce::String (FactoryPresets::count()));
-
-    // A name that is empty, or the same as another, is the same class of bug
-    // as a name list that is the wrong length: the box would show two blank
-    // entries and the user would have no way to tell which is which.
-    for (int i = 0; i < names.size(); ++i)
-    {
-        if (names[i].isEmpty())
-            return fail ("preset " + juce::String (i) + " has an empty name");
-
-        for (int j = i + 1; j < names.size(); ++j)
-            if (names[i] == names[j])
-                return fail ("presets " + juce::String (i) + " and " + juce::String (j)
-                             + " are both called \"" + names[i] + "\"");
-    }
-
-    // The REAL parameter set, from the table the plugin registered with the
-    // host - the same reasoning the DEBUG audit's comment records above: the
-    // layout object cannot be enumerated, so getParameters() is the source.
-    std::set<juce::String> registered;
-    for (const auto* parameter : getParameters())
-        if (const auto* ranged = dynamic_cast<const juce::RangedAudioParameter*> (parameter))
-            registered.insert (ranged->paramID);
-
-    if (registered.empty())
-        return fail ("no parameters are registered - every check below would pass for the wrong reason");
-
-    // Every id any preset mentions, checked against the real set as it is
-    // collected: a key naming a parameter that does not exist is dropped
-    // SILENTLY by applyFactoryPreset()'s getParameter() guard, so the preset
-    // loads with that one control left wherever the session had it.
-    std::set<juce::String> covered;
-    for (int i = 0; i < FactoryPresets::count(); ++i)
-        for (const auto& entry : factoryPresetValues (i))
-        {
-            if (registered.count (entry.first) == 0)
-                return fail ("preset " + juce::String (i) + " names \"" + entry.first
-                             + "\", which is not a registered parameter");
-
-            if (FactoryPresets::isSentinelValue (entry.second))
-                return fail ("preset " + juce::String (i) + " holds a sentinel for \""
-                             + entry.first + "\"");
-
-            covered.insert (entry.first);
-        }
-
-    // The parameters a preset deliberately does NOT state. The exclusions and
-    // their per-id justifications live in auditFactoryPresets (DEBUG) so the
-    // reasoning stays beside the checks that consume them; only the SET is
-    // repeated here, and the DEBUG audit's own jasserts keep the two honest.
-    static const std::set<juce::String> intentionallyNotPresettable {
-        "bypass", "delta", "ui_sounds", "language", "anti_phase_guard",
-        "transport", "spindown",
-        "transient_attack", "transient_sustain", "transient_mix", "neural_mix",
-        "ir_mix", "osc_on", "osc_note", "glue_on",
-    };
-
-    for (const auto& id : registered)
-        if (covered.count (id) == 0 && intentionallyNotPresettable.count (id) == 0)
-            return fail ("parameter \"" + id + "\" is in no preset and is not excluded");
-
-    return true;
-}
-
 #if DEBUG
 void FirstAudioProcessor::auditFactoryPresets()
 {
-    // The DEBUG constructor keeps the structural audit above PLUS the instance
-    // checks a static cannot make: dirty-badge completeness against this tree,
-    // and the live apply-and-read-back of every preset. Both halves stay
-    // aligned because the structural half is the SAME function the test
-    // harness runs - it is not a second copy that can drift.
-    juce::String problem;
-    jassert (verifyFactoryPresetStructure (problem));
+    // =======================================================================
+    //  The preset audit, run once at construction in debug builds.
+    //
+    //  The factory presets went wrong twice, in two different ways, and both
+    //  produced the same user-visible report ("the presets do not work") with
+    //  nothing in a release build to say why:
+    //
+    //    1. THE NAMES AND THE TABLE DISAGREED. getPresetNames() returned
+    //       twenty names for a twenty-six row table, so six rows had no name
+    //       and - because the box, the undo label and the badge all index by
+    //       POSITION - every name below the gap was attached to the wrong
+    //       sound. Nothing crashed; the list simply lied.
+    //
+    //    2. THE TABLE AND THE PARAMETERS DISAGREED. Fifteen sound-bearing
+    //       parameters had no column, so they kept the session's value and
+    //       every preset loaded "mostly". See the field block in the table.
+    //
+    //  Both are compile-time-shaped mistakes - a list length, a set of names,
+    //  a set of ids - and both are invisible at runtime by construction. So
+    //  they are checked here instead, from the three sources themselves rather
+    //  than from a count written down beside them: the names, the table, and
+    //  the parameters the processor actually registered. A fourth source of the
+    //  same class of bug - a map key naming a parameter that does not exist - is
+    //  checked here too, as the keys are collected.
+    //
+    //  DEBUG only. It is O(presets x parameters) with a ValueTree read per key,
+    //  which is nothing to pay for while developing and nothing to pay for at
+    //  all in a shipping build.
+    // =======================================================================
+    const auto names = getPresetNames();
+        jassert (names.size() == FactoryPresets::count());
 
-        const auto names = getPresetNames();
+        // A name that is empty, or the same as another, is the same class of bug
+        // as a name list that is the wrong length: the box would show two blank
+        // entries and the user would have no way to tell which is which. Cheap to
+        // check here, invisible from the outside until it happens.
+        for (int i = 0; i < names.size(); ++i)
+        {
+            jassert (names[i].isNotEmpty());
 
-        // The REAL parameter set (see verifyFactoryPresetStructure above).
+            for (int j = i + 1; j < names.size(); ++j)
+                jassert (names[i] != names[j]);
+        }
+
+        // The REAL parameter set, from the processor rather than from a list
+        // written out beside it: getParameters() is what was registered with the
+        // host, and the APVTS member has already built and installed it by the
+        // time this constructor body runs.
+        //
+        //  The layout object is not the source, and asking it is not an option:
+        //  JUCE 9's ParameterLayout exposes only add() - its storage vector and
+        //  anything that would enumerate it are private - so getParameterIds()
+        //  and getParameter() do not exist on it. The cast is to
+        //  RangedAudioParameter because that is where the id lives; a parameter
+        //  that is not one (a group) has no single id and is skipped, which is
+        //  right - the layout registers no groups.
         std::set<juce::String> registered;
         for (const auto* parameter : getParameters())
             if (const auto* ranged = dynamic_cast<const juce::RangedAudioParameter*> (parameter))
@@ -624,7 +516,7 @@ void FirstAudioProcessor::auditFactoryPresets()
 
         // Keep the dirty-badge cache complete as well as valid: every registered
         // parameter must be tracked, and every tracked id must resolve in the host
-        // parameter set.
+        // parameter set. This debug check catches omissions when new controls land.
         std::set<juce::String> dirtyTracked;
         for (const auto* id : parametersTrackedForDirtyBadge())
         {
@@ -635,9 +527,107 @@ void FirstAudioProcessor::auditFactoryPresets()
         for (const auto& id : registered)
             jassert (dirtyTracked.count (id) != 0);
 
+        // On the list itself: an empty one would make every check below pass for
+        //  the wrong reason, which is the one way a check written this way fails
+        //  to fail.
+        jassert (! registered.empty());
+
+        // Every id any preset mentions, so the "is every parameter in a preset"
+        // pass below can be the complement of this set rather than a second
+        // hand-written list that drifts from the first. And every key is
+        // checked against the real set as it is collected: a key naming a
+        // parameter that does not exist is dropped SILENTLY by
+        // applyFactoryPreset()'s getParameter() guard, so the preset loads with
+        // that one control left wherever the session had it.
+        std::set<juce::String> covered;
+        for (int i = 0; i < FactoryPresets::count(); ++i)
+            for (const auto& entry : factoryPresetValues (i))
+            {
+                jassert (registered.count (entry.first) != 0);
+                jassert (! FactoryPresets::isSentinelValue (entry.second));
+                covered.insert (entry.first);
+            }
+
+        // The five parameters a preset deliberately does NOT state, and the
+        // reason for each. This list is the point: the check is only useful if
+        // it can be satisfied, so the exclusions are named and justified here
+        // rather than the check being weakened until it stops failing.
+        //
+        //   bypass       a preset that silently bypasses the plugin is a trap;
+        //               the user asks for that by pressing BYPASS.
+        //   delta        the A/B reference tool, a comparison aid and not a
+        //               sound the author would want to hand back on a load.
+        //   ui_sounds    a panel preference. It is not audio, it never reaches
+        //               an output, and a preset is the wrong place to change
+        //               how someone's interface feels.
+        //   transport    whether the machine is running is the session's
+        //               state, not a property of a sound.
+        //   spindown     the same argument: it is how the machine STOPS, so
+        //               loading a preset with it on would stop the machine for
+        //               a user who never asked for that.
+        //   transient_*  and neural_mix. All four default to their NEUTRAL value -
+        //               both transient amounts are 0, both mixes are 0 - so a
+        //               preset that does not state them loads to the stage being
+        //               absent, which is exactly what every preset written before
+        //               these controls existed intends. Stating them would also
+        //               mean every factory preset had to be rewritten, which is
+        //               the churn the single-source registries below exist to
+        //               avoid.
+        //
+        // Anything else missing from every preset is a bug, and the jassert
+        // says which id by name rather than just failing.
+        const std::set<juce::String> intentionallyNotPresettable {
+            "bypass", "delta", "ui_sounds", "language", "anti_phase_guard",
+            "transport", "spindown",
+            "transient_attack", "transient_sustain", "transient_mix", "neural_mix",
+            "ir_mix",
+            // OSC is the same KIND of entry as bypass and delta: a listening state
+            // rather than a property of a sound. A factory preset that switched the
+            // note generator on would surprise every load, and no preset should have
+            // to be rewritten to say "the oscillator stays off".
+            "osc_on",
+            // The rack is NOT excluded, and this is the entry that used to be
+            // here. Its 26 controls default to 0 - out of the path rather than a
+            // bypass - so leaving them out of a preset is harmless on a fresh
+            // session and wrong on every other one: applying such a preset over a
+            // session that had FUZZ at 0.8 left FUZZ at 0.8, because no key in the
+            // file disagreed. A factory preset has to be deterministic, so every
+            // file states the whole rack (all zeros for the presets that do not
+            // use it) and check_presets.py keeps them doing it.
+            //
+            // The same block also held comp_upward with no comma after it, so the
+            // two literals either side of it concatenated into one name that is not
+            // a parameter: neither key was ever excluded, and the debug audit
+            // asserted on them instead. One line, two keys, and the difference
+            // between a table that says what it means and one that merely reads
+            // right in a diff.
+            // (osc_note used to be listed beside it: that id is the OSC surface's
+            // note slot, not a plugin parameter - no preset can carry it - so the
+            // audit below has nothing to exclude. Naming it in quotes here would
+            // make this very list read as if it still did.)
+            // GLUE COMP is a property of the MACHINE rather than of a sound, like
+            // bypass and delta: it switches the deck's two compressors in or out,
+            // and a preset that silently turned them back on would fight a session
+            // deliberately running without them. A factory preset leaves the
+            // switch where the user put it.
+            "glue_on",
+    };
+
+        for (const auto& id : registered)
+            jassert (covered.count (id) != 0
+                  || intentionallyNotPresettable.count (id) != 0);
+
         // THE LOAD ITSELF, exercised: apply each preset and re-read what landed in
-        // the tree, then put back the untouched "no preset loaded" state.
+        // the tree. Every listed key must come back equal to the file's value and
+        // nothing may throw. This is the objective half of "presets don't work":
+        // the apply path (values -> tree -> replaceState) runs here against the
+        // real engine, so a broken round-trip is a named key on the console rather
+        // than a user's impression. It runs in the constructor, before any editor
+        // exists; afterwards the "no preset loaded" state is put back, so the host
+        // state lands on top of a clean tree, not on the last audited preset.
         {
+            // A FRESH copy per read: replaceState installs a new tree object, so a
+            // tree captured once would go stale after the very first apply.
             const auto idProperty = juce::Identifier ("id");
             const auto valueProperty = juce::Identifier ("value");
             auto readBack = [&] (const juce::String& key) -> float
@@ -659,16 +649,28 @@ void FirstAudioProcessor::auditFactoryPresets()
             {
                 applyFactoryPreset (i);
 
+                // A key whose value did not land exactly (a choice parameter
+                // clamped to a legal step, or a key the engine rounds) is PRINTED,
+                // not asserted: the constructor cannot know what state the host
+                // has already pushed, so equality here is a report rather than a
+                // contract. What makes it objective is that it names the key and
+                // the two numbers, from the real apply path.
                 for (const auto& entry : factoryPresetValues (i))
                 {
                     const auto landed = readBack (entry.first);
 
+                    // approximatelyEqual also catches a NaN read-back: a missing
+                    // key prints with "nan" as the value instead of silently
+                    // passing, and the float-equal warning flag stays happy.
                     if (! juce::approximatelyEqual (landed, entry.second))
                         DBG ("[presets] preset " << i << " key " << entry.first
                              << ": wanted " << entry.second << ", tree holds " << landed);
                 }
             }
 
+            // Back to the untouched "no preset loaded" state the session opens with,
+            // and no factory load left in the undo history: the audit's 29 swaps are
+            // bookkeeping, not something Ctrl+Z should walk a debug session through.
             lastPresetIndex.store (-1, std::memory_order_relaxed);
             markPresetClean ({});
             undoManager.clearUndoHistory();
@@ -927,7 +929,30 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // restores rather than ramping into it.
     deltaListenSmoothed.setCurrentAndTargetValue (deltaParam != nullptr && deltaParam->load() >= 0.5f ? 1.0f : 0.0f);
 
-    resetTelemetryAtomics();
+    inputPeakLevel.store (0.0f, std::memory_order_relaxed);
+    inputRmsLevel.store (0.0f, std::memory_order_relaxed);
+    inputPeakDb.store (-70.0f, std::memory_order_relaxed);
+    inputRmsDb.store (-70.0f, std::memory_order_relaxed);
+    inputLufs.store (-70.0f, std::memory_order_relaxed);
+    inputVuDb.store (-70.0f, std::memory_order_relaxed);
+    inputCombinedDb.store (-70.0f, std::memory_order_relaxed);
+    inputClipping.store (false, std::memory_order_relaxed);
+    outputPeakLevel.store (0.0f, std::memory_order_relaxed);
+    outputRmsLevel.store (0.0f, std::memory_order_relaxed);
+    outputPeakDb.store (-70.0f, std::memory_order_relaxed);
+    outputRmsDb.store (-70.0f, std::memory_order_relaxed);
+    outputLufs.store (-70.0f, std::memory_order_relaxed);
+    outputVuDb.store (-70.0f, std::memory_order_relaxed);
+    outputCombinedDb.store (-70.0f, std::memory_order_relaxed);
+    outputClipping.store (false, std::memory_order_relaxed);
+    inputGainReductionDb.store (0.0f, std::memory_order_relaxed);
+    outputGainReductionDb.store (0.0f, std::memory_order_relaxed);
+    inputCompressorActivity.store (0.0f, std::memory_order_relaxed);
+    outputCompressorActivity.store (0.0f, std::memory_order_relaxed);
+    compressorActivity.store (0.0f, std::memory_order_relaxed);
+    transportDrift.store (0.5f, std::memory_order_relaxed);
+    harmonicCharacter.store (0.0f, std::memory_order_relaxed);
+    bypassActive.store (false, std::memory_order_relaxed);
 
     hystL.fill (0.0f);
     hystR.fill (0.0f);
@@ -1014,7 +1039,16 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     const double maxEngineRate = juce::jmax (44100.0, sampleRateToUse) * 8.0;
     const int maxDelaySamples = static_cast<int> (std::ceil (0.25 * maxEngineRate)) + 4;
     delayBufferLength = juce::jmax (4, maxDelaySamples);
-    resetDelayLine (samplesPerBlock);
+    delayBuffer.setSize (juce::jmax (1, juce::jmin (2, getTotalNumOutputChannels())),
+                         delayBufferLength, false, true, true);
+    delayBuffer.clear();
+    delayWritePosition = 0;
+    delayToneLpState.fill (0.0f);
+    delayHpXState.fill (0.0f);
+    delayHpYState.fill (0.0f);
+    delayFeedbackDampState.fill (0.0f);
+    delayToneCurrent = 0.5f;
+    delayFeedbackHpRCurrent = 0.99f;
 
     // The offset buffer is a fixed short window - a few hundred microseconds is far
     // more than the tens the control asks for - so it is a plain array, not an
@@ -1051,7 +1085,25 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     tapeConditionR.reset();
     vinylL.reset();
     vinylR.reset();
-    resetInputChainState();
+
+    // The DI's own smoother starts from the value the parameter restores, so a
+    // session saved with the box engaged does not spend its first 20 ms sliding
+    // into it.
+    diSmoothed.setCurrentAndTargetValue (diParam != nullptr ? diParam->load() : 0.0f);
+    diLoadSmoothed.setCurrentAndTargetValue (diLoadParam != nullptr ? diLoadParam->load() : 0.0f);
+    diTransformerSmoothed.setCurrentAndTargetValue (diTransformerParam != nullptr
+                                                        ? diTransformerParam->load() : 0.0f);
+
+    // Reseeded rather than zeroed: zero is a degenerate LCG state, and the two
+    // channels get different seeds so their clock noise is uncorrelated - sharing
+    // one would put the BBD buzz in the centre of the image.
+    bbdNoiseStateL = 0x85ebca6bu;
+    bbdNoiseStateR = 0xc2b2ae35u;
+    bbdLowL = bbdLowR = 0.0f;
+    lofiLowL = lofiLowR = 0.0f;
+    lofiHoldL = lofiHoldR = 0.0f;
+    loFiHoldClock.reset();
+    wearModulation = 0.0f;
 
     // The room starts empty. Its tank runs at the rate its own delay lengths were
     // chosen at and the wrapper carries the signal across, so a new session rate
@@ -1292,16 +1344,6 @@ void FirstAudioProcessor::updatePresetDirty() noexcept
 
 void FirstAudioProcessor::setOversamplingFactor (OversamplingFactor factor, int samplesPerBlock)
 {
-    // The rate each engine slot runs at, indexed by the enum's own order (off, x2,
-    // x4, x8 - the same order the oversamplers array was built in, where
-    // prepareToPlay derives the factor as 1 << slot). One table instead of a
-    // branch per factor: adding a factor extends the table rather than leaving a
-    // new else-if to forget.
-    static constexpr float rateFactors[] { 1.0f, 2.0f, 4.0f, 8.0f };
-    static_assert (sizeof (rateFactors) / sizeof (rateFactors[0])
-                       == static_cast<int> (oversamplingFactorCount),
-                   "one rate factor per oversampling slot");
-
     const auto clamped = (factor == OversamplingFactor::x2
                           || factor == OversamplingFactor::x4
                           || factor == OversamplingFactor::x8)
@@ -1309,7 +1351,14 @@ void FirstAudioProcessor::setOversamplingFactor (OversamplingFactor factor, int 
     const auto clampedIndex = static_cast<int> (clamped);
 
     lastBlockSize = juce::jmax (1, samplesPerBlock);
-    oversamplingRateFactor = rateFactors[static_cast<std::size_t> (clampedIndex)];
+    if (clamped == OversamplingFactor::x2)
+        oversamplingRateFactor = 2.0f;
+    else if (clamped == OversamplingFactor::x4)
+        oversamplingRateFactor = 4.0f;
+    else if (clamped == OversamplingFactor::x8)
+        oversamplingRateFactor = 8.0f;
+    else
+        oversamplingRateFactor = 1.0f;
 
     // Select the PREPARED slot. prepareToPlay has already called prepare() on the
     // corrector, IR, trackers and repitch stage for every factor, so nothing here

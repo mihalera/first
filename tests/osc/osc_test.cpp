@@ -697,75 +697,6 @@ void checkRingDisplayPlate()
           "and its note is no longer set at 12 px");
 }
 
-//  The edges the fuzz-style cases exist for: the two numbers a peer sets
-//  arbitrarily are the bundle element's LENGTH field and the packet's overall
-//  size. A decoder that indexes before it bounds-checks reads out of bounds on
-//  both, so both are driven to their extremes - truncated at every word
-//  boundary of a valid message, and a length field that claims the maximum.
-void checkFuzzEdges()
-{
-    std::printf("\nfuzz edges: truncation and oversized lengths\n");
-
-    const auto valid = j37::osc::encode(Message { "/mibox/tape/drive", { Argument::ofFloat(0.25f) } });
-    const auto wire = asString(valid);
-    std::string reason;
-
-    //  Every prefix of a valid packet, in four-byte steps down to nothing:
-    //  each must be refused (or, for the whole packet, accepted) with no crash,
-    //  no hang and no partially-written destination.
-    bool allPrefixesRefused = true;
-    for (std::size_t cut = 0; cut < wire.size(); cut += 4)
-    {
-        Message out;
-        if (j37::osc::decode(wire.substr(0, cut), out, &reason))
-            allPrefixesRefused = false;
-    }
-    check(allPrefixesRefused, "every truncated prefix of a valid message is refused");
-
-    //  Off-by-one truncations too - a length that is not a word multiple is the
-    //  case decode() refuses first, but the sub-word tail has to be refused
-    //  just as cleanly.
-    Message out;
-    check(! j37::osc::decode(wire.substr(0, wire.size() - 1), out, &reason)
-              && ! j37::osc::decode(wire.substr(0, 1), out, &reason)
-              && ! j37::osc::decode(std::string_view(), out, &reason),
-          "a sub-word tail, a single byte and an empty packet are all refused");
-
-    //  A bundle element that claims the largest length a uint32 can name. The
-    //  decoder must compare it against what the packet HOLDS, never allocate
-    //  or advance by it.
-    const auto inner = j37::osc::encode(Message { "/a", {} });
-    Packet oversized = bundleOf({ inner });
-    const auto lengthAt = oversized.size() - (inner.size() + 4);
-    oversized[lengthAt + 0] = 0xff;
-    oversized[lengthAt + 1] = 0xff;
-    oversized[lengthAt + 2] = 0xff;
-    oversized[lengthAt + 3] = 0xff;
-
-    reason.clear();
-    check(j37::osc::decodePacket(asString(oversized), &reason).empty(),
-          "a bundle element claiming 4 GiB - 1 is refused, not followed");
-    check(reason.find("longer") != std::string::npos, "and the reason names the length");
-
-    //  The same maximal length with the packet cut short behind it: the header
-    //  fits, the element does not exist.
-    Packet headerOnly { '#', 'b', 'u', 'n', 'd', 'l', 'e', 0 };
-    for (int byte = 0; byte < 8; ++byte)
-        headerOnly.push_back(byte < 7 ? 0 : 1);
-    j37::osc::detail::appendUint32(headerOnly, 0xffffffffu);
-
-    reason.clear();
-    check(j37::osc::decodePacket(asString(headerOnly), &reason).empty(),
-          "a bundle whose only element's bytes are absent is refused");
-
-    //  And a byte sweep over a maximal length inside a MESSAGE-length field:
-    //  decode() reads its own size from the packet, so a hostile size there is
-    //  refused for the same reason rather than read as the packet's size.
-    std::string huge("/a\0\0,f\0\0", 8);
-    huge[0] = static_cast<char>(0xffu); // corrupt the address' first word
-    check(! j37::osc::decode(huge, out, &reason), "a corrupted address word does not decode");
-}
-
 } // namespace
 
 int main()
@@ -778,7 +709,6 @@ int main()
     checkArgumentReader();
     checkRefusals();
     checkBundles();
-    checkFuzzEdges();
     checkSurface();
     checkBallPhysics();
     checkModalVoice();

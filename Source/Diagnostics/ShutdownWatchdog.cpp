@@ -176,11 +176,6 @@ ShutdownWatchdog::ShutdownWatchdog (int limitMilliseconds) noexcept
 {
 }
 
-ShutdownWatchdog::~ShutdownWatchdog()
-{
-    disarm();
-}
-
 std::string ShutdownWatchdog::stacksPath() const
 {
     return logPath() + ".stacks.txt";
@@ -200,9 +195,9 @@ void ShutdownWatchdog::arm() noexcept
 
     phase ("shutdown: watchdog armed");
 
-    // Keep ownership until disarm joins the worker; a stalled teardown still
-    // leaves the watchdog running, while completed teardown cannot outlive us.
-    watcher = std::thread (&ShutdownWatchdog::watch, this);
+    // Detached on purpose: if the main thread never returns, nothing here is
+    // going to join it, and the process is about to be killed by the user.
+    std::thread (&ShutdownWatchdog::watch, this).detach();
 }
 
 void ShutdownWatchdog::phase (const char* what) noexcept
@@ -234,9 +229,6 @@ void ShutdownWatchdog::disarm() noexcept
 
     if (armed.exchange (false))
         phase ("shutdown: complete");
-
-    if (watcher.joinable())
-        watcher.join();
 }
 
 void ShutdownWatchdog::watch()
@@ -265,25 +257,12 @@ void ShutdownWatchdog::appendPhaseTrace (std::string& destination)
     destination += "\nphase trace (the guard's own log, oldest first):\n";
 
     std::ifstream in (logPath(), std::ios::binary);
-    if (! in)
-        return;
+    std::string text ((std::istreambuf_iterator<char> (in)), std::istreambuf_iterator<char>());
 
-    // The guard only reports; seek to the bounded tail rather than first loading
-    // the whole of a runaway file into memory.
+    // The guard only reports; it does not read the whole of a runaway file.
     constexpr std::size_t cap = 262144;
-    in.seekg (0, std::ios::end);
-    const auto fileSize = in.tellg();
-    if (fileSize < 0)
-        return;
-
-    const auto cappedSize = static_cast<std::size_t> (fileSize) > cap
-                                ? cap : static_cast<std::size_t> (fileSize);
-    in.seekg (-static_cast<std::streamoff> (cappedSize), std::ios::end);
-
-    std::string text (cappedSize, '\0');
-    in.read (text.data(), static_cast<std::streamsize> (text.size()));
-    text.resize (static_cast<std::size_t> (in.gcount()));
-    destination += text;
+    const auto first = text.size() > cap ? text.size() - cap : std::size_t { 0 };
+    destination += text.substr (first);
 }
 
 void ShutdownWatchdog::writeStacks()

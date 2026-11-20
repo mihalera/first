@@ -1,9 +1,0 @@
-            { 1.12f, 0.96f, 1.05f, 1.30f },
-            { 1.05f, 1.12f, 1.30f, 1.10f },
-            { 1.00f, 1.00f, 1.00f, 1.00f },
-        };
-
-        const auto& generation = generationVoices[generationIndex];
-        const auto& turntable = turntableVoices[turntableIndex];
-        const auto& cartridge = cartridgeVoices[cartridgeIndex];
-        for (auto* stage : vinylStages)

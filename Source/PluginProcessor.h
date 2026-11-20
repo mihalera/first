@@ -497,43 +497,11 @@ public:
 
     bool processBypassedBlock (juce::dsp::AudioBlock<float>&, const BlockContext&);
     void processPostMachineStages (juce::dsp::AudioBlock<float>&, const BlockContext&);
-
-    /** Writes one complete meter frame - levels, dB conversions, LUFS, VU,
-        clipping and compressor-reduction atomics - from the values both the
-        wet path (publishBlockTelemetry) and the bypass path
-        (processBypassedBlock) publish. The one writer for the shared meter
-        atomics, so a new meter is added once rather than twice. */
-    void publishMeterFrame (float inputPeak, float inputRms,
-                            float outputPeak, float outputRms,
-                            float inputLufsValue, float outputLufsValue,
-                            float inputVuDbValue, float outputVuDbValue,
-                            bool clippingThisBlock, bool inputClippingThisBlock,
-                            float inputPeakReductionDb, float peakReductionDb,
-                            float inputEnvelopeActivity, float outputEnvelopeActivity);
     bool processIrStage (juce::dsp::AudioBlock<float>&, int channels, int samples, float irMix);
     void processReverbAndVinylStages (juce::dsp::AudioBlock<float>&, const BlockContext&,
                                       float irMix, bool irActive);
     void processPostEffectsSafetyLimiter (juce::dsp::AudioBlock<float>&, int channels, int samples);
     void processAutoTuneSample (float* stereoSamples, int channels, float rate) noexcept;
-
-    /** The autotune stage's block-rate control: everything processAutoTuneSample
-        used to decode from parameters on every FRAME, derived once per block
-        instead. Built in processPostMachineStages; the per-frame function only
-        gates and calls the corrector. */
-    struct AutoTuneFrameSettings
-    {
-        float amount = 0.0f;
-        int tonic = 0;
-        int mode = 0;
-        float glide = 0.0f;        // per-frame coefficient from SPEED and the rate
-        float releaseGlide = 0.0f; // per-frame coefficient of the 30 ms return
-        float tolerance = 10.0f;
-        float gateThreshold = 0.5f;
-        float range = 1.0f;
-        int octave = 0;
-    };
-
-    AutoTuneFrameSettings readAutoTuneFrameSettings (float stageRate) const noexcept;
     void publishBlockTelemetry (const BlockContext& context,
                                 float inputPeak, float inputRms,
                                 float outputPeak, float outputRms,
@@ -601,15 +569,6 @@ public:
 
     /** Display names of the factory presets, in order, read from the JSON files. */
     static juce::StringArray getPresetNames();
-
-    /** Runs the factory-preset audit's structural checks against the real
-        parameter tree and preset table. Returns false and names the first
-        problem through juce::Logger when an invariant is broken. Declared
-        public static so tests/presets/preset_audit.cpp drives the same checks
-        the DEBUG constructor audit runs - the checks are data-shaped and cost
-        nothing to run in release test builds, where the DEBUG-only audit does
-        not exist. */
-    static bool verifyFactoryPresetStructure (juce::String& firstProblem);
 
     /** Applies factory preset `index` (0..numFactoryPresets()-1) with one undo transaction. */
     void applyFactoryPreset (int index);
@@ -1165,36 +1124,11 @@ private:
     /** Rebuilds every time-domain constant from the current sample rate. */
     void resetSampleRateDependentState();
 
-    /** Clears every meter/telemetry atomic to its idle value. Message thread. */
-    void resetTelemetryAtomics();
-
-    /** Sizes and clears the playback-head delay line and its filter state.
-        Called only from prepareToPlay: the buffers are allocated here so the
-        audio thread never resizes them. */
-    void resetDelayLine (int samplesPerBlock);
-
-    /** Restarts the DI box, noise-generator and lo-fi chain state from the
-        restored parameter values. Message thread. */
-    void resetInputChainState();
-
     /** Recomputes the cached tone filter coefficients for the current rate. */
     void updateToneCoefficients (float toneValue, float engineSampleRate);
 
     /** Rebuilds rate-dependent block coefficients from the current engine rate. */
     void configureBlockRateCoefficients (float engineSampleRate, float cabinetAmount);
-
-    /** Reads the 25 fx-rack amounts from their cached atomics into fxTargets.
-        Block-rate only; the rack smooths each amount at audio rate itself. */
-    void readFxTargets();
-
-    /** Applies the vinyl type/speed/generation/turntable/cartridge voicing to both
-        vinyl stages. Pure configuration of stage fields; allocation-free. */
-    void configureVinylStages (float engineSampleRate);
-
-    /** Prepares both three-band equalisers from their parameter atomics and feeds
-        the six band-gain smoothers. Returns the (input, output) mid-band
-        coefficients for the block state. */
-    std::pair<float, float> configureEqualisers (float engineSampleRate);
 
     /** Selects the prepared oversampling slot for the requested factor and reports
         latency. Allocation-free: all slots were prepared in prepareToPlay, so this
@@ -1842,11 +1776,6 @@ private:
     std::array<float, 2> autoTuneCorrectionSmoothed { 1.0f, 1.0f };
     std::array<float, 2> autoTuneRatiosForFrame { 1.0f, 1.0f };
     std::array<int, 2> autoTunePeriodHintsFor { 0, 0 };
-    // The block-rate control the frame loop reads: rebuilt by
-    // readAutoTuneFrameSettings() once per block in processPostMachineStages,
-    // before any frame runs. Audio thread only - written and read in the same
-    // callback, so no atomic and no fence.
-    AutoTuneFrameSettings autoTuneFrameSettingsForBlock {};
     // The confidence gate's open/closed state, one per channel. It is what makes
     // the gate hysteretic: opening at GATE and closing five points below it stops
     // a note sitting near the threshold from switching the corrector in and out.

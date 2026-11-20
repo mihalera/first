@@ -22,7 +22,6 @@
 #include <atomic>
 #include <chrono>
 #include <string>
-#include <thread>
 
 namespace j37diag
 {
@@ -30,7 +29,6 @@ namespace j37diag
     {
     public:
         explicit ShutdownWatchdog (int limitMilliseconds = 2000) noexcept;
-        ~ShutdownWatchdog();
 
         /** Start watching. Idempotent: a second call inside the same teardown -
             the processor destructing after the editor - does not restart it. */
@@ -70,7 +68,6 @@ namespace j37diag
         std::atomic<bool> finished { false };
         std::atomic<bool> fired { false };
         std::chrono::steady_clock::time_point began;
-        std::thread watcher;
     };
 
     /** One watchdog per process, so the editor and the processor destructors
