@@ -108,3 +108,9 @@ add_test(NAME processor_boundaries COMMAND j37_processor_boundary_tests)
 #  driven through the real processor's processBlock the way a host calls it.
 j37_add_harness_target(j37_parameter_audio_tests parameter_audio.cpp)
 add_test(NAME parameter_audio COMMAND j37_parameter_audio_tests)
+
+#  The factory-preset audit harness: the same structural checks the DEBUG
+#  constructor audit runs, executed against the shipping plugin in every CI
+#  build rather than only where DEBUG compiles them in.
+j37_add_harness_target(j37_preset_audit_tests preset_audit.cpp)
+add_test(NAME preset_audit COMMAND j37_preset_audit_tests)

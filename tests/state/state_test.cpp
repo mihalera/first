@@ -533,6 +533,68 @@ void checkTheSessionLoad()
 }
 
 //==============================================================================
+/** A LEGACY (pre-marker) blob, driven through the migration inside
+    setStateInformation: the raw XML bytes an old build wrote are decoded,
+    migrated and installed, and every leg of that path is asserted - the migrated
+    parameter values, the A/B slot seeding from the loaded state, and the preset
+    bookkeeping reset. This is the path every existing DAW project arrives on. */
+void checkTheLegacyBlobMigration()
+{
+    std::printf ("a legacy XML blob through setStateInformation\n");
+
+    // The blob itself: a state a pre-marker build would have written, carrying a
+    // MIX raw value of 0.5, which on the old 0..1 scale meant HALF WET and on
+    // the current 0..100 percent scale means half a percent. The migration is
+    // what turns it into 50 percent.
+    FirstAudioProcessor exemplar;
+    auto legacyTree = sessionTree (exemplar, 0.5, -1);
+    const auto legacyXml = legacyTree.createXml();
+    check (legacyXml != nullptr, "the legacy tree encodes as XML");
+    if (legacyXml == nullptr)
+        return;
+
+    juce::MemoryOutputStream stream;
+    legacyXml->writeToStream (stream, "");
+    const auto* blob = stream.getMemoryBlock().getData();
+    const auto blobSize = static_cast<int> (stream.getMemoryBlock().getSize());
+
+    FirstAudioProcessor restored;
+    restored.setStateInformation (blob, blobSize);
+
+    checkEqual (mixOf (restored), 50.0f,
+                "the legacy blob's MIX 0.5 arrives as 50 percent after migration");
+
+    // Both A/B slots were seeded from the migrated state: toggling compare
+    // before anything is stored recalls what the session actually holds, not an
+    // empty tree or a half-written copy.
+    check (restored.compareSlots[0].isValid(), "slot A is valid after a legacy load");
+    check (restored.compareSlots[1].isValid(), "slot B is valid after a legacy load");
+    check (restored.compareSlots[0].isEquivalentTo (restored.parameters.copyState()),
+           "slot A matches the migrated parameters");
+    check (restored.compareSlots[1].isEquivalentTo (restored.parameters.copyState()),
+           "slot B matches the migrated parameters");
+    checkEqual (static_cast<float> (restored.activeSlot.load (std::memory_order_relaxed)), 0.0f,
+                "the migrated state is the active A/B side");
+
+    // A loaded session restores parameters, not the preset that produced them.
+    checkEqual (static_cast<float> (restored.lastPresetIndex.load (std::memory_order_relaxed)), -1.0f,
+                "a legacy load clears the preset index");
+    check (restored.currentPresetName.isEmpty(),
+                "a legacy load clears the preset badge");
+    check (! restored.presetDirty.load (std::memory_order_relaxed),
+                "the badge starts clean after a legacy load");
+
+    // The blob round-trips: saving the migrated instance writes a CURRENT state
+    // (with the format marker), and loading it again changes nothing.
+    juce::MemoryBlock resaved;
+    restored.getStateInformation (resaved);
+    FirstAudioProcessor twice;
+    twice.setStateInformation (resaved.getData(), static_cast<int> (resaved.getSize()));
+    checkEqual (mixOf (twice), 50.0f,
+                "the migrated session saves current and reloads unchanged");
+}
+
+//==============================================================================
 void checkRefusal()
 {
     std::printf ("a block that is not a state\n");
@@ -655,6 +717,7 @@ int main()
     checkTheRetiredSources();
     checkTheMachineSession();
     checkTheSessionLoad();
+    checkTheLegacyBlobMigration();
     checkRefusal();
 
     std::printf ("\n%d checks, %d failures\n", checks, failures);
