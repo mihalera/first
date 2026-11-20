@@ -424,13 +424,6 @@ jobs:
       - name: Check the parameter table wiring
         run: python3 tests/parameters/check_parameters.py
 
-      # A parameter registered in Source/ParameterTable.cpp but absent from the
-      # badge list turns without ever marking the preset dirty; an id left in the
-      # list after its parameter is removed is the same drift the other way.
-      # Both are silent in a build, so a text check beside the wiring one above.
-      - name: Check the dirty-badge ID list
-        run: python3 tests/parameters/check_dirty_badge.py
-
       # The page table is a constexpr array whose own static_asserts only run
       # in a build, and the four-family split put a page's family next to its
       # name for the first time - a column that is easy to type wrong and

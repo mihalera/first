@@ -292,11 +292,6 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
 
 void FirstAudioProcessor::applyFactoryPreset (int index)
 {
-    // With no presets at all the jlimit bound below would be last = -1 < first = 0,
-    // which is an assertion, so bail before the clamp.
-    if (FactoryPresets::count() == 0)
-        return;
-
     const auto clampedIndex = juce::jlimit (0, FactoryPresets::count() - 1, index);
     const auto& values = factoryPresetValues (clampedIndex);
     if (values.empty())
@@ -346,15 +341,7 @@ void FirstAudioProcessor::copyToCompareSlot (int slot)
 void FirstAudioProcessor::toggleCompare()
 {
     const auto nextSlot = 1 - activeSlot.load (std::memory_order_relaxed);
-    const auto& target = compareSlots[static_cast<std::size_t> (nextSlot)];
-
-    // If nothing has been copied into that slot yet the recall would be a no-op
-    // (applyStateWithUndo rejects an invalid tree), so leave the active slot alone
-    // rather than flipping to a state the machine never captured.
-    if (! target.isValid())
-        return;
-
-    applyStateWithUndo (target,
+    applyStateWithUndo (compareSlots[static_cast<std::size_t> (nextSlot)],
                         nextSlot == 0 ? "Recall A" : "Recall B");
     activeSlot.store (nextSlot, std::memory_order_relaxed);
 }
@@ -397,13 +384,6 @@ void FirstAudioProcessor::updateActiveCompareSlot()
 //==============================================================================
 namespace
 {
-    juce::File userPresetDirectoryPath()
-    {
-        return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                   .getChildFile ("MiBoX")
-                   .getChildFile ("Presets");
-    }
-
     juce::String sanitiseUserPresetName (const juce::String& name)
     {
         juce::String safe;
@@ -422,7 +402,9 @@ namespace
         if (safeName.isEmpty() || safeName == "." || safeName == "..")
             return false;
 
-        auto directory = userPresetDirectoryPath();
+        auto directory = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                            .getChildFile ("MiBoX")
+                            .getChildFile ("Presets");
         if (! directory.isDirectory() && ! directory.createDirectory().wasOk())
             return false;
         if (! directory.isDirectory())
@@ -435,7 +417,9 @@ namespace
 
 juce::File FirstAudioProcessor::getUserPresetDirectory()
 {
-    auto directory = userPresetDirectoryPath();
+    auto directory = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                       .getChildFile ("MiBoX")
+                       .getChildFile ("Presets");
     if (! directory.isDirectory())
         directory.createDirectory();
     return directory;
@@ -457,14 +441,6 @@ bool FirstAudioProcessor::saveUserPreset (const juce::String& name)
     juce::File file;
     if (! makeUserPresetFile (name, safe, file))
         return false;
-
-    // On Windows and macOS the filesystem matches names case-insensitively, so a
-    // case-variant of an existing preset would silently overwrite it. Only an
-    // exact-name match is treated as an intentional overwrite; anything that
-    // differs by letter case alone is refused.
-    for (const auto& existing : getUserPresetNames())
-        if (existing != safe && existing.equalsIgnoreCase (safe))
-            return false;
 
     // captureState stamps the saved-state format marker, so a preset this build
     // writes never has to be migrated again.
