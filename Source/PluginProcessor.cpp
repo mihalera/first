@@ -601,7 +601,10 @@ void FirstAudioProcessor::auditFactoryPresets()
             // asserted on them instead. One line, two keys, and the difference
             // between a table that says what it means and one that merely reads
             // right in a diff.
-            "osc_note",
+            // (osc_note used to be listed beside it: that id is the OSC surface's
+            // note slot, not a plugin parameter - no preset can carry it - so the
+            // audit below has nothing to exclude. Naming it in quotes here would
+            // make this very list read as if it still did.)
             // GLUE COMP is a property of the MACHINE rather than of a sound, like
             // bypass and delta: it switches the deck's two compressors in or out,
             // and a preset that silently turned them back on would fight a session
