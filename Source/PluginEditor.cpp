@@ -1403,6 +1403,8 @@ void FirstAudioProcessorEditor::resized()
     for (int child = 0; child < getNumChildComponents(); ++child)
         getChildComponent (child)->setVisible (! phoneLayout);
 
+    updateLevelsVisibility();
+
     const auto layout = getEditorLayout();
 
     placeHeader (layout.header);
