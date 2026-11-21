@@ -22,6 +22,7 @@
 #include <atomic>
 #include <chrono>
 #include <string>
+#include <thread>
 
 namespace j37diag
 {
@@ -29,6 +30,10 @@ namespace j37diag
     {
     public:
         explicit ShutdownWatchdog (int limitMilliseconds = 2000) noexcept;
+
+        /** Stops the worker before the members it reads go away, so a guard that
+            outlives its teardown cannot leave plugin code running after unload. */
+        ~ShutdownWatchdog() noexcept;
 
         /** Start watching. Idempotent: a second call inside the same teardown -
             the processor destructing after the editor - does not restart it. */
@@ -68,6 +73,10 @@ namespace j37diag
         std::atomic<bool> finished { false };
         std::atomic<bool> fired { false };
         std::chrono::steady_clock::time_point began;
+
+        // Joined by disarm(), never detached: the worker runs this module's code,
+        // so it must not outlive the module. See the note in arm().
+        std::thread worker;
     };
 
     /** One watchdog per process, so the editor and the processor destructors

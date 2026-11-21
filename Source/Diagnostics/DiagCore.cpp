@@ -404,7 +404,10 @@ std::string audioReportText() noexcept
                        asDb (report.rightPeak),
                        static_cast<double> (report.widestImbalance) * 100.0,
                        report.nonFiniteSides);
-        strncat (text, stereo, sizeof (text) - std::strlen (text) - 1);
+        //  Bounded like the first half: strncat is deprecated by the CRT this
+        //  harness compiles against, and its size argument is the room left.
+        const auto used = std::strlen (text);
+        std::snprintf (text + used, sizeof (text) - used, "%s", stereo);
     }
 
     return text;
