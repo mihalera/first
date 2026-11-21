@@ -92,6 +92,16 @@ public:
     String (const char* textIn) : text (textIn != nullptr ? textIn : "") {}
     String (const std::string& textIn) : text (textIn) {}
     String (CharPointer_UTF8 pointer) : text (pointer.getAddress()) {}
+    String (float value, int decimalPlaces) : text (std::to_string (value))
+    {
+        juce::ignoreUnused (decimalPlaces);
+    }
+
+    float getFloatValue() const noexcept
+    {
+        try { return std::stof (text); }
+        catch (...) { return 0.0f; }
+    }
 
     bool isEmpty() const noexcept { return text.empty(); }
     bool isNotEmpty() const noexcept { return ! text.empty(); }
@@ -315,6 +325,18 @@ public:
         auto copy = *this;
         copy.unit = labelIn;
         return copy;
+    }
+
+    template <typename Fn>
+    AudioParameterFloatAttributes withStringFromValueFunction (Fn&&) const
+    {
+        return *this;
+    }
+
+    template <typename Fn>
+    AudioParameterFloatAttributes withValueFromStringFunction (Fn&&) const
+    {
+        return *this;
     }
 
     const String& label() const noexcept { return unit; }
