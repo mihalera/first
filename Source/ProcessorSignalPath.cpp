@@ -272,6 +272,15 @@ namespace
         bool measuring = false;
         std::chrono::steady_clock::time_point started {};
     };
+
+    static void preservePeak (std::atomic<float>& target, float peak) noexcept
+    {
+        float current = target.load (std::memory_order_relaxed);
+        while (peak > current && ! target.compare_exchange_weak (
+                   current, peak, std::memory_order_relaxed))
+        {
+        }
+    }
 } // namespace
 
 void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
@@ -425,20 +434,8 @@ bool FirstAudioProcessor::processBypassedBlock (juce::dsp::AudioBlock<float>& bl
     // Preserve the highest peak until the UI reads it (getInputPeakLevel exchanges
     // to zero), so a transient in an early buffer is not lost to a later, quieter
     // block before the 30 Hz timer polls.
-    {
-        float current = inputPeakLevel.load (std::memory_order_relaxed);
-        while (peak > current && ! inputPeakLevel.compare_exchange_weak (
-                   current, peak, std::memory_order_relaxed))
-        {
-        }
-    }
-    {
-        float current = outputPeakLevel.load (std::memory_order_relaxed);
-        while (peak > current && ! outputPeakLevel.compare_exchange_weak (
-                   current, peak, std::memory_order_relaxed))
-        {
-        }
-    }
+    preservePeak (inputPeakLevel, peak);
+    preservePeak (outputPeakLevel, peak);
     inputRmsLevel.store (rms, std::memory_order_relaxed);
     outputRmsLevel.store (rms, std::memory_order_relaxed);
     inputPeakDb.store (peakDb, std::memory_order_relaxed);
@@ -888,20 +885,8 @@ void FirstAudioProcessor::publishBlockTelemetry (const BlockContext& context,
     // (getOutputPeakLevel is an exchange), published here exactly as the bypass
     // path publishes its own pair in processBypassedBlock.
     // Preserve the highest peak until the UI reads it (see processBlock above).
-    {
-        float current = inputPeakLevel.load (std::memory_order_relaxed);
-        while (inputPeak > current && ! inputPeakLevel.compare_exchange_weak (
-                   current, inputPeak, std::memory_order_relaxed))
-        {
-        }
-    }
-    {
-        float current = outputPeakLevel.load (std::memory_order_relaxed);
-        while (outputPeak > current && ! outputPeakLevel.compare_exchange_weak (
-                   current, outputPeak, std::memory_order_relaxed))
-        {
-        }
-    }
+    preservePeak (inputPeakLevel, inputPeak);
+    preservePeak (outputPeakLevel, outputPeak);
     inputRmsLevel.store (inputRms, std::memory_order_relaxed);
     outputRmsLevel.store (outputRms, std::memory_order_relaxed);
 
