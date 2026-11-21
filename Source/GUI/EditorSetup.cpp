@@ -2370,7 +2370,6 @@ void FirstAudioProcessorEditor::setUpSceneAndMeters() {
     addAndMakeVisible(outputMeter);
     addAndMakeVisible(compressorMeterIn);
     addAndMakeVisible(compressorMeterOut);
-    updateLevelsVisibility();
     applyTheme();
 }
 
@@ -2447,7 +2446,6 @@ void FirstAudioProcessorEditor::applyRenderBackend(j37::render::Backend backend)
 void FirstAudioProcessorEditor::setUpOpenGlRendering() {
     const auto running = j37::render::runningBackend(renderBackendChoice);
     nativeSceneAttachAttemptsLeft = 0;
-    updateLevelsVisibility();
 
     if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight())) {
         tapeScene.setSceneEnabled(false);

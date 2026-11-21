@@ -1,4 +1,4 @@
-﻿#include "PluginProcessor.h"
+#include "PluginProcessor.h"
 
 // The generated resource accessors: the factory presets and the translation
 // tables, both compiled into the binary by CMakeLists.txt.
@@ -913,12 +913,16 @@ void FirstAudioProcessorEditor::updateLevelsVisibility()
     const auto showMeters = levelsVisible
         && ! j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight());
 
-    for (auto* meter : {static_cast<juce::Component*> (&inputMeter), &outputMeter,
-                        &compressorMeterIn, &compressorMeterOut})
+    // Named types in both lists: a heterogeneous braced list (a LevelMeter* and a
+    // CompressorMeter* share only their base) makes MSVC deduce int and C2440.
+    const std::array<juce::Component*, 4> meters { {&inputMeter, &outputMeter,
+                                                   &compressorMeterIn, &compressorMeterOut} };
+    for (auto* meter : meters)
         meter->setVisible (showMeters);
 
-    for (auto* label : {&metersHeadingLabel, &metersHintLabel,
-                        &compressorLabel, &compressorReadout})
+    const std::array<juce::Label*, 4> labels { {&metersHeadingLabel, &metersHintLabel,
+                                               &compressorLabel, &compressorReadout} };
+    for (auto* label : labels)
         label->setVisible (showMeters);
 }
 
@@ -983,6 +987,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     setUpPresetBar();
     addDeckControlsToPanel();
     setUpSceneAndMeters();
+    updateLevelsVisibility();
     setUpOpenGlRendering();
     finishConstruction();
 
@@ -1410,7 +1415,6 @@ void FirstAudioProcessorEditor::resized()
     placeTabMembers (geometry);
     if (! phoneLayout && levelsVisible)
         placeMeters (layout);
-    updateLevelsVisibility();
 
     // The sheet is an overlay, not a band: it covers the panel while open, so its
     // bounds are the editor's own and it is deliberately not in the overlap
@@ -1554,14 +1558,14 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     // The grid dimensions are declared on the class so these cells stay aligned.
     constexpr int headerColumns = headerColumnCount;
     constexpr int headerGap = headerColumnGap;
-    constexpr int headerSwitchHeight = FirstAudioProcessorEditor::headerSwitchHeight;
+    const auto switchHeight = headerSwitchHeight;
+    const auto statusHeight = headerStatusHeight;
     const auto headerColumnWidth = headerColumnWidthFor (header.getWidth());
     const auto headerGridWidth = headerColumns * headerColumnWidth
                                + (headerColumns - 1) * headerGap;
     const auto headerRowOneY = header.getY() + headerRowOneOffset;
     const auto headerRowTwoY = header.getY() + headerRowTwoOffset;
     const auto statusRowY = header.getY() + headerStatusOffset;
-    constexpr int headerStatusHeight = FirstAudioProcessorEditor::headerStatusHeight;
     const auto headerGridLeft = headerRight - headerGridWidth;
     const auto statusLeft = headerGridLeft;
     const auto statusWidth = headerGridWidth - 18;
@@ -1577,27 +1581,27 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     };
 
     // Row one: the six engine switches, equal cells, one grid.
-    headerCell (deltaButton,     0, headerRowOneY, headerSwitchHeight);
-    headerCell (bypassButton,    1, headerRowOneY, headerSwitchHeight);
-    headerCell (polarityButton,  2, headerRowOneY, headerSwitchHeight);
-    headerCell (autoGainButton,  3, headerRowOneY, headerSwitchHeight);
-    headerCell (oscButton,       4, headerRowOneY, headerSwitchHeight);
-    headerCell (glueButton,      5, headerRowOneY, headerSwitchHeight);
+    headerCell (deltaButton,     0, headerRowOneY, switchHeight);
+    headerCell (bypassButton,    1, headerRowOneY, switchHeight);
+    headerCell (polarityButton,  2, headerRowOneY, switchHeight);
+    headerCell (autoGainButton,  3, headerRowOneY, switchHeight);
+    headerCell (oscButton,       4, headerRowOneY, switchHeight);
+    headerCell (glueButton,      5, headerRowOneY, switchHeight);
     levelsButton.setVisible (true);
 
     // Row two: THEME, RND, LEVELS and the language pair. The selector spans the
     // final two cells while the caption occupies the cell before it.
-    headerCell (themeButton,     0, headerRowTwoY, headerSwitchHeight);
-    headerCell (randomButton,    1, headerRowTwoY, headerSwitchHeight);
-    headerCell (levelsButton,    2, headerRowTwoY, headerSwitchHeight);
-    headerCell (languageLabel,   3, headerRowTwoY, headerSwitchHeight);
+    headerCell (themeButton,     0, headerRowTwoY, switchHeight);
+    headerCell (randomButton,    1, headerRowTwoY, switchHeight);
+    headerCell (levelsButton,    2, headerRowTwoY, switchHeight);
+    headerCell (languageLabel,   3, headerRowTwoY, switchHeight);
     languageLabel.setJustificationType (juce::Justification::centredRight);
     constexpr int languageColumns = headerColumns - 4;
     languageBox.setBounds (headerGridLeft + 4 * (headerColumnWidth + headerGap),
                            headerRowTwoY,
                            languageColumns * headerColumnWidth
                                + (languageColumns - 1) * headerGap,
-                           headerSwitchHeight);
+                           switchHeight);
 
     // The renderer caption sits on the brand row's right end, ending one gap
     // before the switch grid: the row above the title is the only part of the
@@ -1614,7 +1618,7 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     // hung off the frame it belongs to. The pill is now the label's own rectangle
     // plus two pixels, and the hairline under the header is drawn before it (see
     // paint()), so nothing cuts through it either.
-    statusLabel.setBounds (statusLeft, statusRowY, statusWidth, headerStatusHeight);
+    statusLabel.setBounds (statusLeft, statusRowY, statusWidth, statusHeight);
     statusLabel.setJustificationType (juce::Justification::centredLeft);
     statusLabel.setFont (statusLabel.getFont().withHeight (uiFontSize (9.5f)));
     statusLabel.setBorderSize (juce::BorderSize<int> (0, 26, 0, 0));
