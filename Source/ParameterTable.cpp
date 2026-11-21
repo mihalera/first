@@ -287,6 +287,9 @@ namespace
                                                                     .withLabel ("%")
                                                                     .withStringFromValueFunction ([] (float v, int) {
                                                                         return juce::String (v * 100.0f, 0);
+                                                                    })
+                                                                    .withValueFromStringFunction ([] (const juce::String& text) {
+                                                                        return text.getFloatValue() / 100.0f;
                                                                     })));
 
         // -------------------------------------------------------------------------
