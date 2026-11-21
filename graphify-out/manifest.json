@@ -589,9 +589,9 @@
     "semantic_hash": ""
   },
   "Source/Diagnostics/DiagCore.cpp": {
-    "mtime": 1794654229.0756567,
-    "seen": 1794869323.114534,
-    "ast_hash": "86153b92a8ae61d23cdfecf248dda9f1",
+    "mtime": 1795251692.9324133,
+    "seen": 1795251883.0544484,
+    "ast_hash": "c147d5ceffc392b4ba95668ab7e5f3c1",
     "semantic_hash": ""
   },
   "Source/Diagnostics/DiagCore.h": {
@@ -615,16 +615,16 @@
     "language": "language=.cpp"
   },
   "Source/Diagnostics/ShutdownWatchdog.cpp": {
-    "mtime": 1795183197.6436613,
-    "seen": 1795183358.6788187,
-    "ast_hash": "9a781abd8c6fab21159f7db937ec7264",
-    "semantic_hash": "9a781abd8c6fab21159f7db937ec7264"
+    "mtime": 1795251614.3893883,
+    "seen": 1795251883.0551,
+    "ast_hash": "4ff6ddde2c26ff94dabb1ccfeb627a8a",
+    "semantic_hash": ""
   },
   "Source/Diagnostics/ShutdownWatchdog.h": {
-    "mtime": 1795183197.6446645,
-    "seen": 1795183358.6788273,
-    "ast_hash": "1913afa73bfcab1002e5aee40817f9fe",
-    "semantic_hash": "1913afa73bfcab1002e5aee40817f9fe",
+    "mtime": 1795251601.623983,
+    "seen": 1795251883.0551083,
+    "ast_hash": "c038422c0530602bc69f79d408028bd3",
+    "semantic_hash": "",
     "language": "language=.cpp"
   },
   "Source/GUI/AnimationTiming.h": {
@@ -1029,8 +1029,8 @@
     "semantic_hash": ""
   },
   "Source/PluginEditor.cpp": {
-    "mtime": 1795187694.578224,
-    "seen": 1795187743.198943,
+    "mtime": 1795251759.260165,
+    "seen": 1795251883.0671928,
     "ast_hash": "0fe95b5da02d937f8d10567197b107d4",
     "semantic_hash": ""
   },
@@ -1265,9 +1265,9 @@
     "semantic_hash": ""
   },
   "Source/ProcessorPresets.cpp": {
-    "mtime": 1795183197.6471758,
-    "seen": 1795183358.6992974,
-    "ast_hash": "f6a4599deb5d09db0f9d097ea9c1613d",
+    "mtime": 1795251623.2870595,
+    "seen": 1795251883.0749388,
+    "ast_hash": "7d6fc4671bc37766c0d5a31d81fcfd68",
     "semantic_hash": ""
   },
   "Source/ProcessorPresets.h": {
@@ -1316,10 +1316,10 @@
     "semantic_hash": "9374a3e9368608b6bbace0231f7bff67"
   },
   "android/build.gradle": {
-    "mtime": 1794381222.4788668,
-    "seen": 1794648118.5875328,
-    "ast_hash": "bd10edec711d2d820f401141db2cd4d2",
-    "semantic_hash": "bd10edec711d2d820f401141db2cd4d2"
+    "mtime": 1795251759.2611632,
+    "seen": 1795251883.0763922,
+    "ast_hash": "20855c6eb56f105c2f592d0320527b2f",
+    "semantic_hash": ""
   },
   "android/settings.gradle": {
     "mtime": 1793380203.0145566,
