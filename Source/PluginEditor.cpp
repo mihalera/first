@@ -1469,13 +1469,12 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     }
 
     // Header captions: the small brand strip sits ABOVE the big title (they used to
-    // share the same band and printed over each other), the subtitle starts right of
-    // the title box, and all three stay clear of the theme button / status badge.
+    // share the same band and printed over each other), and both stay clear of the
+    // theme button / status badge.
     brandLabel.setBounds (header.getX() + 26, header.getY() + 8, 120, 12);
     titleLabel.setBounds (header.getX() + 25, header.getY() + 24, 96, 46);
     titleLabel.setFont (juce::Font (juce::FontOptions (
         "Georgia, Times New Roman, Times, serif", 30.0f * uiScale(), juce::Font::bold)));
-    subtitleLabel.setBounds (header.getX() + 126, header.getY() + 46, 220, 18);
     // The engine switches live in the header's right half, two per row - the
     // request was to move BYPASS / DELTA / POLARITY / AUTO GAIN up here, where
     // the theme button already sat. THEME and the status readout keep the
@@ -1595,9 +1594,9 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
 
 //==============================================================================
 //  The deck: seven bands solved from the height it was given (see DeckBands.h), the
-//  rows inside them, and the window the 3D transport is framed in - which shares
-//  reelCorridor with the rows, and is why it is here rather than in the controls
-//  panel's own function.
+//  rows inside them, and the window the 3D transport is framed in - which owns
+//  reelCorridor, and is why it is here rather than in the controls panel's own
+//  function.
 //==============================================================================
 void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
 {
@@ -1728,7 +1727,13 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         return bands.height[static_cast<std::size_t> (band)];
     };
 
-    deckHeadingLabel.setBounds (deck.getX() + 18, deckTop (j37panel::DeckBands::heading), 150,
+    //  One inset for both sides of every deck row. The four columns are the
+    //  deck's grid, so an inset that differs between the two ends does not make
+    //  the rows safer - it slides the whole grid off the panel's centre.
+    constexpr int deckInset = 18;
+
+    deckHeadingLabel.setBounds (deck.getX() + deckInset,
+                                deckTop (j37panel::DeckBands::heading), 150,
                                 deckBandHeight (j37panel::DeckBands::heading));
 
     //  The build id is placed below, with the deck's four columns, because it is the
@@ -1932,13 +1937,14 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     };
 
     // The reel and the tape ribbon own the deck's top-right corner, and the ribbon
-    // hangs down through the model row's band: it starts at the reel (deck.right -
-    // 42, y + 26) and falls to y + 60, which is the row the tape box and the BPM
-    // readout sit in. So the model row stops 70 px short - twenty-eight to the
-    // right of the ribbon's leftmost point - and every other row uses the standard
-    // inset. This is not a margin that has to be re-tuned per row; it is the
-    // ribbon's own width, and the rows below it do not need it because the ribbon
-    // ends above them.
+    // hangs down through the readouts band: it starts at the reel (deck.right - 42,
+    // y + 26) and falls to y + 60. The readouts row therefore passes under the
+    // ribbon at the empty right end of the HARMONICS column - the readout text is
+    // left-aligned and never reaches it. The corridor is still the tape scene's
+    // window and the width of the reel's corner; it is no longer a right inset for
+    // the deck's rows, because a row that stopped here would sit 52 px further
+    // from its right edge than from its left and slide the four-column grid off
+    // the panel's centre.
     constexpr int reelCorridor = 70;
 
     // ---- row 1: THE READOUTS -------------------------------------------------
@@ -1976,9 +1982,14 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
             { &harmonicsReadout,  0, -1, captionHeight, controlHeight, true  }
         };
 
-        //  The ribbon still crosses this band, so the row still stops at its
-        //  corridor rather than at the deck's own inset.
-        placeDeckRow (row, deck.getX() + 18, deck.getRight() - reelCorridor,
+        //  The row spans the deck's own insets, like every row below it, rather
+        //  than stopping at reelCorridor. The ribbon crosses this band, but only
+        //  the empty right end of the HARMONICS column: the readout text is
+        //  left-aligned in its column, so it never reaches the ribbon. Ending the
+        //  row at the corridor instead left 70 px of air on the right against the
+        //  18 px on the left, which read as the whole four-column grid having
+        //  slipped toward the deck's left edge.
+        placeDeckRow (row, deck.getX() + deckInset, deck.getRight() - deckInset,
                       deckTop (j37panel::DeckBands::readouts), readoutGap, true);
 
         // The readouts are the only deck text whose width depends on the panel,

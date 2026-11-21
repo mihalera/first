@@ -674,11 +674,12 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
         }
 
         // Tape ribbon from the small reel down the deck's right edge, sagging with the
-        // wow/flutter drift. It hangs from the reel at deck.right - 42, so the only row
-        // that has to stay clear of it is the model row, and that row stops at the
-        // standard right inset (deck.right - 14) - twenty-eight pixels to the right of
-        // the ribbon's leftmost point. That is a fact about the ribbon, not a number
-        // that has to be kept in step with the row's width by hand.
+        // wow/flutter drift. It hangs from the reel at deck.right - 42, and the
+        // readouts row below it spans the deck's own insets, so the ribbon crosses
+        // only the empty right end of the HARMONICS column. The readout text is
+        // left-aligned in that column and stays clear of it; the row no longer stops
+        // at the ribbon's corridor, which left 52 px more air on the right than on
+        // the left and pulled the whole four-column grid off the panel's centre.
         const auto sag = (driftAmount - 0.5f) * 5.0f;
         juce::Path tapeRibbon;
         tapeRibbon.startNewSubPath(reelCentre.x, reelCentre.y + 12.0f);

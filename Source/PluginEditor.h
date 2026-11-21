@@ -683,12 +683,27 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // Header grid dimensions for the two engine-switch rows and language selector.
     //  Six columns rather than five since GLUE COMP and RND joined the rows. The
     //  cell is sized by the widest caption that still has to fit (POLARITY,
-    //  AUTO GAIN, GLUE COMP) at the panel's 8.5 pt, and 62 is that width: six of
-    //  them plus five gaps is 402 px, which clears the title block by 32 px at
-    //  the 780 px minimum instead of the twelve the old 394 px grid had.
+    //  AUTO GAIN, GLUE COMP) at the panel's 8.5 pt. 62 is what the 780 px floor
+    //  can hold beside the brand and the renderer caption; 74 is the size the
+    //  switches were asked for. headerColumnWidthFor() takes the larger width when
+    //  the header has room and gives it back as the window narrows, so the floor
+    //  keeps the layout it shipped with.
     static constexpr int headerColumnCount = 6;
-    static constexpr int headerColumnWidth = 62;
+    static constexpr int headerColumnWidthMinimum = 62;
+    static constexpr int headerColumnWidthMaximum = 74;
     static constexpr int headerColumnGap = 6;
+    static int headerColumnWidthFor (int headerWidth) noexcept;
+
+    //  The switch rows are 28 px tall - six more than the 22 the header was drawn
+    //  at - so the two rows and the status band are packed into the same 84 px
+    //  header: 4 px of air above the first row, 3 px between the rows and 2 px
+    //  between the second row and the status label. The pill around that label is
+    //  the label plus two pixels, so it ends at +83, one pixel inside the header.
+    static constexpr int headerSwitchHeight = 28;
+    static constexpr int headerRowOneOffset = 4;
+    static constexpr int headerRowTwoOffset = 35;
+    static constexpr int headerStatusOffset = 65;
+    static constexpr int headerStatusHeight = 16;
     /** The renderer caption on the brand row, wide enough for the longest form the
         caption can take - "BACKEND  CPU (VULKAN PENDING)" - at its own 8.5 pt, and
         ending one gap before the switch grid so the two can never meet. */
@@ -881,9 +896,13 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     juce::Rectangle<int> statusPillBounds() const;
 
     /** The deck region paint() animates OUTSIDE the widgets: the software reel and
-        its ribbon in the top-right corner, and the particle corridor. Empty while
-        the 3D scene is live, which draws its own. */
+        its ribbon in the top-right corner. Empty while the 3D scene is live, which
+        draws its own. */
     juce::Rectangle<int> deckAnimationBounds() const;
+
+    /** The particle strip along the deck's foot. Kept apart from the reel so the
+        two repaints stay two small rectangles instead of one deck-sized union. */
+    juce::Rectangle<int> deckParticleBounds() const;
 
     // Shared by the constructor and by resized(): the knob-grid section captions
     // are created while laying out, so a constructor-local helper was out of scope
@@ -1417,7 +1436,6 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
         and never refreshed: a build cannot change its backend while it runs. */
     juce::Label rendererLabel;
     juce::Label titleLabel;
-    juce::Label subtitleLabel;
     juce::Label statusLabel;
     juce::Label deckHeadingLabel;
     /** The commit this binary was built from, shown at the top of the deck. */
