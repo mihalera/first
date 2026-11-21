@@ -281,6 +281,55 @@ namespace
         {
         }
     }
+
+    static void applyBypassAutoTuneDelay (juce::dsp::AudioBlock<float>& block,
+                                          const FirstAudioProcessor::BlockContext& context,
+                                          CorrectorStage& corrector) noexcept
+    {
+        const auto frameChannels = juce::jmin (2, context.channels);
+
+        for (int sample = 0; sample < context.samples; ++sample)
+        {
+            std::array<float, 2> frame {};
+
+            for (int channel = 0; channel < frameChannels; ++channel)
+                frame[static_cast<std::size_t> (channel)] = block.getSample (channel, sample);
+
+            corrector.delayFrame (frame.data(), frameChannels);
+
+            for (int channel = 0; channel < frameChannels; ++channel)
+                block.setSample (channel, sample, frame[static_cast<std::size_t> (channel)]);
+        }
+    }
+
+    struct BypassPeakAndRms
+    {
+        float peak = 0.0f;
+        float rms = 0.0f;
+    };
+
+    static BypassPeakAndRms computeBypassPeakAndRms (const juce::dsp::AudioBlock<float>& block,
+                                                     const FirstAudioProcessor::BlockContext& context) noexcept
+    {
+        float peak = 0.0f;
+        double squares = 0.0;
+
+        for (int channel = 0; channel < context.channels; ++channel)
+            for (int sample = 0; sample < context.samples; ++sample)
+            {
+                const auto value = block.getSample (channel, sample);
+                peak = juce::jmax (peak, std::abs (value));
+                squares += static_cast<double> (value) * value;
+            }
+
+        const auto sampleCount = static_cast<double> (context.samples)
+                               * static_cast<double> (juce::jmax (1, context.channels));
+        const auto rms = sampleCount > 0.0
+                             ? static_cast<float> (std::sqrt (squares / sampleCount))
+                             : 0.0f;
+
+        return { peak, rms };
+    }
 } // namespace
 
 void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
@@ -396,37 +445,11 @@ bool FirstAudioProcessor::processBypassedBlock (juce::dsp::AudioBlock<float>& bl
     // session. With the stage off the delay is zero and none of this costs
     // anything: the loop below advances no ring at all.
     if (autoTuneAmountParam != nullptr && autoTuneAmountParam->load() > 1.0e-5f)
-    {
-        const auto frameChannels = juce::jmin (2, context.channels);
-        auto& corrector = activeCorrector();
+        applyBypassAutoTuneDelay (block, context, activeCorrector());
 
-        for (int sample = 0; sample < context.samples; ++sample)
-        {
-            std::array<float, 2> frame {};
-
-            for (int channel = 0; channel < frameChannels; ++channel)
-                frame[static_cast<std::size_t> (channel)] = block.getSample (channel, sample);
-
-            corrector.delayFrame (frame.data(), frameChannels);
-
-            for (int channel = 0; channel < frameChannels; ++channel)
-                block.setSample (channel, sample, frame[static_cast<std::size_t> (channel)]);
-        }
-    }
-
-    float peak = 0.0f;
-    double squares = 0.0;
-    for (int channel = 0; channel < context.channels; ++channel)
-        for (int sample = 0; sample < context.samples; ++sample)
-        {
-            const auto value = block.getSample (channel, sample);
-            peak = juce::jmax (peak, std::abs (value));
-            squares += static_cast<double> (value) * value;
-        }
-
-    const auto sampleCount = static_cast<double> (context.samples)
-                           * static_cast<double> (juce::jmax (1, context.channels));
-    const auto rms = sampleCount > 0.0 ? static_cast<float> (std::sqrt (squares / sampleCount)) : 0.0f;
+    const auto metrics = computeBypassPeakAndRms (block, context);
+    const auto peak = metrics.peak;
+    const auto rms = metrics.rms;
     const auto peakDb = juce::Decibels::gainToDecibels (peak, -70.0f);
     const auto rmsDb = juce::Decibels::gainToDecibels (rms, -70.0f);
     const auto combined = peakDb * 0.25f + rmsDb * 0.75f;
