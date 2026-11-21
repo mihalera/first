@@ -121,6 +121,9 @@ ghtoken
 .codex/skills/.system/**
 !.codex/prompts/
 !.codex/prompts/**
-ThirdParty/eigen
+ThirdParty/eigen/*
 build-rel/*
 ThirdParty/*
+ThirdParty/dr_libs/*
+ThirdParty/libebur128/*
+ThirdParty/sokol/*

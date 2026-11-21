@@ -563,8 +563,6 @@ void FirstAudioProcessorEditor::stylePanelLabels() {
                           juce::Font::bold)));
     titleLabel.setJustificationType(juce::Justification::left);
     titleLabel.setInterceptsMouseClicks(false, false);
-    styleLabel(subtitleLabel, "NONLINEAR ANALOG / MIX BOX", 10.0f, paletteFor(false).secondary,
-               true, juce::Justification::left);
     // Which renderer the panel is drawn with, beside the brand strip. It is one
     // compile-time fact from RenderBackend.h and it is worth a line on the panel:
     // "the transport is on the GPU" and "the panel is software-painted" behave
@@ -656,7 +654,6 @@ void FirstAudioProcessorEditor::stylePanelLabels() {
     addAndMakeVisible(brandLabel);
     addAndMakeVisible(rendererLabel);
     addAndMakeVisible(titleLabel);
-    addAndMakeVisible(subtitleLabel);
     addAndMakeVisible(statusLabel);
     addAndMakeVisible(deckHeadingLabel);
     addAndMakeVisible(buildLabel);
@@ -2425,10 +2422,12 @@ void FirstAudioProcessorEditor::applyRenderBackend(j37::render::Backend backend)
             nativeSceneAttachAttemptsLeft = 90;
     }
 
-    // Both paths need the strip redrawn: the GPU path draws the scene, the CPU
-    // path the flat transport underneath it.
+    // Both paths need the scene redrawn. The software reel and the independent
+    // particle strip are repainted only when the CPU path is visible.
     tapeScene.repaint();
-    repaint(deckAnimationBounds());
+    if (!tapeScene.isSceneLive())
+        repaint(deckAnimationBounds());
+    repaint(deckParticleBounds());
 }
 
 void FirstAudioProcessorEditor::setUpOpenGlRendering() {

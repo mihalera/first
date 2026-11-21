@@ -1406,11 +1406,20 @@ void FirstAudioProcessorEditor::resized()
 }
 
 //==============================================================================
-//  The header: the brand strip, the title, the subtitle, and the one grid the five
-//  engine switches, THEME, the language pair and the machine-state readout all sit
-//  in - placed by a cursor that consumes each item's own width, which is what keeps
-//  a row from overlapping itself however the panel is resized.
+//  The header: the brand strip, the title, and the grid the engine switches,
+//  THEME, the language pair and the machine-state readout all sit in - placed by a
+//  cursor that consumes each item's own width, which is what keeps a row from
+//  overlapping itself however the panel is resized.
 //==============================================================================
+int FirstAudioProcessorEditor::headerColumnWidthFor (int headerWidth) noexcept
+{
+    // Use the requested 74 px cells at the supported 780 px editor floor;
+    // narrower host-provided headers compress smoothly toward the 62 px minimum.
+    const auto growth = juce::jlimit (0, headerColumnWidthMaximum - headerColumnWidthMinimum,
+                                      (headerWidth - 680) / headerColumnCount);
+    return headerColumnWidthMinimum + growth;
+}
+
 void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
 {
     if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
@@ -1497,43 +1506,24 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     //  the cells are sized by the widest caption in the row (POLARITY, AUTO GAIN)
     //  and a third short caption costs the row a cell rather than a wider one.
     //
-    //  Clearance at the 780 px minimum: the grid is 394 px wide (5 x 74 + 4 x 6)
-    //  and starts at header.right - 394 = x + 358 on a 780 panel, clearing the
-    //  title block (ends x + 346) by 12 px at the tightest size and more above it.
+    //  Cells reach 74 px at the supported desktop minimum; narrower host layouts
+    //  compress smoothly to 62 px without changing their right anchor.
     // ------------------------------------------------------------------------------
     //  Six pixels short of the panel's own edge, so the last cell of the row - GLUE
     //  COMP since it joined - is not flush with the frame it sits in.
     const auto headerRight = header.getRight() - 6;
     // The grid dimensions are declared on the class so these cells stay aligned.
-    constexpr int headerGap = headerColumnGap;
     constexpr int headerColumns = headerColumnCount;
-    constexpr int headerSwitchHeight = 22;
-    // 74 rather than 92. The grid's cells are sized by the widest caption in
-    // them (POLARITY, AUTO GAIN) plus room for the lamp, and 92 was sizing every
-    // cell by the WIDEST one - so BYPASS and DELTA, which need half as much,
-    // carried twenty pixels of empty metal each and the row read as four large
-    // slabs rather than four switches. The height stays at 22 because the
-    // rocker draws three stacked things inside it (caption, groove, thumb) and
-    // they are already sharing that height three ways; the WIDTH was the one
-    // dimension with slack in it.
-    // (The width itself lives on the class now: see headerColumnWidth.)
-    //  Six and thirty-two rather than ten and thirty-six. Both rows moved up
-    //  together by four pixels so the METAL key stops touching the status pill:
-    //  row two used to end at the header's +58 and the pill starts at +58 as
-    //  well (the label sits at +60 and the pill is two pixels larger), which the
-    //  user saw as the theme key sitting on the STEREO / REAL TIME badge. There
-    //  are now four clear pixels between the key and the pill, and the same
-    //  four between the two rows of switches.
-    const auto headerRowOneY = header.getY() + 6;
-    const auto headerRowTwoY = header.getY() + 32;
-    // 60 rather than 62, and 16 rather than 18: the third row has to end at or
-    // above the header's bottom edge once the pill around it is taken into
-    // account (see the note at the label below).
-    const auto statusRowY = header.getY() + 60;
-    constexpr int headerStatusHeight = 16;
-    const auto headerGridLeft = headerRight
-                              - (headerColumns * headerColumnWidth
-                                 + (headerColumns - 1) * headerGap);
+    constexpr int headerGap = headerColumnGap;
+    constexpr int headerSwitchHeight = FirstAudioProcessorEditor::headerSwitchHeight;
+    const auto headerColumnWidth = headerColumnWidthFor (header.getWidth());
+    const auto headerGridWidth = headerColumns * headerColumnWidth
+                               + (headerColumns - 1) * headerGap;
+    const auto headerRowOneY = header.getY() + headerRowOneOffset;
+    const auto headerRowTwoY = header.getY() + headerRowTwoOffset;
+    const auto statusRowY = header.getY() + headerStatusOffset;
+    constexpr int headerStatusHeight = FirstAudioProcessorEditor::headerStatusHeight;
+    const auto headerGridLeft = headerRight - headerGridWidth;
 
     // No default argument on height: a lambda's default argument may not name
     // a local variable (the exact "local variable may not appear in this
@@ -1583,9 +1573,7 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     // hung off the frame it belongs to. The pill is now the label's own rectangle
     // plus two pixels, and the hairline under the header is drawn before it (see
     // paint()), so nothing cuts through it either.
-    statusLabel.setBounds (headerGridLeft, statusRowY,
-                           headerColumns * headerColumnWidth
-                               + (headerColumns - 1) * headerGap - 18,
+    statusLabel.setBounds (headerGridLeft, statusRowY, headerGridWidth - 18,
                            headerStatusHeight);
     statusLabel.setJustificationType (juce::Justification::centredLeft);
     statusLabel.setFont (statusLabel.getFont().withHeight (uiFontSize (9.5f)));
@@ -2180,7 +2168,7 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     // clearance the comment above promises hold at the deck's 236 px floor too -
     // where the solved bands start higher and a fixed 58 px block would have met
     // the row instead of stopping short of it.
-    const auto sceneTop = deck.getY() + 6;
+    const auto sceneTop = deck.getY() + 12;
     const auto sceneBottom = deckTop (j37panel::DeckBands::readouts) - 8;
     tapeScene.setBounds (deck.getRight() - reelCorridor,
                          sceneTop,
@@ -3441,7 +3429,6 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             { "brand",         &brandLabel },
             { "renderer",      &rendererLabel },
             { "title",         &titleLabel },
-            { "subtitle",      &subtitleLabel },
             { "status",        &statusLabel },
             { "bypass",        &bypassButton },
             { "delta",         &deltaButton },

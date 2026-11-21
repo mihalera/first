@@ -646,7 +646,7 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     if (!tapeScene.isSceneLive()
         && ! j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight())) {
         const auto reelCentre = juce::Point<float>(static_cast<float>(layout.deck.getRight() - 42),
-                                                   static_cast<float>(layout.deck.getY() + 14));
+                                                   static_cast<float>(layout.deck.getY() + 20));
         const auto platterNow = juce::jlimit(0.0f, 1.0f, smoothedMachineSpeed);
         g.setColour(palette.accent.withAlpha(0.10f + 0.30f * platterNow));
         for (const auto radius : {11.0f, 7.0f, 2.0f})
@@ -673,19 +673,15 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
             g.fillEllipse(spokeOuter.x - 1.6f, spokeOuter.y - 1.6f, 3.2f, 3.2f);
         }
 
-        // Tape ribbon from the small reel down the deck's right edge, sagging with the
-        // wow/flutter drift. It hangs from the reel at deck.right - 42, and the
-        // readouts row below it spans the deck's own insets, so the ribbon crosses
-        // only the empty right end of the HARMONICS column. The readout text is
-        // left-aligned in that column and stays clear of it; the row no longer stops
-        // at the ribbon's corridor, which left 52 px more air on the right than on
-        // the left and pulled the whole four-column grid off the panel's centre.
+        // Tape ribbon from the small reel down the deck's right edge, sagging with
+        // wow/flutter drift. The reel is shifted down slightly while staying within
+        // its free top-right corner.
         const auto sag = (driftAmount - 0.5f) * 5.0f;
         juce::Path tapeRibbon;
         tapeRibbon.startNewSubPath(reelCentre.x, reelCentre.y + 12.0f);
         const auto deckY = static_cast<float>(layout.deck.getY());
-        tapeRibbon.quadraticTo(reelCentre.x + 30.0f + sag, deckY + 56.0f, reelCentre.x + 6.0f + sag,
-                               deckY + 60.0f);
+        tapeRibbon.quadraticTo(reelCentre.x + 30.0f + sag, deckY + 62.0f, reelCentre.x + 6.0f + sag,
+                               deckY + 66.0f);
         g.setColour(palette.knobEdge.withAlpha(0.35f));
         g.strokePath(tapeRibbon, juce::PathStrokeType(1.4f));
     } // ! tapeScene.isSceneLive()
@@ -696,11 +692,9 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
         orbsToDraw = renderOrbs;
     }
 
-    // The strip along the deck's foot, which placeDeck() sets to the badge band -
-    // see deckParticleCorridorX. An empty or narrow range means the deck did not
-    // report one worth drawing into, and the right answer then is no particles at
-    // all: they are decoration, and decoration on top of a control is the failure
-    // this whole pass is about.
+    // The localized bottom strip set by placeDeck() is the only region in which
+    // these motes are mapped and painted. An empty or narrow range means the deck
+    // did not report one worth drawing into, so there are no particles at all.
     if (deckParticleCorridorX.getLength() < 20)
         return;
 

@@ -228,16 +228,15 @@ int FirstAudioProcessorEditor::currentTransportState() const {
 
 //==============================================================================
 juce::Rectangle<int> FirstAudioProcessorEditor::statusPillBounds() const {
-    constexpr int headerGridWidth =
-        headerColumnCount * headerColumnWidth + (headerColumnCount - 1) * headerColumnGap;
     const auto layout = getEditorLayout();
-    // The same 60 / 16 band placeHeader puts the label in, expanded by the pill's
-    // own two pixels a side. It used to be expanded SIX pixels vertically, which
-    // pushed the pill's bottom edge below the header panel - the badge the user
-    // saw hanging out of the top box. The vertical inset is now the same as the
-    // horizontal one, so the pill ends two pixels inside the frame at every size.
-    const juce::Rectangle<int> pill(layout.header.getRight() - headerGridWidth,
-                                    layout.header.getY() + 60, headerGridWidth - 18, 16);
+    const auto headerColumnWidth = headerColumnWidthFor (layout.header.getWidth());
+    const auto headerGridWidth =
+        headerColumnCount * headerColumnWidth + (headerColumnCount - 1) * headerColumnGap;
+    // The same band placeHeader puts the label in, expanded by the pill's
+    // own two pixels a side, so the pill stays inside the header panel.
+    const juce::Rectangle<int> pill(layout.header.getRight() - 6 - headerGridWidth,
+                                    layout.header.getY() + headerStatusOffset,
+                                    headerGridWidth - 18, headerStatusHeight);
     return pill.expanded(2, 2);
 }
 
@@ -246,27 +245,24 @@ juce::Rectangle<int> FirstAudioProcessorEditor::deckAnimationBounds() const {
     // widget, so it can only be invalidated by REGION:
     //
     //   * the software transport - the small reel at deck.right - 42, deck.y + 14
-    //     and the ribbon that falls from it to deck.y + 60. paint() draws it only
+    //     and the ribbon that falls from it to deck.y + 66. paint() draws it only
     //     while the 3D scene is not live (for example, when a driver cannot
     //     create a context), which is exactly the case in which nothing else is
     //     moving there at all.
-    //   * the particles, in the strip placeDeck() sets to the deck's badge band
-    //     (deckParticleCorridorX/Y) - wide and twelve pixels tall, which is the
-    //     one free width on this panel.
-    //
-    // Neither rectangle covers a combo box, a slider or a button: the reel hangs
-    // in the heading strip's right corner, past the build badge's right inset, and
-    // the corridor is the near-empty band under the preset chain. That is what
-    // keeps this from reintroducing the popup lag a whole-panel repaint caused.
+    // The software reel sits in the deck's top-right corner. The bottom particle
+    // strip has its own invalidation rectangle, so it cannot make this repaint
+    // sweep across the whole deck.
     const auto layout = getEditorLayout();
-    juce::Rectangle<int> area(layout.deck.getRight() - 60, layout.deck.getY() + 2, 52, 68);
+    return {layout.deck.getRight() - 60, layout.deck.getY() + 4, 52, 70};
+}
 
-    if (!deckParticleCorridorX.isEmpty() && !deckParticleCorridorY.isEmpty())
-        area = area.getUnion(
-            {deckParticleCorridorX.getStart() - 2, deckParticleCorridorY.getStart() - 2,
-             deckParticleCorridorX.getLength() + 4, deckParticleCorridorY.getLength() + 4});
+juce::Rectangle<int> FirstAudioProcessorEditor::deckParticleBounds() const
+{
+    if (deckParticleCorridorX.isEmpty() || deckParticleCorridorY.isEmpty())
+        return {};
 
-    return area;
+    return {deckParticleCorridorX.getStart() - 4, deckParticleCorridorY.getStart() - 4,
+            deckParticleCorridorX.getLength() + 8, deckParticleCorridorY.getLength() + 8};
 }
 
 void FirstAudioProcessorEditor::repaintAnimatedSurfaces() {
@@ -300,8 +296,12 @@ void FirstAudioProcessorEditor::repaintAnimatedSurfaces() {
     if (!j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
         repaint(statusPillBounds());
 
-    if (!j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()) && !tapeScene.isSceneLive())
-        repaint(deckAnimationBounds());
+    if (!j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
+    {
+        if (!tapeScene.isSceneLive())
+            repaint(deckAnimationBounds());
+        repaint(deckParticleBounds());
+    }
 }
 
 //==============================================================================
