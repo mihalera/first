@@ -360,9 +360,9 @@
     "language": "language=.cpp"
   },
   "Source/DSP/NeuralStage.h": {
-    "mtime": 1795187095.4596727,
-    "seen": 1795187743.17789,
-    "ast_hash": "1f47e57a1b83e5c3906e5b689dc782cd",
+    "mtime": 1795253124.6309316,
+    "seen": 1795253429.6658602,
+    "ast_hash": "2abdc0d7f74febab4430bab47ad47cbe",
     "semantic_hash": "",
     "language": "language=.cpp"
   },

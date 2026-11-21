@@ -176,13 +176,19 @@ struct NeuralStage
     // -----------------------------------------------------------------------
     // Ownership remains on the control thread. The audio thread only transfers
     // raw pointers between the pending and active atomics; retired owners are
-    // reclaimed by the control thread after the hazard pointer no longer names
-    // them. Model-loading and clearing calls must be serialized on that thread.
+    // reclaimed by the control thread once the audio thread is out of every call
+    // that could be reading one (see audioCalls). Model-loading and clearing
+    // calls must be serialized on that thread.
     std::vector<std::unique_ptr<InferenceModel>> modelOwners;
     std::atomic<InferenceModel*> pendingModel { nullptr };
     std::atomic<bool> modelSwapRequested { false };
     std::atomic<InferenceModel*> activeModel { nullptr };
-    std::atomic<InferenceModel*> audioModelHazard { nullptr };
+
+    //  How deep the audio thread is inside a call that can read a model. The
+    //  control thread frees nothing while this is non-zero: a model is only ever
+    //  read inside such a call, and the handoff spends time between withdrawing
+    //  the old model and installing the new one that no single atomic names.
+    std::atomic<int> audioCalls { 0 };
     std::atomic<bool> clearRequested { false };
     std::atomic<bool> resetRequested { false };
 
@@ -669,11 +675,27 @@ struct NeuralStage
         reclaimRetiredModel();
     }
 
+    //  Brackets a call the audio thread makes, so the control thread can tell
+    //  whether a model pointer may still be live. move-only, no allocation.
+    struct AudioCallScope
+    {
+        explicit AudioCallScope (std::atomic<int>& depthToUse) noexcept : depth (depthToUse)
+        {
+            depth.fetch_add (1, std::memory_order_seq_cst);
+        }
+
+        ~AudioCallScope() { depth.fetch_sub (1, std::memory_order_seq_cst); }
+
+        std::atomic<int>& depth;
+    };
+
     /** Handoff called before a block. It transfers only raw pointers; modelOwners
         retains every object until the control thread proves it is neither active,
-        pending, nor protected by the audio thread's hazard pointer. */
+        pending, nor protected by a call the audio thread has not left. */
     void adoptPendingModel()
     {
+        const AudioCallScope callScope { audioCalls };
+
         if (! modelSwapRequested.exchange (false, std::memory_order_acq_rel))
             return;
 
@@ -681,12 +703,8 @@ struct NeuralStage
         auto* next = pendingModel.load (std::memory_order_seq_cst);
         if (next != nullptr)
         {
-            // Protect the pending owner before removing the queue's reference; the
-            // control thread may otherwise reclaim it in the gap before activation.
-            audioModelHazard.store (next, std::memory_order_seq_cst);
             if (pendingModel.load (std::memory_order_seq_cst) != next)
             {
-                audioModelHazard.store (nullptr, std::memory_order_seq_cst);
                 modelSwapRequested.store (true, std::memory_order_release);
                 return;
             }
@@ -695,7 +713,6 @@ struct NeuralStage
             if (! pendingModel.compare_exchange_strong (expected, nullptr,
                                                         std::memory_order_seq_cst))
             {
-                audioModelHazard.store (nullptr, std::memory_order_seq_cst);
                 modelSwapRequested.store (true, std::memory_order_release);
                 return;
             }
@@ -716,23 +733,50 @@ struct NeuralStage
                 bridge.reset();
             }
         }
-        audioModelHazard.store (nullptr, std::memory_order_seq_cst);
     }
 
-    /** Control-thread reclamation. Sequentially consistent hazard publication
-        closes the load-before-protect race: if audio loaded a stale active pointer,
-        it validates the active pointer before dereferencing it. */
+    /** Control-thread reclamation, and the only place an owner is destroyed. It
+        runs only while the audio thread is outside any call that reads a model, so
+        neither the active pointer nor the one a handoff is in the middle of
+        installing can be released underneath it. */
     void reclaimRetiredModel() noexcept
     {
-        const auto* active = activeModel.load (std::memory_order_seq_cst);
-        const auto* pending = pendingModel.load (std::memory_order_seq_cst);
-        const auto* hazard = audioModelHazard.load (std::memory_order_seq_cst);
+        //  A model the audio thread is using is not named by active or pending for
+        //  the whole of that use: the handoff withdraws the old pointer before it
+        //  installs the new one, and process() reads the active one into a local. So
+        //  the pair is snapshotted, the audio thread is seen to be outside any call,
+        //  and the pair is read again - and only a pair that did not move across that
+        //  observation is used. Anything a call can reach afterwards is either in
+        //  this snapshot (active, or the pending a handoff installs) or was published
+        //  by the caller before it asked for this reclaim.
+        const InferenceModel* active = nullptr;
+        const InferenceModel* pending = nullptr;
+
+        for (int attempt = 0;; ++attempt)
+        {
+            active = activeModel.load (std::memory_order_seq_cst);
+            pending = pendingModel.load (std::memory_order_seq_cst);
+
+            if (audioCalls.load (std::memory_order_seq_cst) != 0)
+                return;
+
+            const auto stillActive = activeModel.load (std::memory_order_seq_cst) == active;
+            const auto stillPending = pendingModel.load (std::memory_order_seq_cst) == pending;
+
+            if (stillActive && stillPending)
+                break;
+
+            // A handoff is moving pointers faster than this can watch them; keeping
+            // the owners a while longer costs memory, never a read of a dead model.
+            if (attempt >= 15)
+                return;
+        }
 
         modelOwners.erase (std::remove_if (modelOwners.begin(), modelOwners.end(),
-            [active, pending, hazard] (const auto& owner)
+            [active, pending] (const auto& owner)
             {
                 const auto* pointer = owner.get();
-                return pointer != active && pointer != pending && pointer != hazard;
+                return pointer != active && pointer != pending;
             }), modelOwners.end());
     }
 
@@ -770,6 +814,8 @@ struct NeuralStage
         if (amount <= 1.0e-5f)
             return x;
 
+        const AudioCallScope callScope { audioCalls };
+
         //  A clear is honoured HERE as well as at the block boundary. The control
         //  thread withdraws the model and marks the clear; adoptPendingModel() is
         //  the block boundary that normally consumes it. But a host with the
@@ -785,24 +831,13 @@ struct NeuralStage
             bridge.reset();
         }
 
-        // Protect the active model with a hazard pointer. Validate after publishing
-        // the hazard so control-thread reclamation cannot free a model loaded just
-        // before it was replaced. No lock, wait, or allocation enters the callback.
-        InferenceModel* active = nullptr;
-        do
-        {
-            active = activeModel.load (std::memory_order_seq_cst);
-            audioModelHazard.store (active, std::memory_order_seq_cst);
-        }
-        while (active != activeModel.load (std::memory_order_seq_cst));
+        // The pointer this call reads, claimed while the call is open: the control
+        // thread frees nothing until audioCalls drops back to zero, so `active` is
+        // alive for the whole of this call. No lock, wait, or allocation here.
+        auto* const active = activeModel.load (std::memory_order_seq_cst);
 
         if (active == nullptr)
             return x;
-        struct HazardGuard
-        {
-            std::atomic<InferenceModel*>& hazard;
-            ~HazardGuard() { hazard.store (nullptr, std::memory_order_seq_cst); }
-        } hazardGuard { audioModelHazard };
 
         // The rates, latched here rather than written into the bridge by the
         // thread that knows them: see `setSampleRates`. Checked per sample because
