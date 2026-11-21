@@ -313,6 +313,12 @@ private:
 
             decoded.sourceRate = decoded.sampleRate;
 
+            // Keep the decoded (original-rate) print as the source for any later
+            // sample-rate change: preparedPrint may already be resampled, and
+            // re-sampling that converted copy would report the engine rate as
+            // the file's source rate instead of the WAV's original rate.
+            auto originalPrint = std::make_unique<NoisePrint> (decoded);
+
             if (prepared && engineRate > 0.0
                 && std::abs (decoded.sampleRate - engineRate) > 1.0e-6)
             {
@@ -331,7 +337,7 @@ private:
                 preparedPrint->sourceRate = preparedPrint->sampleRate;
             }
 
-            sourcePrint = std::make_unique<NoisePrint> (*preparedPrint);
+            sourcePrint = std::move (originalPrint);
             loadedFileNameText = file.getFileName();
             lastErrorMessage = {};
             loadingFlag.store (false, std::memory_order_relaxed);
