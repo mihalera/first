@@ -285,7 +285,9 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     drawPanel(g, layout.header, palette, 5.0f);
     drawPanel(g, layout.deck, palette, 5.0f);
     drawPanel(g, layout.controls, palette, 5.0f);
-    drawPanel(g, layout.meters, palette, 5.0f);
+    if (levelsVisible
+        && ! j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
+        drawPanel (g, layout.meters, palette, 5.0f);
 
     // ----------------------------------------------------------------------
     //  The panel's texture, 2D and mathematical: static grain, wear blotches
@@ -376,8 +378,11 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     g.drawHorizontalLine(layout.controls.getY() + controlsDividerOffset,
                          static_cast<float>(layout.controls.getX() + 18),
                          static_cast<float>(layout.controls.getRight() - 18));
-    g.drawHorizontalLine(layout.meters.getY() + 48, static_cast<float>(layout.meters.getX() + 18),
-                         static_cast<float>(layout.meters.getRight() - 18));
+    if (levelsVisible
+        && ! j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
+        g.drawHorizontalLine (layout.meters.getY() + 48,
+                              static_cast<float> (layout.meters.getX() + 18),
+                              static_cast<float> (layout.meters.getRight() - 18));
     // The deck divider sits one pixel above the panel's bottom edge, BELOW the preset
     // badge band. It used to be eight pixels above the bottom, which put it straight
     // through the middle of the badge text at the minimum editor size.

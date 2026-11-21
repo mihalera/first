@@ -681,11 +681,8 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     static constexpr std::size_t decorativeOrbCount = 6;
 
     // Header grid dimensions for the two engine-switch rows and language selector.
-    //  Six columns rather than five since GLUE COMP and RND joined the rows. The
-    //  cell is sized by the widest caption that still has to fit (POLARITY,
-    //  AUTO GAIN, GLUE COMP) at the panel's 8.5 pt. Cells grow toward the requested
-    // 74 px with the available header width, and compress smoothly when a host
-    //  supplies a narrower editor.
+    //  Six engine-switch columns remain intact; the LEVELS visibility switch takes
+    //  the free third cell on the second row alongside THEME, RND and language.
     static constexpr int headerColumnCount = 6;
     static constexpr int headerColumnWidthMinimum = 62;
     static constexpr int headerColumnWidthMaximum = 74;
@@ -843,6 +840,8 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void addDeckControlsToPanel();
     void setUpSceneAndMeters();
     void setUpOpenGlRendering();
+    void setLevelsVisible (bool visible);
+    void updateLevelsVisibility();
     /** The last phase: the interface sounds are attached once every control they
         watch exists and every existing handler is installed, and the timer that
         polls them starts here. Called after setUpOpenGlRendering() rather than
@@ -1347,6 +1346,8 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     //  the two are the same kind of thing, not a knob on one stage.
     juce::ToggleButton glueButton{"GLUE COMP"};
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> glueAttachment;
+    juce::ToggleButton levelsButton{"LEVELS"};
+    bool levelsVisible = true;
     //  RANDOM - every sonic parameter drawn anew. It is a machine-level gesture,
     //  so it belongs in the header rather than in the preset chain: the preset
     //  chain says which stored machine you are on, and this says "another one".

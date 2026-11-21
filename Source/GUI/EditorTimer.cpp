@@ -232,11 +232,13 @@ juce::Rectangle<int> FirstAudioProcessorEditor::statusPillBounds() const {
     const auto headerColumnWidth = headerColumnWidthFor (layout.header.getWidth());
     const auto headerGridWidth =
         headerColumnCount * headerColumnWidth + (headerColumnCount - 1) * headerColumnGap;
-    // The same band placeHeader puts the label in, expanded by the pill's
+    const auto statusWidth = headerGridWidth - 18;
+    const auto statusX = layout.header.getRight() - 6 - headerGridWidth;
+    // The same status band placeHeader puts the label in, expanded by the pill's
     // own two pixels a side, so the pill stays inside the header panel.
-    const juce::Rectangle<int> pill(layout.header.getRight() - 6 - headerGridWidth,
+    const juce::Rectangle<int> pill(statusX,
                                     layout.header.getY() + headerStatusOffset,
-                                    headerGridWidth - 18, headerStatusHeight);
+                                    statusWidth, headerStatusHeight);
     return pill.expanded(2, 2);
 }
 
@@ -320,7 +322,7 @@ void FirstAudioProcessorEditor::timerCallback() {
     // and is redrawn only while visible.
     const auto panelCovered = parameterSheet != nullptr && parameterSheet->isOpen();
     const auto phoneLayout = j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight());
-    const auto metersVisible = ! panelCovered && ! phoneLayout;
+    const auto metersVisible = levelsVisible && ! panelCovered && ! phoneLayout;
     inputMeter.setActive(metersVisible);
     outputMeter.setActive(metersVisible);
     compressorMeterIn.setActive(metersVisible);

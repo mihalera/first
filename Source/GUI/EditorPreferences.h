@@ -153,6 +153,18 @@ inline void rememberRenderBackend (j37::render::Backend backend)
     renderer is: the file stays readable and inserting a theme into ThemeChoice (as
     WHITE MONSTER once was) cannot silently select a different one. */
 constexpr const char* panelThemeKey = "panel_theme";
+constexpr const char* metersVisibleKey = "levels_visible";
+
+inline bool rememberedMetersVisible()
+{
+    return editorPreferences().getBoolValue (metersVisibleKey, true);
+}
+
+inline void rememberMetersVisible (bool visible)
+{
+    editorPreferences().setValue (metersVisibleKey, visible);
+    editorPreferences().saveIfNeeded();
+}
 
 inline const char* themeChoiceName (j37panel::ThemeChoice theme) noexcept
 {

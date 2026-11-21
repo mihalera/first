@@ -80,6 +80,7 @@ void FirstAudioProcessorEditor::applyTheme() {
     rendererLabel.setColour(juce::Label::textColourId, palette.secondary);
     titleLabel.setColour(juce::Label::textColourId, palette.text);
     statusLabel.setColour(juce::Label::textColourId, palette.status);
+    levelsButton.setColour (juce::ToggleButton::textColourId, palette.text);
 
     // Texture doses depend on light versus dark, so update the shared weights
     // immediately when changing to the new palette.
@@ -375,6 +376,8 @@ void FirstAudioProcessorEditor::applyTheme() {
     subfundReadout.setColour(juce::Label::textColourId, palette.secondary);
     antiPhaseLabel.setColour(juce::Label::textColourId, palette.accent);
     antiPhaseReadout.setColour(juce::Label::textColourId, palette.secondary);
+    metersHeadingLabel.setColour(juce::Label::textColourId, palette.accent);
+    metersHintLabel.setColour(juce::Label::textColourId, palette.secondary);
     compressorMeterIn.setDarkTheme(darkTheme);
     compressorMeterOut.setDarkTheme(darkTheme);
 

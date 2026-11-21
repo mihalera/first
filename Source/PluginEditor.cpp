@@ -167,11 +167,11 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
     // juce::Button* named explicitly: the members mix ToggleButton and
     // TextButton, and an initializer_list cannot be deduced from a
     // heterogeneous braced list - the common base is what the loop wants.
-    const std::array<juce::Button*, 15> stateButtons { { &bypassButton, &deltaButton, &polarityButton, &autoGainButton, &oscButton,
-                          &modeCycleButton, &delaySyncButton,
-                          &themeButton, &savePresetButton, &deletePresetButton,
-                          &copyAButton, &copyBButton, &compareButton,
-                          &undoButton, &redoButton } };
+    const std::array<juce::Button*, 17> stateButtons { { &bypassButton, &deltaButton, &polarityButton,
+                          &autoGainButton, &oscButton, &glueButton, &levelsButton,
+                          &modeCycleButton, &delaySyncButton, &themeButton,
+                          &savePresetButton, &deletePresetButton, &copyAButton,
+                          &copyBButton, &compareButton, &undoButton, &redoButton } };
     for (auto* button : stateButtons)
         attachVoice (*button, UiSoundEngine::Voice::click);
 
@@ -897,6 +897,31 @@ void FirstAudioProcessorEditor::loadNoisePrintFile (const juce::File& file)
 //==============================================================================
 
 
+void FirstAudioProcessorEditor::setLevelsVisible (bool visible)
+{
+    if (levelsVisible == visible)
+        return;
+
+    levelsVisible = visible;
+    j37panel::rememberMetersVisible (visible);
+    resized();
+    repaint();
+}
+
+void FirstAudioProcessorEditor::updateLevelsVisibility()
+{
+    const auto showMeters = levelsVisible
+        && ! j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight());
+
+    for (auto* meter : {static_cast<juce::Component*> (&inputMeter), &outputMeter,
+                        &compressorMeterIn, &compressorMeterOut})
+        meter->setVisible (showMeters);
+
+    for (auto* label : {&metersHeadingLabel, &metersHintLabel,
+                        &compressorLabel, &compressorReadout})
+        label->setVisible (showMeters);
+}
+
 FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p), presetArtworkBadge (p)
 {
@@ -913,6 +938,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // renderer uses (Source/GUI/EditorPreferences.h) - they must outlive the editor and
     // must not travel in a session.
     themeChoice = j37panel::rememberedThemeChoice();
+    levelsVisible = j37panel::rememberedMetersVisible();
     j37panel::userPalette = j37panel::rememberedUserPalette();
     // The chassis surface is remembered with it, and for the same reason: it is a
     // fact about the desk rather than about the mix, so it outlives the editor.
@@ -1116,6 +1142,8 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     polarityButton.setLookAndFeel (nullptr);
     autoGainButton.setLookAndFeel (nullptr);
     oscButton.setLookAndFeel (nullptr);
+    glueButton.setLookAndFeel (nullptr);
+    levelsButton.setLookAndFeel (nullptr);
     oversamplingBox.setLookAndFeel (nullptr);
     instrumentBox.setLookAndFeel (nullptr);
     pentodeTypeBox.setLookAndFeel (nullptr);
@@ -1305,12 +1333,21 @@ FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayo
     layout.deck = remaining.removeFromTop (juce::jmin (availableForDeck, wantedDeckHeight));
     remaining.removeFromTop (deckToControlsGap);
 
-    // The meters panel has to hold a 2 x 2 grid of dials, so it claims a share of the
-    // width rather than a fixed pixel count. That keeps both rows legible whether the
-    // editor is at its minimum size or opened large.
-    const auto metersWidth = juce::jlimit (280, 380, juce::roundToInt (static_cast<float> (remaining.getWidth()) * 0.26f));
-    layout.meters = remaining.removeFromRight (metersWidth);
-    remaining.removeFromRight (14);
+    if (levelsVisible)
+    {
+        // The meters panel has to hold a 2 x 2 grid of dials, so it claims a share
+        // of the width rather than a fixed pixel count.
+        const auto metersWidth = juce::jlimit (280, 380, juce::roundToInt (
+            static_cast<float> (remaining.getWidth()) * 0.26f));
+        layout.meters = remaining.removeFromRight (metersWidth);
+        remaining.removeFromRight (14);
+    }
+    else
+    {
+        layout.meters = {};
+        remaining.removeFromRight (14);
+    }
+
     layout.controls = remaining;
 
     return layout;
@@ -1371,8 +1408,9 @@ void FirstAudioProcessorEditor::resized()
     const auto geometry = placeControlStrip (layout);
     updateTabVisibility (geometry);
     placeTabMembers (geometry);
-    if (! phoneLayout)
+    if (! phoneLayout && levelsVisible)
         placeMeters (layout);
+    updateLevelsVisibility();
 
     // The sheet is an overlay, not a band: it covers the panel while open, so its
     // bounds are the editor's own and it is deliberately not in the overlap
@@ -1413,8 +1451,8 @@ void FirstAudioProcessorEditor::resized()
 //==============================================================================
 int FirstAudioProcessorEditor::headerColumnWidthFor (int headerWidth) noexcept
 {
-    // Use the requested 74 px cells at the supported 780 px editor floor;
-    // narrower host-provided headers compress smoothly toward the 62 px minimum.
+    // Distribute cell widths across the original right-half header budget, with
+    // a little reserved room for the status pill.
     const auto growth = juce::jlimit (0, headerColumnWidthMaximum - headerColumnWidthMinimum,
                                       (headerWidth - 680) / headerColumnCount);
     return headerColumnWidthMinimum + growth;
@@ -1424,6 +1462,7 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
 {
     if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
     {
+        levelsButton.setVisible (false);
         const auto rowOneY = header.getY() + 5;
         const auto titleWidth = juce::jmin (82, juce::jmax (0, header.getWidth() / 4));
         titleLabel.setBounds (header.getX() + 4, rowOneY, titleWidth, 32);
@@ -1502,9 +1541,9 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     //  second row puts THEME and the language pair under them, so their columns
     //  line up and no pair overlaps at any editor size.
     //
-    //  OSC took the fifth cell when the note generator arrived. It fits because
-    //  the cells are sized by the widest caption in the row (POLARITY, AUTO GAIN)
-    //  and a third short caption costs the row a cell rather than a wider one.
+    //  OSC and GLUE COMP use the last two cells of row one. LEVELS uses the free
+    //  third cell of row two, preserving switch widths while leaving room for
+    //  the language label and selector.
     //
     //  Cells reach 74 px at the supported desktop minimum; narrower host layouts
     //  compress smoothly to 62 px without changing their right anchor.
@@ -1524,6 +1563,8 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     const auto statusRowY = header.getY() + headerStatusOffset;
     constexpr int headerStatusHeight = FirstAudioProcessorEditor::headerStatusHeight;
     const auto headerGridLeft = headerRight - headerGridWidth;
+    const auto statusLeft = headerGridLeft;
+    const auto statusWidth = headerGridWidth - 18;
 
     // No default argument on height: a lambda's default argument may not name
     // a local variable (the exact "local variable may not appear in this
@@ -1535,24 +1576,24 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
                              rowY, headerColumnWidth, height);
     };
 
-    // Row one: the five engine switches, equal cells, one grid.
+    // Row one: the six engine switches, equal cells, one grid.
     headerCell (deltaButton,     0, headerRowOneY, headerSwitchHeight);
     headerCell (bypassButton,    1, headerRowOneY, headerSwitchHeight);
     headerCell (polarityButton,  2, headerRowOneY, headerSwitchHeight);
     headerCell (autoGainButton,  3, headerRowOneY, headerSwitchHeight);
     headerCell (oscButton,       4, headerRowOneY, headerSwitchHeight);
     headerCell (glueButton,      5, headerRowOneY, headerSwitchHeight);
+    levelsButton.setVisible (true);
 
-    // Row two: THEME, RND, then the language pair - caption cell + a box that
-    // spans whatever the grid has left of it. Written as a count of cells rather
-    // than as a literal 154 px so a seventh column would widen the box instead of
-    // leaving a hole at the end of the row.
+    // Row two: THEME, RND, LEVELS and the language pair. The selector spans the
+    // final two cells while the caption occupies the cell before it.
     headerCell (themeButton,     0, headerRowTwoY, headerSwitchHeight);
     headerCell (randomButton,    1, headerRowTwoY, headerSwitchHeight);
-    headerCell (languageLabel,   2, headerRowTwoY, headerSwitchHeight);
+    headerCell (levelsButton,    2, headerRowTwoY, headerSwitchHeight);
+    headerCell (languageLabel,   3, headerRowTwoY, headerSwitchHeight);
     languageLabel.setJustificationType (juce::Justification::centredRight);
-    constexpr int languageColumns = headerColumns - 3;
-    languageBox.setBounds (headerGridLeft + 3 * (headerColumnWidth + headerGap),
+    constexpr int languageColumns = headerColumns - 4;
+    languageBox.setBounds (headerGridLeft + 4 * (headerColumnWidth + headerGap),
                            headerRowTwoY,
                            languageColumns * headerColumnWidth
                                + (languageColumns - 1) * headerGap,
@@ -1573,8 +1614,7 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     // hung off the frame it belongs to. The pill is now the label's own rectangle
     // plus two pixels, and the hairline under the header is drawn before it (see
     // paint()), so nothing cuts through it either.
-    statusLabel.setBounds (headerGridLeft, statusRowY, headerGridWidth - 18,
-                           headerStatusHeight);
+    statusLabel.setBounds (statusLeft, statusRowY, statusWidth, headerStatusHeight);
     statusLabel.setJustificationType (juce::Justification::centredLeft);
     statusLabel.setFont (statusLabel.getFont().withHeight (uiFontSize (9.5f)));
     statusLabel.setBorderSize (juce::BorderSize<int> (0, 26, 0, 0));
@@ -3436,6 +3476,7 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             { "autoGain",      &autoGainButton },
             { "osc",           &oscButton },
             { "theme",         &themeButton },
+            { "levels",        &levelsButton },
 
             // The deck, line by line, in the order resized() places them.
             { "deckHeading",   &deckHeadingLabel },

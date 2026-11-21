@@ -633,6 +633,7 @@ void FirstAudioProcessorEditor::stylePanelLabels() {
                juce::Justification::right);
     styleLabel(compressorReadout, "one meter per stage", 8.0f, paletteFor(false).secondary, false,
                juce::Justification::right);
+    levelsButton.setColour (juce::ToggleButton::textColourId, paletteFor (false).text);
     // The four readout pairs share one alignment discipline: the caption is
     // centred over its value, and every pair uses the SAME scheme - BPM included,
     // which used to read left while these three read from the centre.
@@ -1194,6 +1195,18 @@ void FirstAudioProcessorEditor::setUpTopSwitches() {
     glueAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
         audioProcessor.parameters, "glue_on", glueButton);
     addAndMakeVisible(glueButton);
+
+    levelsButton.setClickingTogglesState (true);
+    levelsButton.setToggleState (levelsVisible, juce::dontSendNotification);
+    levelsButton.setColour (juce::ToggleButton::textColourId, paletteFor (false).text);
+    levelsButton.setLookAndFeel (&customLookAndFeel);
+    setTip (levelsButton, "LEVELS - show or hide the input, output and compressor meters. "
+                         "Hiding them gives the controls panel more room.");
+    levelsButton.onClick = [this]
+    {
+        setLevelsVisible (levelsButton.getToggleState());
+    };
+    addAndMakeVisible (levelsButton);
 
     // ---------------------------------------------------------------------
     //  RND - another machine, drawn at random.
@@ -2357,6 +2370,7 @@ void FirstAudioProcessorEditor::setUpSceneAndMeters() {
     addAndMakeVisible(outputMeter);
     addAndMakeVisible(compressorMeterIn);
     addAndMakeVisible(compressorMeterOut);
+    updateLevelsVisibility();
     applyTheme();
 }
 
@@ -2433,6 +2447,7 @@ void FirstAudioProcessorEditor::applyRenderBackend(j37::render::Backend backend)
 void FirstAudioProcessorEditor::setUpOpenGlRendering() {
     const auto running = j37::render::runningBackend(renderBackendChoice);
     nativeSceneAttachAttemptsLeft = 0;
+    updateLevelsVisibility();
 
     if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight())) {
         tapeScene.setSceneEnabled(false);
