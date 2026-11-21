@@ -272,6 +272,15 @@ namespace
         bool measuring = false;
         std::chrono::steady_clock::time_point started {};
     };
+
+    static void preservePeak (std::atomic<float>& target, float peak) noexcept
+    {
+        float current = target.load (std::memory_order_relaxed);
+        while (peak > current && ! target.compare_exchange_weak (
+                   current, peak, std::memory_order_relaxed))
+        {
+        }
+    }
 } // namespace
 
 void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
@@ -422,8 +431,11 @@ bool FirstAudioProcessor::processBypassedBlock (juce::dsp::AudioBlock<float>& bl
     const auto rmsDb = juce::Decibels::gainToDecibels (rms, -70.0f);
     const auto combined = peakDb * 0.25f + rmsDb * 0.75f;
 
-    inputPeakLevel.store (peak, std::memory_order_relaxed);
-    outputPeakLevel.store (peak, std::memory_order_relaxed);
+    // Preserve the highest peak until the UI reads it (getInputPeakLevel exchanges
+    // to zero), so a transient in an early buffer is not lost to a later, quieter
+    // block before the 30 Hz timer polls.
+    preservePeak (inputPeakLevel, peak);
+    preservePeak (outputPeakLevel, peak);
     inputRmsLevel.store (rms, std::memory_order_relaxed);
     outputRmsLevel.store (rms, std::memory_order_relaxed);
     inputPeakDb.store (peakDb, std::memory_order_relaxed);
@@ -872,8 +884,9 @@ void FirstAudioProcessor::publishBlockTelemetry (const BlockContext& context,
     // The linear peak and RMS levels the scene's peak lamp drains each tick
     // (getOutputPeakLevel is an exchange), published here exactly as the bypass
     // path publishes its own pair in processBypassedBlock.
-    inputPeakLevel.store (inputPeak, std::memory_order_relaxed);
-    outputPeakLevel.store (outputPeak, std::memory_order_relaxed);
+    // Preserve the highest peak until the UI reads it (see processBlock above).
+    preservePeak (inputPeakLevel, inputPeak);
+    preservePeak (outputPeakLevel, outputPeak);
     inputRmsLevel.store (inputRms, std::memory_order_relaxed);
     outputRmsLevel.store (outputRms, std::memory_order_relaxed);
 
