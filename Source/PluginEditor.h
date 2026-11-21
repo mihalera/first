@@ -839,9 +839,9 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void setUpPresetBar();
     void addDeckControlsToPanel();
     void setUpSceneAndMeters();
+    void updateLevelsVisibility();
     void setUpOpenGlRendering();
     void setLevelsVisible (bool visible);
-    void updateLevelsVisibility();
     /** The last phase: the interface sounds are attached once every control they
         watch exists and every existing handler is installed, and the timer that
         polls them starts here. Called after setUpOpenGlRendering() rather than
