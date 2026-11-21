@@ -642,9 +642,9 @@
     "language": "language=.cpp"
   },
   "Source/GUI/DeckBands.h": {
-    "mtime": 1795091994.651981,
-    "seen": 1795119419.5677433,
-    "ast_hash": "73b9dabcc1b1e170a948fb865e63cb7a",
+    "mtime": 1795257530.2605894,
+    "seen": 1795257659.6227243,
+    "ast_hash": "3377cb0b515d82778c2a39663b5e3d7c",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
@@ -1029,8 +1029,8 @@
     "semantic_hash": ""
   },
   "Source/PluginEditor.cpp": {
-    "mtime": 1795256339.4884744,
-    "seen": 1795256387.8243973,
+    "mtime": 1795257515.9473748,
+    "seen": 1795257659.636321,
     "ast_hash": "3fe5ace3ffa3a30a99aa2ae6e427242b",
     "semantic_hash": ""
   },
