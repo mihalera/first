@@ -34,6 +34,10 @@
 //  and a buffer, and a binary fixture in the tree is a file nobody can diff when
 //  the format it claims to test changes.
 // =============================================================================
+#ifdef _WIN32
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include "DSP/NoiseDecoder.h"
 
 #include <cmath>
