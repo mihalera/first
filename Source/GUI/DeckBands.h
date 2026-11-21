@@ -43,7 +43,7 @@ struct DeckBands {
         readouts = 1,  // BPM, SUBFUND TRACK, ANTI-PHASE, HARMONICS
         types = 2,     // the five type selectors
         transport = 3, // the transport keys and the mode switch
-        preset = 4,    // the preset chain
+        preset = 4,    // the preset lists and the keys beside them
         badge = 5,     // the preset badge line
         bandCount = 6
     };
@@ -57,8 +57,12 @@ struct DeckBands {
 
     // What each band HOLDS, at the reference size. A control row is its caption
     // plus its control; the two are solved together below.
+    //
+    // The preset row is one of those rows and not a band of its own: it holds a
+    // caption and a control exactly as the four above it do. Written as a fixed
+    // 32 px band it gave its controls 17 px against the selectors' 30, so the
+    // bottom row of the deck was visibly shorter than every row above it.
     static constexpr int headingHeight = 16;
-    static constexpr int presetHeight = 32;
     static constexpr int badgeHeight = 20;
 
     // The control row, solved. 30 / 15 is the reference (the size the panel was
@@ -102,7 +106,7 @@ struct DeckBands {
         // leave one pixel too little for six minimum gaps at a few intermediate
         // heights. Keep the promised bottom inset by trimming that pixel from the
         // control row, down to its 24 px floor, before solving the gaps.
-        auto content = headingHeight + 3 * bands.rowHeight + presetHeight + badgeHeight;
+        auto content = headingHeight + 4 * bands.rowHeight + badgeHeight;
         const auto roomWithMinimumGaps = deckHeight - topOffset - bottomInset
                                          - minimumGap * (bandCount - 1);
         while (content > roomWithMinimumGaps && bands.controlHeight > 24)
@@ -110,7 +114,7 @@ struct DeckBands {
             --bands.controlHeight;
             bands.captionHeight = std::clamp (bands.controlHeight / 2, 12, 15);
             bands.rowHeight = bands.controlHeight + bands.captionHeight;
-            content = headingHeight + 3 * bands.rowHeight + presetHeight + badgeHeight;
+            content = headingHeight + 4 * bands.rowHeight + badgeHeight;
         }
 
         // Then the gaps take the remainder, floored and capped. Capping them means
@@ -123,10 +127,9 @@ struct DeckBands {
         for (int band = 0; band < bandCount; ++band) {
             bands.top[static_cast<std::size_t>(band)] = cursor;
 
-            const auto height = band == heading      ? headingHeight
-                                : band == preset     ? presetHeight
-                                : band == badge      ? badgeHeight
-                                                     : bands.rowHeight;
+            const auto height = band == heading ? headingHeight
+                                : band == badge   ? badgeHeight
+                                                  : bands.rowHeight;
             bands.height[static_cast<std::size_t>(band)] = height;
             cursor += height + bands.gap;
         }

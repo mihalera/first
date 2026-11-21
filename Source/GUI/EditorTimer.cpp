@@ -492,10 +492,21 @@ void FirstAudioProcessorEditor::timerCallback() {
     // colour coding stays readable at every phase.
     const auto readoutBreath = 1.0f - 0.2f * (0.5f + 0.5f * std::sin(customLookAndFeel.phase()));
     const auto breathe = [&](juce::Colour c) { return c.withMultipliedBrightness(readoutBreath); };
-    harmonicsReadout.setColour(juce::Label::textColourId,
-                               breathe(totalHarmonics < 0.001f ? harmonicPalette.secondary
-                                       : evenRatio >= oddRatio ? harmonicPalette.status
-                                                               : harmonicPalette.needle));
+
+    //  One paint rule for the deck's four readouts. A live value is its state
+    //  colour breathing with the machine; an idle or passive value is the panel's
+    //  secondary tone at full strength. Written per readout, the idle case came out
+    //  dimmed on two of the four and plain on the other two, which read as four
+    //  different type sizes on one caption line.
+    const auto readoutColour = [&](juce::Colour live, bool isLive)
+    {
+        return isLive ? breathe(live) : harmonicPalette.secondary;
+    };
+
+    harmonicsReadout.setColour (juce::Label::textColourId,
+                                readoutColour (evenRatio >= oddRatio ? harmonicPalette.status
+                                                                     : harmonicPalette.needle,
+                                               totalHarmonics >= 0.001f));
 
     // The deck's tempo, as the host reports it. A host that offers no playhead
     // (an offline render, a bare player) leaves the readout at the machine's
@@ -507,9 +518,8 @@ void FirstAudioProcessorEditor::timerCallback() {
                                     : juce::String(juce::roundToInt(deckBpm)) + " " + xlat("BPM") +
                                           " (" + xlat("default") + ")",
                        juce::dontSendNotification);
-    bpmReadout.setColour(
-        juce::Label::textColourId,
-        breathe(deckBpmValid ? paletteFor(darkTheme).status : paletteFor(darkTheme).secondary));
+    bpmReadout.setColour (juce::Label::textColourId,
+                          readoutColour (paletteFor(darkTheme).status, deckBpmValid));
 
     // ------------------------------------------------------------------
     //  Subharmonic tracking readout.
@@ -527,7 +537,8 @@ void FirstAudioProcessorEditor::timerCallback() {
 
     if (confidence < 0.05f || trackedHz <= 0.0f) {
         subfundReadout.setText(xlat("idle - no note tracked"), juce::dontSendNotification);
-        subfundReadout.setColour(juce::Label::textColourId, harmonicPalette.secondary);
+        subfundReadout.setColour(juce::Label::textColourId,
+                                 readoutColour (harmonicPalette.secondary, false));
     } else {
         // The confidence is shown as a percentage rather than hidden, because a
         // partial lock (say 40 %) is a real and useful state: the cascade IS
@@ -538,9 +549,10 @@ void FirstAudioProcessorEditor::timerCallback() {
                                juce::dontSendNotification);
         // Green while the track is solid, amber while it is partial: the colour is
         // the readout's own confidence bar.
-        subfundReadout.setColour(
+        subfundReadout.setColour (
             juce::Label::textColourId,
-            breathe(confidence > 0.75f ? harmonicPalette.status : harmonicPalette.needle));
+            readoutColour (confidence > 0.75f ? harmonicPalette.status : harmonicPalette.needle,
+                           true));
     }
 
     // ------------------------------------------------------------------
@@ -573,11 +585,14 @@ void FirstAudioProcessorEditor::timerCallback() {
     if (antiPhaseText != lastShownAntiPhase) {
         lastShownAntiPhase = antiPhaseText;
         antiPhaseReadout.setText(antiPhaseText, juce::dontSendNotification);
-        antiPhaseReadout.setColour(juce::Label::textColourId,
-                                   breathe(!antiPhaseGuardOn      ? harmonicPalette.secondary
-                                           : antiPhaseNow < 0.01f ? harmonicPalette.status
-                                                                  : harmonicPalette.needle));
     }
+
+    //  Written every tick, not only when the text changes: the other three breathe,
+    //  and a readout that is repainted on a text change alone sat still beside them.
+    //  "off" and "clean" are passive states and take the same idle tone as the rest.
+    antiPhaseReadout.setColour (juce::Label::textColourId,
+                                readoutColour (harmonicPalette.needle,
+                                               antiPhaseGuardOn && antiPhaseNow >= 0.01f));
 
     // Animated presentation state. Everything here is derived from audio
     // telemetry, so the panel visibly reacts to what the plugin is doing.
