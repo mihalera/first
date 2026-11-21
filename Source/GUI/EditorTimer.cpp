@@ -357,6 +357,12 @@ void FirstAudioProcessorEditor::timerCallback() {
             nativeSceneAttachAttemptsLeft = 0;
     }
 
+    // An adapter that attached but then hit an unrecoverable (often
+    // asynchronous) failure must be dropped so the software (CPU) paint path
+    // takes the deck back instead of leaving a blank surface.
+    if (!phoneLayout && nativeRenderer != nullptr && nativeRenderer->hasFatalFailure())
+        shutDownNativeScene();
+
     // The native scene path: while a scene-capable adapter owns the deck's
     // surface, every tick builds the frame the OpenGL callback would have built
     // and hands it over - the adapter records it on its own GL thread.

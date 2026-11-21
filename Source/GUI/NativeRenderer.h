@@ -57,6 +57,11 @@ class NativeRenderer {
     /** Whether a presentation surface is attached and can be drawn into. */
     virtual bool isPresentable() const noexcept = 0;
 
+    /** Whether the adapter hit an unrecoverable failure after it was attached,
+        so the editor should drop it and restore the software (CPU) paint path.
+        Defaults to false; only adapters that can fail asynchronously override. */
+    virtual bool hasFatalFailure() const noexcept { return false; }
+
     /** Releases every native object, including the child surface. */
     virtual void shutdown() noexcept = 0;
 

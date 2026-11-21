@@ -455,6 +455,13 @@ public:
             && deviceReady.load (std::memory_order_acquire);
     }
 
+    bool hasFatalFailure() const noexcept override
+    {
+        return initialised && context != nullptr && context->isAttached()
+            && ! deviceReady.load (std::memory_order_acquire)
+            && deviceSetupFailed.load (std::memory_order_acquire);
+    }
+
     void shutdown() noexcept override
     {
         if (context != nullptr)
@@ -609,6 +616,12 @@ private:
         // the only callback where the context is current by construction.
         if (! (ensureShader() && ensurePipelines() && ensureMeshes (frame)))
         {
+            // An asynchronous setup failure: the device can no longer present,
+            // so drop it out of the presentable set and let the editor restore
+            // the CPU paint path. drawFailure keeps the human-readable reason.
+            deviceReady.store (false, std::memory_order_release);
+            deviceSetupFailed.store (true, std::memory_order_release);
+
             // Keep the last presented frame rather than replacing it with an
             // empty clear. The reason is written under the same mutex drawScene()
             // and status() use, so the panel reads either the failure or a later
