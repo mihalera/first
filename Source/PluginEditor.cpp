@@ -2079,9 +2079,9 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
                                                juce::Font::plain,
                                                static_cast<float> (transportLabel.getWidth()) - 3.0f));
 
-        // Column 1: Live transport status readout flush with Col 1
+        // Column 1: Live transport status readout starts at the column's left edge.
         deckHintLabel.setBounds (col1X, transportRowYCtl, col1W, controlHeight);
-        deckHintLabel.setJustificationType (juce::Justification::centred);
+        deckHintLabel.setJustificationType (juce::Justification::centredLeft);
 
         // Column 2: SPINDOWN starts at Col 2
         spindownButton.setBounds (col2X, transportRowYCtl, spinWidth, controlHeight);
