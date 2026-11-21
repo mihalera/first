@@ -1,7 +1,7 @@
 # Graph Report - first  (2026-11-21)
 
 ## Corpus Check
-- 344 files · ~906,990 words
+- 344 files · ~906,927 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 54 file(s) not represented in the graph (top: .toml 22, (none) 9, .cmake 8)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `630b963f`
+- Built from commit: `cf5641c6`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -1299,7 +1299,7 @@ Nodes (6): ParameterSheet::ParameterSheet(), ParameterSheet::Sheet::resized(), P
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `FirstAudioProcessor` connect `FirstAudioProcessor` to `TapeBlockState`, `string`, `FirstAudioProcessor::processTapeEngine`, `StateSwapAction`, `phase_test.cpp`, `VinylStage`, `State`, `cmath`, `TransportRig`, `.getBypassParameter`, `.getUndoManager`, `ValueTree`, `SafetyLimiter`, `ProcessorPresets.cpp`, `SaturationCore`, `DattorroRoom`, `CorrectorStage`, `MultibandCompressor`, `NoiseLoader`, `PluginProcessor.cpp`, `RangedAudioParameter`, `PitchTracker`, `FxRack`, `ThreeBandEq`, `parameter_audio.cpp`, `GlueCompressor`, `gain_test.cpp`, `SubharmonicGenerator`, `TelemetryFrame`, `PluginEditor.h`, `ParameterTable.cpp`, `AmpVoicing`, `FxTargets`, `TapeCondition`, `memory`, `Surface`, `RepitchStage`, `SpectrumAnalyser`, `equaliser_test.cpp`, `.active`, `FirstAudioProcessor::publishBlockTelemetry`, `HarmonicAnalyser`, `ModalVoice`, `.prepareToPlay`, `LofiHold`, `loudness_oracle_test.cpp`, `String`, `AudioProcessor`, `IrStage`?**
-  _High betweenness centrality (0.229) - this node is a cross-community bridge._
+  _High betweenness centrality (0.237) - this node is a cross-community bridge._
 - **Are the 7 inferred relationships involving `FirstAudioProcessor` (e.g. with `.perform()` and `.undo()`) actually correct?**
   _`FirstAudioProcessor` has 7 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `blockFrames`, `windowSeconds`, `intervalSeconds` to the rest of the system?**
@@ -1307,8 +1307,8 @@ _Questions this graph is uniquely positioned to answer:_
 - **Should `FirstAudioProcessor` be split into smaller, more focused modules?**
   _Cohesion score 0.0036101083032490976 - nodes in this community are weakly interconnected._
 - **Why does `VulkanRenderer` connect `VulkanRenderer` to `.isPresentable`, `NativeRenderer.h`, `MeshBinding`, `.initialise`, `PanelPaint.h`, `.clear`, `.resize`, `SceneFrame`, `NativeRenderer`?**
-  _High betweenness centrality (0.038) - this node is a cross-community bridge._
+  _High betweenness centrality (0.039) - this node is a cross-community bridge._
 - **Should `live-browser.js` be split into smaller, more focused modules?**
   _Cohesion score 0.028943278943278944 - nodes in this community are weakly interconnected._
 - **Why does `FxRack` connect `FxRack` to `FirstAudioProcessor`, `Phaser`, `cmath`, `FxStutter`, `EnvelopeFollower`, `SpectralGate`, `MultibandCompressor`, `.processSample`, `Vocoder`, `Granular`, `DelayLine`, `.prepare`, `DelayLine`, `PitchShifter`, `FxTargets`, `Amounts`, `RateCrusher`, `character_test.cpp`, `checkRackGate`, `Fuzz`?**
-  _High betweenness centrality (0.035) - this node is a cross-community bridge._
+  _High betweenness centrality (0.031) - this node is a cross-community bridge._

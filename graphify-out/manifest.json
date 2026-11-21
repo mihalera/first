@@ -1029,9 +1029,9 @@
     "semantic_hash": ""
   },
   "Source/PluginEditor.cpp": {
-    "mtime": 1795254504.1355937,
-    "seen": 1795254524.4257853,
-    "ast_hash": "09bee64cc4c0308fa5c20cd8c0cf3317",
+    "mtime": 1795256339.4884744,
+    "seen": 1795256387.8243973,
+    "ast_hash": "3fe5ace3ffa3a30a99aa2ae6e427242b",
     "semantic_hash": ""
   },
   "Source/PluginEditor.h": {
