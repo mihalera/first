@@ -176,6 +176,17 @@ ShutdownWatchdog::ShutdownWatchdog (int limitMilliseconds) noexcept
 {
 }
 
+ShutdownWatchdog::~ShutdownWatchdog() noexcept
+{
+    //  A guard destroyed while armed (a teardown that threw, a harness scope that
+    //  ended early) still has a worker running this module's code: stop it here
+    //  rather than let std::thread terminate on a joinable handle.
+    finished.store (true, std::memory_order_release);
+
+    if (worker.joinable())
+        worker.join();
+}
+
 std::string ShutdownWatchdog::stacksPath() const
 {
     return logPath() + ".stacks.txt";
@@ -195,9 +206,13 @@ void ShutdownWatchdog::arm() noexcept
 
     phase ("shutdown: watchdog armed");
 
-    // Detached on purpose: if the main thread never returns, nothing here is
-    // going to join it, and the process is about to be killed by the user.
-    std::thread (&ShutdownWatchdog::watch, this).detach();
+    // The worker polls `finished` every 20 ms, so a disarm joins it in a
+    // bounded time; keeping it detached let it still be inside watch() - plugin
+    // code - after the host had unloaded the module.
+    if (worker.joinable())
+        worker.join();
+
+    worker = std::thread (&ShutdownWatchdog::watch, this);
 }
 
 void ShutdownWatchdog::phase (const char* what) noexcept
@@ -229,6 +244,12 @@ void ShutdownWatchdog::disarm() noexcept
 
     if (armed.exchange (false))
         phase ("shutdown: complete");
+
+    //  Joining is what keeps the worker from running plugin code after the host
+    //  unloads it. It costs at most one 20 ms poll in the normal case, and in the
+    //  stalled case it waits for the report the watchdog is already writing.
+    if (worker.joinable())
+        worker.join();
 }
 
 void ShutdownWatchdog::watch()
@@ -256,13 +277,20 @@ void ShutdownWatchdog::appendPhaseTrace (std::string& destination)
 {
     destination += "\nphase trace (the guard's own log, oldest first):\n";
 
-    std::ifstream in (logPath(), std::ios::binary);
-    std::string text ((std::istreambuf_iterator<char> (in)), std::istreambuf_iterator<char>());
+    std::ifstream in (logPath(), std::ios::binary | std::ios::ate);
 
-    // The guard only reports; it does not read the whole of a runaway file.
-    constexpr std::size_t cap = 262144;
-    const auto first = text.size() > cap ? text.size() - cap : std::size_t { 0 };
-    destination += text.substr (first);
+    //  Read the tail the report is allowed to carry, not the whole of a file that
+    //  may have grown far past it: this runs during an already abnormal shutdown.
+    const auto end = in.tellg();
+    if (end > std::streamoff { 0 })
+    {
+        constexpr std::streamoff cap = 262144;
+        const auto size = static_cast<std::streamoff> (end);
+        in.seekg (size > cap ? size - cap : std::streamoff { 0 });
+
+        destination.append (std::istreambuf_iterator<char> (in),
+                            std::istreambuf_iterator<char>());
+    }
 }
 
 void ShutdownWatchdog::writeStacks()

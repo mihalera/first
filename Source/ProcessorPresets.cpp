@@ -442,6 +442,14 @@ bool FirstAudioProcessor::saveUserPreset (const juce::String& name)
     if (! makeUserPresetFile (name, safe, file))
         return false;
 
+    // On Windows and macOS the filesystem matches names case-insensitively, so a
+    // case-variant of an existing preset would silently overwrite it. Only an
+    // exact-name match is treated as an intentional overwrite; anything that
+    // differs by letter case alone is refused.
+    for (const auto& existing : getUserPresetNames())
+        if (existing != safe && existing.equalsIgnoreCase (safe))
+            return false;
+
     // captureState stamps the saved-state format marker, so a preset this build
     // writes never has to be migrated again.
     auto state = captureState (parameters);
