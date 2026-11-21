@@ -2019,12 +2019,14 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     const auto col3X = harmonicsReadout.getX();
     const auto col3W = harmonicsReadout.getWidth();
 
-    //  BUILD rides the heading strip INSIDE the fourth column, right-aligned to the
-    //  same edge HARMONICS and A (LIVE) end on. Pinned to the deck's own left edge
-    //  and sized to the panel, it sat in whatever room was left over - past the fourth
-    //  column, under the reel.
+    //  BUILD rides the heading strip and STARTS on the fourth column, the line
+    //  HARMONICS, the OSC ring and A/B now all start on. It used to be pinned to the
+    //  deck's own left edge and sized to the panel, which left it in whatever room
+    //  was over; right-aligning it to the column's far edge still read as caption
+    //  hanging past the group, because that edge is where the column ends.
     buildLabel.setBounds (col3X, deckTop (j37panel::DeckBands::heading), col3W,
                           deckBandHeight (j37panel::DeckBands::heading));
+    buildLabel.setJustificationType (juce::Justification::centredLeft);
 
     // ---- row 2: SELECTORS & OSC RING -----------------------------------------
     //  INSTRUMENT lines up flush with BPM (Col 0).
