@@ -2114,45 +2114,40 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     presetHeadingLabel.setBounds (col0X, presetRowY, col0W, captionHeight);
     presetBox.setBounds          (col0X, presetRowYCtl, col0W, presetCtlH);
 
-    // Col 1: the user list and the two things done to it. The pair used to stand
-    // in the next column with a hole beside the list it acts on; here they share
-    // one column, and the list gives up the room rather than the keys.
-    //
-    //  SAVE and DEL are ONE pair, not two buttons that happen to sit together:
-    //  equal width, and the same gap to the list and to each other, so the column
-    //  reads [list][SAVE][DEL] on a rhythm. They used to be 40 and 36 px with two
-    //  gaps, which put the list at jmax (54, ...) = 77 px and truncated every
-    //  user preset to "U..." while the keys themselves were wider than they need.
-    constexpr int saveDeleteWidth = 34;
-    const auto userPresetWidth = juce::jmax (54, col1W - 2 * (saveDeleteWidth + presetKeyGap));
+    // ---- the row's KEY WIDTH, decided once --------------------------------
+    //  Every key in this row is the SAME width, and it is the width the packed
+    //  case already forced: the comparison cluster's third of column 3. Sizing
+    //  each group to its own column instead is what made the row look crooked -
+    //  SAVE and DEL came out 34 px, UNDO and REDO 78 px and the A/B cluster 51 px,
+    //  so three rows of keys of three sizes stood side by side under one caption
+    //  line. Equal keys can only be paid for by spanning columns, so the user list
+    //  and its four verbs share ONE module across columns 1 and 2: the list keeps
+    //  the room the wider keys need instead of truncating every preset to "USE...".
+    const auto presetKeyWidth = juce::jmax (34, (col3W - 2 * presetKeyGap) / 3);
+    const auto presetSpanX    = col1X;
+    const auto presetSpanW    = col2X + col2W - col1X;
+    //  Four keys and the four gaps between the list and them - not five of either:
+    //  reserving a fifth key left the list ~47 px short of the room the span has.
+    const auto userPresetWidth = juce::jmax (54, presetSpanW
+                                                   - 4 * (presetKeyWidth + presetKeyGap));
 
-    userPresetBox.setBounds (col1X, presetRowYCtl, userPresetWidth, presetCtlH);
-    savePresetButton.setBounds (userPresetBox.getRight() + presetKeyGap, presetRowYCtl,
-                                saveDeleteWidth, presetCtlH);
-    deletePresetButton.setBounds (savePresetButton.getRight() + presetKeyGap, presetRowYCtl,
-                                  saveDeleteWidth, presetCtlH);
+    userPresetBox.setBounds (presetSpanX, presetRowYCtl, userPresetWidth, presetCtlH);
 
-    // Col 2: the history pair, one half of the column each - equal halves, so the
-    // divider between them lands on the column's centre rather than a pixel off it.
-    const auto historyWidth = juce::jmax (36, (col2W - presetKeyGap) / 2);
-    undoButton.setBounds (col2X, presetRowYCtl, historyWidth, presetCtlH);
-    redoButton.setBounds (undoButton.getRight() + presetKeyGap, presetRowYCtl,
-                          historyWidth, presetCtlH);
+    int presetKeyX = userPresetBox.getRight() + presetKeyGap;
+    for (auto* key : { &savePresetButton, &deletePresetButton, &undoButton, &redoButton })
+    {
+        key->setBounds (presetKeyX, presetRowYCtl, presetKeyWidth, presetCtlH);
+        presetKeyX += presetKeyWidth + presetKeyGap;
+    }
 
-    // Col 3: the A/B comparison cluster, a third of the column per key, with the
-    // MATCHED / EDITED badge on that column's caption line - above the A (LIVE)
-    // key it describes, and inside the column rather than past its end.
-    //
-    //  Exactly a third each: the last key used to absorb the division's remainder
-    //  (col3W - 2 * (width + gap)), so A (LIVE) came out 1-2 px wider than its two
-    //  neighbours and the three keys read as three different sizes. The remainder
-    //  now stays as trailing space inside the column, where nothing can see it.
-    const auto compareKeyWidth = juce::jmax (34, (col3W - 2 * presetKeyGap) / 3);
-    compareButton.setBounds (col3X, presetRowYCtl, compareKeyWidth, presetCtlH);
+    // Col 3: the A/B comparison cluster, the same key width as the rest of the row,
+    // with the MATCHED / EDITED badge on that column's caption line - above the
+    // A (LIVE) key it describes, and inside the column rather than past its end.
+    compareButton.setBounds (col3X, presetRowYCtl, presetKeyWidth, presetCtlH);
     copyBButton.setBounds (compareButton.getRight() + presetKeyGap, presetRowYCtl,
-                           compareKeyWidth, presetCtlH);
+                           presetKeyWidth, presetCtlH);
     copyAButton.setBounds (copyBButton.getRight() + presetKeyGap, presetRowYCtl,
-                           compareKeyWidth, presetCtlH);
+                           presetKeyWidth, presetCtlH);
 
     compareBadgeLabel.setBounds (col3X, presetRowY, col3W, captionHeight);
 
