@@ -283,7 +283,11 @@ namespace
                                                                 "Stereo Width",
                                                                 juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f),
                                                                 0.5f,
-                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+                                                                juce::AudioParameterFloatAttributes()
+                                                                    .withLabel ("%")
+                                                                    .withStringFromValueFunction ([] (float v, int) {
+                                                                        return juce::String (v * 100.0f, 0);
+                                                                    })));
 
         // -------------------------------------------------------------------------
         //  The anti-phase guard's switch.
