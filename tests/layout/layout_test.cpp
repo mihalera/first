@@ -171,6 +171,7 @@ juce::Rectangle<int> getLocalBounds() { return localBounds; }
 EditorLayout editorLayoutOf (int W, int H)
 {
     localBounds = { 0, 0, W, H };
+    bool levelsVisible = true;
 #include "editor_layout.inc"
 }
 
