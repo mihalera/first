@@ -1731,12 +1731,9 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     deckHeadingLabel.setBounds (deck.getX() + 18, deckTop (j37panel::DeckBands::heading), 150,
                                 deckBandHeight (j37panel::DeckBands::heading));
 
-    // The build id rides the deck's heading strip, right-aligned and stopping short of
-    // the reel (whose left edge is deck.right - 56). This strip is the only full-width
-    // band near the top of the panel that is guaranteed empty at the 780 px minimum:
-    // the header's equivalent gap shrinks to about 58 px there.
-    buildLabel.setBounds (deck.getX() + 190, deckTop (j37panel::DeckBands::heading),
-                          deck.getWidth() - 280, deckBandHeight (j37panel::DeckBands::heading));
+    //  The build id is placed below, with the deck's four columns, because it is the
+    //  fourth column's caption on the heading strip - not something that starts 190 px
+    //  from the deck's left edge and runs into the reel.
 
     // ------------------------------------------------------------------
     //  Spreading a row across the deck.
@@ -1934,8 +1931,6 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         return widest;
     };
 
-    constexpr int deckRightInset = 14;
-
     // The reel and the tape ribbon own the deck's top-right corner, and the ribbon
     // hangs down through the model row's band: it starts at the reel (deck.right -
     // 42, y + 26) and falls to y + 60, which is the row the tape box and the BPM
@@ -2023,7 +2018,13 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     // one group started where no column starts and ended past every other row.
     const auto col3X = harmonicsReadout.getX();
     const auto col3W = harmonicsReadout.getWidth();
-    const auto deckRight = deck.getRight() - deckRightInset;
+
+    //  BUILD rides the heading strip INSIDE the fourth column, right-aligned to the
+    //  same edge HARMONICS and A (LIVE) end on. Pinned to the deck's own left edge
+    //  and sized to the panel, it sat in whatever room was left over - past the fourth
+    //  column, under the reel.
+    buildLabel.setBounds (col3X, deckTop (j37panel::DeckBands::heading), col3W,
+                          deckBandHeight (j37panel::DeckBands::heading));
 
     // ---- row 2: SELECTORS & OSC RING -----------------------------------------
     //  INSTRUMENT lines up flush with BPM (Col 0).
@@ -2044,7 +2045,10 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         tuningModeLabel.setBounds  (col2X, typesTop, col2W, captionHeight);
         tuningModeBox.setBounds    (col2X, typesTopCtl, col2W, controlHeight);
 
-        oscRing.setBounds (deckRight - deckRingSize, typesTop,
+        //  OSC RING is this floor's fourth-column control, ending on the column's
+        //  right edge. It used to sit in the reel corridor, to the right of every
+        //  column, so the deck had one control standing outside its own grid.
+        oscRing.setBounds (col3X + col3W - deckRingSize, typesTop,
                            deckRingSize, deckRingSize);
     }
 
@@ -2052,10 +2056,9 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     //  Column 0: TRANSPORT bank (STOP | PLAY | START) fills Col 0 completely.
     //  Column 1: live machine status readout (PLAY / AT SPEED) fills Col 1.
     //  Column 2: SPINDOWN FX button starts at Col 2.
-    //  Right: MACHINE MODE switch anchors to the right edge.
+    //  Column 3: the MACHINE MODE switch fills the fourth column.
     {
-        constexpr int transportModeWidth = 146;
-        constexpr int spinWidth          = 84;
+        constexpr int spinWidth = 84;
         constexpr int tBtnGap            = 4;
 
         const auto transportRowY    = deckTop (j37panel::DeckBands::transport);
@@ -2086,23 +2089,21 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
                                                juce::Font::plain,
                                                static_cast<float> (spindownLabel.getWidth()) - 3.0f));
 
-        // Right side: MACHINE MODE switch anchored to deckRight
-        modeCycleButton.setBounds (deckRight - transportModeWidth,
-                                   transportRowYCtl, transportModeWidth, controlHeight);
+        // Column 3: MACHINE MODE flush with HARMONICS above and A/B below, so the
+        // switch ends where every other fourth-column control ends.
+        modeCycleButton.setBounds (col3X, transportRowYCtl, col3W, controlHeight);
     }
 
     // ---- row 4: PRESET & COMPARISON ------------------------------------------
-    //  ONE GROUP PER COLUMN, the same four columns every row above stands on.
-    //  The row used to be a left chain (lists, SAVE, DEL) meeting a right chain
-    //  (UNDO, REDO, A/B, COPY B, A) in the middle, so SAVE and DEL sat in the
-    //  third column while the second held only the user list, and the right chain
-    //  began wherever its own widths left it - past the column, into the corridor.
-    //  Four groups now, each inside its own column, so nothing can be pushed out
-    //  of alignment by a wider window:
+    //  ONE GROUP PER COLUMN, the same four columns every row above stands on:
     //      Col 0  the factory list            (PRESET caption)
-    //      Col 1  the user list, SAVE and DEL
-    //      Col 2  UNDO and REDO
-    //      Col 3  A/B, COPY B and A (LIVE)    (MATCHED / EDITED badge)
+    //      Col 1  the user list
+    //      Col 2  SAVE | DEL | UNDO | REDO
+    //      Col 3  A/B | COPY B | A (LIVE)     (MATCHED / EDITED badge)
+    //  SAVE and DEL used to trail the user list, sharing an edge with neither it nor
+    //  the column under it, and the comparison cluster began wherever its own widths
+    //  left it. Every key now starts on a column line and every group fills its own
+    //  column, so nothing in this row stands between two of them.
     const auto presetRowY      = deckTop (j37panel::DeckBands::preset);
     const auto presetRowHeight = deckBandHeight (j37panel::DeckBands::preset);
     const auto presetRowYCtl   = presetRowY + captionHeight;
@@ -2114,40 +2115,32 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     presetHeadingLabel.setBounds (col0X, presetRowY, col0W, captionHeight);
     presetBox.setBounds          (col0X, presetRowYCtl, col0W, presetCtlH);
 
-    // ---- the row's KEY WIDTH, decided once --------------------------------
-    //  Every key in this row is the SAME width, and it is the width the packed
-    //  case already forced: the comparison cluster's third of column 3. Sizing
-    //  each group to its own column instead is what made the row look crooked -
-    //  SAVE and DEL came out 34 px, UNDO and REDO 78 px and the A/B cluster 51 px,
-    //  so three rows of keys of three sizes stood side by side under one caption
-    //  line. Equal keys can only be paid for by spanning columns, so the user list
-    //  and its four verbs share ONE module across columns 1 and 2: the list keeps
-    //  the room the wider keys need instead of truncating every preset to "USE...".
-    const auto presetKeyWidth = juce::jmax (34, (col3W - 2 * presetKeyGap) / 3);
-    const auto presetSpanX    = col1X;
-    const auto presetSpanW    = col2X + col2W - col1X;
-    //  Four keys and the four gaps between the list and them - not five of either:
-    //  reserving a fifth key left the list ~47 px short of the room the span has.
-    const auto userPresetWidth = juce::jmax (54, presetSpanW
-                                                   - 4 * (presetKeyWidth + presetKeyGap));
+    // Col 1: the user list owns its column whole. It no longer has to share the
+    // span with four keys, so a preset name is cut to "USE..." far less often.
+    userPresetBox.setBounds (col1X, presetRowYCtl, col1W, presetCtlH);
 
-    userPresetBox.setBounds (presetSpanX, presetRowYCtl, userPresetWidth, presetCtlH);
+    // Col 2: the four preset verbs, one width across the column's own four slots.
+    // Keys are measured per column rather than for the whole row: a group has to
+    // fill the column it starts on, and four slots are narrower than three.
+    const auto verbWidth = juce::jmax (30, (col2W - 3 * presetKeyGap) / 4);
 
-    int presetKeyX = userPresetBox.getRight() + presetKeyGap;
+    int presetKeyX = col2X;
     for (auto* key : { &savePresetButton, &deletePresetButton, &undoButton, &redoButton })
     {
-        key->setBounds (presetKeyX, presetRowYCtl, presetKeyWidth, presetCtlH);
-        presetKeyX += presetKeyWidth + presetKeyGap;
+        key->setBounds (presetKeyX, presetRowYCtl, verbWidth, presetCtlH);
+        presetKeyX += verbWidth + presetKeyGap;
     }
 
-    // Col 3: the A/B comparison cluster, the same key width as the rest of the row,
-    // with the MATCHED / EDITED badge on that column's caption line - above the
-    // A (LIVE) key it describes, and inside the column rather than past its end.
-    compareButton.setBounds (col3X, presetRowYCtl, presetKeyWidth, presetCtlH);
+    // Col 3: the A/B comparison cluster, its three keys sharing that column, with
+    // the MATCHED / EDITED badge on the column's caption line - above the A (LIVE)
+    // key it describes, and inside the column rather than past its end.
+    const auto compareKeyWidth = juce::jmax (30, (col3W - 2 * presetKeyGap) / 3);
+
+    compareButton.setBounds (col3X, presetRowYCtl, compareKeyWidth, presetCtlH);
     copyBButton.setBounds (compareButton.getRight() + presetKeyGap, presetRowYCtl,
-                           presetKeyWidth, presetCtlH);
+                           compareKeyWidth, presetCtlH);
     copyAButton.setBounds (copyBButton.getRight() + presetKeyGap, presetRowYCtl,
-                           presetKeyWidth, presetCtlH);
+                           compareKeyWidth, presetCtlH);
 
     compareBadgeLabel.setBounds (col3X, presetRowY, col3W, captionHeight);
 
