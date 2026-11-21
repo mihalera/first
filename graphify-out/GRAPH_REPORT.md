@@ -1,7 +1,7 @@
 # Graph Report - first  (2026-11-21)
 
 ## Corpus Check
-- 344 files · ~906,982 words
+- 344 files · ~906,991 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 54 file(s) not represented in the graph (top: .toml 22, (none) 9, .cmake 8)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `1490868c`
+- Built from commit: `8b19562f`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -328,14 +328,14 @@
 ## Surprising Connections (you probably didn't know these)
 - `main()` --references--> `FirstAudioProcessor`  [INFERRED]
   tests/parameter_audio.cpp → Source/PluginProcessor.h
+- `FirstAudioProcessorEditor::shapersSpectrumBounds()` --references--> `Rectangle`  [EXTRACTED]
+  Source/PluginEditor.cpp → tests/layout/layout_test.cpp
 - `main()` --references--> `NeuralStage`  [INFERRED]
   tests/neural/bench_nam.cpp → Source/DSP/NeuralStage.h
+- `paint()` --calls--> `getLocalBounds()`  [INFERRED]
+  Source/GUI/UserThemeWindow.h → tests/layout/layout_test.cpp
 - `themeChoiceFromName()` --references--> `String`  [INFERRED]
   Source/GUI/EditorPreferences.h → tests/render_backend/juce_stub/JuceHeader.h
-- `FirstAudioProcessorEditor::setUpEqCornerSwitches()` --references--> `String`  [INFERRED]
-  Source/GUI/EditorSetup.cpp → tests/render_backend/juce_stub/JuceHeader.h
-- `FirstAudioProcessorEditor::timerCallback()` --references--> `String`  [INFERRED]
-  Source/GUI/EditorTimer.cpp → tests/render_backend/juce_stub/JuceHeader.h
 
 ## Import Cycles
 - None detected.
@@ -1339,7 +1339,7 @@ Cohesion: 0.25
 Nodes (6): ParameterSheet::ParameterSheet(), ParameterSheet::Sheet::resized(), ParameterSheet::Sheet::Sheet(), dropSavedInputChannelsWithoutPermission(), JUCE_CALLTYPE createPluginFilter(), AudioProcessor
 
 ## Knowledge Gaps
-- **2273 isolated node(s):** `heading`, `readouts`, `types`, `transport`, `preset` (+2268 more)
+- **2273 isolated node(s):** `blockFrames`, `windowSeconds`, `intervalSeconds`, `prepared`, `preparedRate` (+2268 more)
   These have ≤1 connection - possible missing edges. (Counts symbols only; 3455 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
 - **113 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -1347,16 +1347,16 @@ Nodes (6): ParameterSheet::ParameterSheet(), ParameterSheet::Sheet::resized(), P
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `FirstAudioProcessor` connect `FirstAudioProcessor` to `TapeBlockState`, `processor_boundaries.cpp`, `fixture_test.cpp`, `FirstAudioProcessor::processTapeEngine`, `StateSwapAction`, `phase_test.cpp`, `VinylStage`, `State`, `cmath`, `TransportRig`, `.getBypassParameter`, `.getUndoManager`, `GlueOperatingPoints`, `SafetyLimiter`, `ValueTree`, `ProcessorPresets.cpp`, `SaturationCore`, `DattorroRoom`, `CorrectorStage`, `FirstAudioProcessor::processOneSample`, `MultibandCompressor`, `NoiseLoader`, `BlockRateCoefficients`, `PluginProcessor.cpp`, `loudness_test.cpp`, `RangedAudioParameter`, `PitchTracker`, `FxRack`, `ThreeBandEq`, `parameter_audio.cpp`, `gain_test.cpp`, `SubharmonicGenerator`, `TelemetryFrame`, `vector`, `ParameterTable.cpp`, `AmpVoicing`, `FxTargets`, `TapeCondition`, `Surface`, `RepitchStage`, `SpectrumAnalyser`, `equaliser_test.cpp`, `.active`, `MemoryBlock`, `HarmonicAnalyser`, `ModalVoice`, `.prepareToPlay`, `LofiHold`, `String`, `AudioProcessor`, `IrStage`?**
-  _High betweenness centrality (0.247) - this node is a cross-community bridge._
+  _High betweenness centrality (0.244) - this node is a cross-community bridge._
 - **Are the 7 inferred relationships involving `FirstAudioProcessor` (e.g. with `.perform()` and `.undo()`) actually correct?**
   _`FirstAudioProcessor` has 7 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `heading`, `readouts`, `types` to the rest of the system?**
+- **What connects `blockFrames`, `windowSeconds`, `intervalSeconds` to the rest of the system?**
   _2273 weakly-connected nodes found - possible missing edges._
 - **Should `FirstAudioProcessor` be split into smaller, more focused modules?**
   _Cohesion score 0.0036101083032490976 - nodes in this community are weakly interconnected._
 - **Why does `VulkanRenderer` connect `VulkanRenderer` to `.isPresentable`, `.initialise`, `MeshBinding`, `UserThemeWindow.h`, `.clear`, `.resize`, `cstring`, `SceneFrame`, `NativeRenderer`?**
-  _High betweenness centrality (0.045) - this node is a cross-community bridge._
+  _High betweenness centrality (0.038) - this node is a cross-community bridge._
 - **Should `live-browser.js` be split into smaller, more focused modules?**
   _Cohesion score 0.028943278943278944 - nodes in this community are weakly interconnected._
 - **Why does `FxRack` connect `FxRack` to `FirstAudioProcessor`, `cmath`, `FxStutter`, `EnvelopeFollower`, `StateVariableFilter`, `SpectralGate`, `MultibandCompressor`, `.processSample`, `Vocoder`, `Granular`, `DelayLine`, `.prepare`, `Phaser`, `PitchShifter`, `FxTargets`, `Amounts`, `RateCrusher`, `character_test.cpp`, `Rotary`, `checkRackGate`, `Fuzz`?**
-  _High betweenness centrality (0.039) - this node is a cross-community bridge._
+  _High betweenness centrality (0.031) - this node is a cross-community bridge._

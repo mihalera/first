@@ -2045,11 +2045,11 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         tuningModeLabel.setBounds  (col2X, typesTop, col2W, captionHeight);
         tuningModeBox.setBounds    (col2X, typesTopCtl, col2W, controlHeight);
 
-        //  OSC RING is this floor's fourth-column control, ending on the column's
-        //  right edge. It used to sit in the reel corridor, to the right of every
-        //  column, so the deck had one control standing outside its own grid.
-        oscRing.setBounds (col3X + col3W - deckRingSize, typesTop,
-                           deckRingSize, deckRingSize);
+        //  OSC RING starts the fourth column, under HARMONICS. It used to sit in
+        //  the reel corridor, to the right of every column, and then at the column's
+        //  far edge - which left it in the middle of the deck's right side rather
+        //  than on the line the column begins at.
+        oscRing.setBounds (col3X, typesTop, deckRingSize, deckRingSize);
     }
 
     // ---- row 3: TRANSPORT ---------------------------------------------------
