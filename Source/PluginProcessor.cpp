@@ -932,7 +932,11 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // Auto Glue's share of the glue compression ramps like every other gain, so
     // toggling it during playback fades the reduction in and out instead of
     // stepping it by the existing envelope's full amount on the next block.
-    glueShareSmoothed.reset (sampleRateToUse, smoothingSeconds);
+    // The smoother advances once per ENGINE sample (processTapeEngine runs at
+    // the oversampled rate), so its ramp must be timed at the engine rate;
+    // timing it at the host rate makes the transition 1x..8x too fast.
+    glueShareSmoothed.reset (sampleRateToUse * static_cast<double> (oversamplingRateFactor),
+                             smoothingSeconds);
     glueShareSmoothed.setCurrentAndTargetValue (glueOnParam == nullptr || glueOnParam->load() >= 0.5f
                                                    ? 1.0f : 0.0f);
 
@@ -1262,8 +1266,10 @@ void FirstAudioProcessor::resetSampleRateDependentState()
         subFundamentalParam != nullptr ? subFundamentalParam->load() : 0.0f);
 
     // Auto Glue's share is re-timed with the control ramp on a rate change, so a
-    // rate switch cannot leave it stepping at the old rate's pace.
-    glueShareSmoothed.reset (sampleRate, controlRampSeconds);
+    // rate switch cannot leave it stepping at the old rate's pace. Timed at the
+    // engine rate, matching the per-engine-sample advance in processTapeEngine.
+    glueShareSmoothed.reset (sampleRate * static_cast<double> (oversamplingRateFactor),
+                             controlRampSeconds);
     glueShareSmoothed.setCurrentAndTargetValue (glueOnParam == nullptr || glueOnParam->load() >= 0.5f
                                                    ? 1.0f : 0.0f);
 

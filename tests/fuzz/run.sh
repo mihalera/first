@@ -147,7 +147,7 @@ elif [ -n "${CLANG}" ] \
     echo ""
     echo "== the coverage-guided run (${CLANG}, ${SECONDS_TO_FUZZ}s)"
 
-    "${CLANG}" "${J37_CXX_STD}" -O1 -g -DJ37_FUZZ_LIBFUZZER \
+    "${CLANG}" "${J37_CXX_STD}" -O1 -g "${J37_WARNINGS[@]}" -DJ37_FUZZ_LIBFUZZER \
         -fsanitize=fuzzer,address -fno-omit-frame-pointer \
         "${INCLUDES[@]}" \
         "${HERE}/fuzz_noise_decoder.cpp" "${SOURCE}/DSP/NoiseDecoder.cpp" \
