@@ -59,7 +59,7 @@ libraries `Source/` actually includes, and
 `tests/linkline/check_linkline.py` fails a build when it does not. A component
 fetched and not linked is a candidate for a future stage rather than part of a
 binary - see
-[docs/plugin-analysis.md](docs/plugin-analysis.md#5-the-link-line-is-larger-than-the-code).
+[plugin-analysis.md](plugin-analysis.md#5-the-link-line-is-larger-than-the-code).
 
 | Component | Pin | Licence | Upstream |
 | --- | --- | --- | --- |
@@ -197,7 +197,7 @@ linked, and it used to be both.
   `tests/linkline/check_linkline.py` fails if it comes back without a caller. A
   build that did link it would be GPLv3-bound unless a non-GPL licence were
   bought from the author - that is a decision for the product, not for a
-  dependency bump, and [docs/library-integration-plan.md](docs/library-integration-plan.md)
+  dependency bump, and [library-integration-plan.md](library-integration-plan.md)
   records how it was taken.
 * **SoundTouch 2.4.1** is LGPL-2.1 and **used to be linked statically** - which
   LGPL-2.1 section 6 makes a deliberate decision about object files or a
@@ -205,10 +205,10 @@ linked, and it used to be both.
   called it, and WP4 then removed the CMake target, the CPM fetch and the
   vendored tree with them: a shipped binary carries none of it, and no LGPL text
   ships in this repository any more. The reasoning is in
-  [docs/library-integration-plan.md](docs/library-integration-plan.md#wp4---soundtouch-deleted---done).
+  [library-integration-plan.md](library-integration-plan.md#wp4---soundtouch-deleted---done).
 * **libsndfile** (LGPL-2.1) is fetched and **not linked**, and nothing under
   `Source/` includes it either - see
-  [plugin-analysis.md, §5](docs/plugin-analysis.md#5-the-link-line-is-larger-than-the-code).
+  [plugin-analysis.md, §5](plugin-analysis.md#5-the-link-line-is-larger-than-the-code).
 * **aubio** is fetched by CMake and is **GPL-3.0**, but it is not linked and not
   included - it cannot affect a binary. It is dead dependency weight rather than
   a licensing problem, and it is on the list to remove.
@@ -222,9 +222,9 @@ linked, and it used to be both.
 
 Before publishing a binary, read the three documents that already say this in
 the build's own words: `cmake/J37Dependencies.cmake` (what each package is for),
-[docs/plugin-analysis.md](docs/plugin-analysis.md#5-the-link-line-is-larger-than-the-code)
+[plugin-analysis.md](plugin-analysis.md#5-the-link-line-is-larger-than-the-code)
 (which entries the source actually uses), and
-[docs/plugin-improvement-plan.md](docs/plugin-improvement-plan.md#priority-1--what-a-distributed-binary-owes)
+[plugin-improvement-plan.md](plugin-improvement-plan.md#priority-1--what-a-distributed-binary-owes)
 (what to do about it).
 
 ## Licence texts
