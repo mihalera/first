@@ -68,6 +68,7 @@ python3 tests/linkline/check_linkline.py         # the link line, against the in
 python3 tests/dependencies/check_unused_rack_fetch.py  # no unused Rack fetch with its unreliable GitLab submodule
 python3 tests/dependencies/check_submodules.py           # every ThirdParty tree is a submodule, pins agree
 python3 tests/dependencies/check_harness_preamble.py     # every harness uses tests/lib/harness.sh, by name
+python3 tests/dependencies/check_markdown_links.py       # every relative link in the repository's markdown resolves
 python3 tests/render_backend/check_render_backend.py  # renderer selection and adapter contracts
                                                    # Sokol GL/GLES surfaces, resize/threading
 bash tests/render_backend/run.sh                 # backend choice IDs and AUTO, OPENGL, SOKOL routing
@@ -156,6 +157,13 @@ build. Both can be overridden for one run:
 harness sources the preamble, none defaults the compiler itself, none builds its
 own sanitizer array, no include flag names `Source/`, `ThirdParty/` or `JUCE/` by path, and
 none picks its own `-std=` or `-Wall`.
+
+`tests/dependencies/check_markdown_links.py` covers the other half of the same
+question for documentation: a relative link is resolved against the file that
+wrote it, so a document that moves into a subdirectory cannot keep five paths
+written from the repository root. It skips the submodules, the build trees and
+the generated graph, strips fenced and inline code so examples are not links,
+and leaves anchors alone - a link to a file that does not exist is the subject.
 
 ## What each harness compiles
 
