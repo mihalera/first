@@ -93,9 +93,9 @@
     "semantic_hash": ""
   },
   ".github/workflows/build.yml": {
-    "mtime": 1795377004.7266653,
-    "seen": 1795378064.709866,
-    "ast_hash": "d2efa0fb6f95df17dc59179518161cf3",
+    "mtime": 1795386674.340078,
+    "seen": 1795386715.6535697,
+    "ast_hash": "1192a205d8d19b09c6fdd84484805302",
     "semantic_hash": ""
   },
   ".github/workflows/release-draft.yml": {
@@ -2786,9 +2786,9 @@
     "semantic_hash": ""
   },
   "Assets/README.md": {
-    "mtime": 1795383725.3712099,
-    "seen": 1795384132.1327062,
-    "ast_hash": "cf0cbd6346774a9b7b100525e978f644",
+    "mtime": 1795386447.3406968,
+    "seen": 1795386715.6563778,
+    "ast_hash": "c429a0519b5ec64fba98d8e2e639d383",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
@@ -2810,9 +2810,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1795383725.3732145,
-    "seen": 1795384132.132732,
-    "ast_hash": "eaf47103f9cc791102a74ec6858328ac",
+    "mtime": 1795386447.3426952,
+    "seen": 1795386715.6564026,
+    "ast_hash": "6a5dd03f8932b43fee60ea84b3fb0a5d",
     "semantic_hash": ""
   },
   "Source/Translations/en.txt": {
@@ -2825,12 +2825,6 @@
     "mtime": 1795350931.1966648,
     "seen": 1795359787.9284534,
     "ast_hash": "7a0a68a734cefa89faac8292befc2566",
-    "semantic_hash": ""
-  },
-  "THIRD_PARTY_NOTICES.md": {
-    "mtime": 1795383725.3732145,
-    "seen": 1795384132.1327507,
-    "ast_hash": "55453caf2da2cbe61e2b6167bb776cf4",
     "semantic_hash": ""
   },
   "docs/architecture.md": {
@@ -2852,9 +2846,9 @@
     "semantic_hash": ""
   },
   "docs/external-libraries-report.md": {
-    "mtime": 1795383725.3757274,
-    "seen": 1795384132.1327822,
-    "ast_hash": "f5a9b0fcc06e019ff793cfac6e713625",
+    "mtime": 1795386447.3451958,
+    "seen": 1795386715.6564517,
+    "ast_hash": "590d5210ed2e51335178db4c6e1ac094",
     "semantic_hash": ""
   },
   "docs/library-candidates.md": {
@@ -2912,9 +2906,9 @@
     "semantic_hash": ""
   },
   "tests/README.md": {
-    "mtime": 1795381103.2366803,
-    "seen": 1795384132.1328616,
-    "ast_hash": "79b5c4c551f91ab87364e5a228b87707",
+    "mtime": 1795386674.3405783,
+    "seen": 1795386715.6565278,
+    "ast_hash": "33798f484cdb44a0411cb54058f773d5",
     "semantic_hash": ""
   },
   "tests/shaders/VulkanSceneShaders/README.md": {
@@ -3161,15 +3155,27 @@
     "semantic_hash": ""
   },
   "tests/header_render.cpp": {
-    "mtime": 1795383780.6591017,
-    "seen": 1795384132.1314049,
-    "ast_hash": "df3f404d7f376505b2bef996e15bb41c",
+    "mtime": 1795385174.6028388,
+    "seen": 1795386715.6551068,
+    "ast_hash": "8097b3fac7df6a563e79afba5a01e3d5",
     "semantic_hash": ""
   },
   "tests/layout/render.sh": {
     "mtime": 1795377004.7689722,
     "seen": 1795378064.7115777,
     "ast_hash": "6c3ac6d4fb0ae588198fcff1b77f2853",
+    "semantic_hash": ""
+  },
+  "tests/dependencies/check_markdown_links.py": {
+    "mtime": 1795386625.6145344,
+    "seen": 1795386715.6549487,
+    "ast_hash": "7da0670d99c0460842adddedf2902e17",
+    "semantic_hash": ""
+  },
+  "docs/THIRD_PARTY_NOTICES.md": {
+    "mtime": 1795386637.7126226,
+    "seen": 1795386715.6564271,
+    "ast_hash": "0cf7755e37b1f6abae28c8ab213db5ed",
     "semantic_hash": ""
   }
 }

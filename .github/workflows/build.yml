@@ -503,6 +503,14 @@ jobs:
       - name: Check every harness uses the shared preamble
         run: python3 tests/dependencies/check_harness_preamble.py
 
+      # A path in a document is the one thing a compiler never sees. When
+      # THIRD_PARTY_NOTICES.md moved into docs/, five links it had written from
+      # the repository root started resolving to docs/docs/... - and only review
+      # noticed. Every relative link in the repository's own markdown is
+      # resolved against the file that wrote it.
+      - name: Check every relative markdown link resolves
+        run: python3 tests/dependencies/check_markdown_links.py
+
       - name: Check configure-time dependency fetches
         run: python3 tests/dependencies/check_unused_rack_fetch.py
 
