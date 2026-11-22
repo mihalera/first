@@ -722,10 +722,9 @@ jobs:
   #  the job configures once with that flag before running the script.
   # ============================================================================
   dsp-bench:
-    name: DSP micro-benchmarks (informational)
+    name: DSP micro-benchmarks
     runs-on: ubuntu-26.04
     timeout-minutes: 15
-    continue-on-error: true
 
     steps:
       - name: Checkout repository
