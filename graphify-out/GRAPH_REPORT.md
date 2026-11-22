@@ -1,17 +1,17 @@
 # Graph Report - first  (2026-11-22)
 
 ## Corpus Check
-- 351 files · ~919,909 words
+- 351 files · ~920,208 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 54 file(s) not represented in the graph (top: .toml 22, (none) 9, .cmake 8)
 
 ## Summary
-- 7181 nodes · 13352 edges · 405 communities (246 shown, 159 thin omitted)
+- 7183 nodes · 13356 edges · 411 communities (248 shown, 163 thin omitted)
 - Extraction: 93% EXTRACTED · 7% INFERRED · 0% AMBIGUOUS · INFERRED: 938 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `da195cfa`
+- Built from commit: `5ddabe65`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -57,7 +57,7 @@
 - FirstAudioProcessor
 - TelemetryFrame
 - D3D11Renderer
-- string
+- NamBackend
 - UiPalette
 - PitchTracker
 - steps
@@ -67,7 +67,7 @@
 - .getWidth
 - parameter_audio.cpp
 - Phaser
-- Rect
+- J37LookAndFeel
 - RateBridge
 - generate_asset_pack.py
 - PluginEditor.cpp
@@ -84,7 +84,7 @@
 - DiagCore.cpp
 - FirstAudioProcessor
 - UserThemeWindow
-- J37LookAndFeel
+- J37LookAndFeel.cpp
 - FirstAudioProcessor
 - ParameterTable.cpp
 - PitchShifter
@@ -105,7 +105,7 @@
 - reverb_test.cpp
 - equaliser_test.cpp
 - transport_test.cpp
-- XmlElement
+- loudness_test.cpp
 - HarmonicAnalyser
 - subfund_test.cpp
 - PluginEditor.h
@@ -134,22 +134,22 @@
 - ShutdownWatchdog
 - dsp/extract.py
 - IrStage
-- VsUniforms
+- FsUniforms
 - nam_shapes.h
 - state/extract.py
-- var
+- FileDropButton
 - steps
 - name
-- note
+- Platform.cpp
 - transport/extract.py
 - per_parameter_test.cpp
 - check_theme_wiring.py
 - UserThemeWindow.h
-- bench_nam.cpp
+- NeuralStage
 - standard_compressor_test.cpp
 - KnobMetrics
 - renovate.json
-- ThreadSlot
+- stage_test.cpp
 - Rotary
 - rate_test.cpp
 - BlockRateCoefficients
@@ -176,7 +176,7 @@
 - build.yml
 - TapeSceneFrame.cpp
 - delay_feedback_test.cpp
-- simd_tanh_test.cpp
+- fixture_test.cpp
 - argparse
 - Vocoder
 - check_compiler_warnings.py
@@ -184,19 +184,20 @@
 - .process
 - SafeFileChooser
 - MixCrossfader
-- NeuralStage.h
+- json
 - FirstAudioProcessor
 - MixBar
 - scheduleAcceptCleanup
 - pathlib
 - Granular
 - Expect
-- Rect
+- transient_shaper_test.cpp
 - rmsRange
 - ScaleDegrees.h
 - settings.json
 - loudness_oracle_test.cpp
 - with
+- Point
 - noise_loader_test.cpp
 - steps
 - TapeCouplings
@@ -206,16 +207,17 @@
 - MeshBinding
 - WaveWriter
 - BlockProbe
+- StateSwapAction
 - check_translations.py
 - build-linux-debug
 - AmpVoicing
-- string
+- SaturationCore.h
 - .prepareToPlay
 - TapeScene::newOpenGLContextCreated
 - SceneMaterial
 - updates
 - .processFrame
-- LiveSelector
+- TapeCondition
 - OscRingMetrics.h
 - ControlPlacement
 - Config
@@ -229,13 +231,16 @@
 - .wetAt
 - NoiseDecodeOutcome
 - StereoWidth.h
-- SceneDraw
+- CompressorMeter
+- StereoOffsetBuffer
+- ThemeChoice
 - Mesh
 - ModeState
 - audioReport
 - HotPathProbeStats
 - diag_test.cpp
 - ControlBank
+- mix_crossfader_test.cpp
 - dsp/run.sh
 - check_editor_juce.sh
 - TapeVoicing
@@ -245,16 +250,19 @@
 - TabSpec
 - Built
 - VirtualViewport
+- String
+- ShutdownWatchdog.h
 - interface
 - manifest.json
 - UniformCache
 - TrailPoint
 - vector
 - check_shaders.py
-- Mesh
+- FirstAudioProcessorEditor::styleLabel
 - harness.sh
 - BlockContext
 - TrackBleed.h
+- ToggleGlide
 - neural/run.sh
 - neural/run_bench.sh
 - render_backend/run.sh
@@ -283,6 +291,7 @@
 - transport/run.sh
 - uniforms/run.sh
 - unit/run.sh
+- Sample
 - TapeTransportFrame
 - build-windows-arm64
 - dsp-tests
@@ -293,20 +302,16 @@
 - UiSoundEngine.cpp
 - SpectrumAnalyser.h
 - TapeScene::uniformRevision
-- ActiveTabStub
-- Orb
 - toStringArray
-- FsUniforms
 - Coverage
 - deck_dust_test.cpp
 - WidthUnderTest
 - checkRackGate
-- checkCache
 - Box
 - Worker
 - render.sh
 - DeckRect
-- ShutdownWatchdog.h
+- NeuralStage.h
 - .announceLanded
 - .paint
 - .mouseDown
@@ -328,17 +333,17 @@
   tests/parameter_audio.cpp → Source/PluginProcessor.h
 - `main()` --calls--> `xlat()`  [INFERRED]
   tests/header_render.cpp → Source/GUI/PanelTranslations.h
+- `main()` --references--> `NeuralStage`  [INFERRED]
+  tests/neural/bench_nam.cpp → Source/DSP/NeuralStage.h
+- `main()` --references--> `NeuralStage`  [INFERRED]
+  tests/neural/fixture_test.cpp → Source/DSP/NeuralStage.h
 - `themeChoiceFromName()` --references--> `String`  [INFERRED]
   Source/GUI/EditorPreferences.h → tests/render_backend/juce_stub/JuceHeader.h
-- `FirstAudioProcessorEditor::setUpEqCornerSwitches()` --references--> `String`  [INFERRED]
-  Source/GUI/EditorSetup.cpp → tests/render_backend/juce_stub/JuceHeader.h
-- `FirstAudioProcessorEditor::timerCallback()` --references--> `String`  [INFERRED]
-  Source/GUI/EditorTimer.cpp → tests/render_backend/juce_stub/JuceHeader.h
 
 ## Import Cycles
 - None detected.
 
-## Communities (405 total, 159 thin omitted)
+## Communities (411 total, 163 thin omitted)
 
 ### Community 0 - "FirstAudioProcessor"
 Cohesion: 0.00
@@ -361,8 +366,8 @@ Cohesion: 0.06
 Nodes (75): abortSvelteComponentInjection(), applySavedSessionMeta(), checkpointPayload(), clampVariantIndex(), closedClipPath(), commitAcceptedVariantToDom(), completeParameterGenerationIfReady(), completeParameterPublication() (+67 more)
 
 ### Community 5 - "ProcessorSignalPath.cpp"
-Cohesion: 0.04
-Nodes (41): makeBlockRateCoefficients(), onePoleCoefficientHz(), SampleClock, sample, SampleSmoother, invertOutput, lastSample, smoother (+33 more)
+Cohesion: 0.05
+Nodes (33): makeBlockRateCoefficients(), onePoleCoefficientHz(), softClip(), softKneeReductionDb(), BlockContext, channels, sampleRate, samples (+25 more)
 
 ### Community 6 - "VulkanRenderer"
 Cohesion: 0.03
@@ -373,8 +378,8 @@ Cohesion: 0.03
 Nodes (44): TapeScene, attachAttemptsLeft, backgroundColour, bankBody, bankDrive, bankGlow, bankInteractiveIndex, bankKey (+36 more)
 
 ### Community 8 - "layout_test.cpp"
-Cohesion: 0.10
-Nodes (32): computeKnobMetrics(), buildPage(), check(), checkCameraDepth(), checkDeckBands(), checkHorizontalKnobConsistency(), checkPhoneLayout(), EditorLayout (+24 more)
+Cohesion: 0.05
+Nodes (42): computeKnobMetrics(), ActiveTabStub, controls, count, buildPage(), check(), checkCameraDepth(), checkDeckBands() (+34 more)
 
 ### Community 9 - "el"
 Cohesion: 0.07
@@ -382,7 +387,7 @@ Nodes (61): actionLabel(), applyConfigureBarChrome(), bindConfigureCountPillTool
 
 ### Community 10 - "EditorSetup.cpp"
 Cohesion: 0.04
-Nodes (43): FirstAudioProcessorEditor::rebuildPanelTextureLayers(), configureControlSlider(), FirstAudioProcessorEditor::applyUiScaleToLabels(), FirstAudioProcessorEditor::createDecorativePhysics(), FirstAudioProcessorEditor::setUpControlStrip(), FirstAudioProcessorEditor::setUpDelayRow(), FirstAudioProcessorEditor::setUpEqCornerSwitches(), FirstAudioProcessorEditor::setUpInlineLists() (+35 more)
+Nodes (36): FirstAudioProcessorEditor::rebuildPanelTextureLayers(), configureControlSlider(), FirstAudioProcessorEditor::applyUiScaleToLabels(), FirstAudioProcessorEditor::createDecorativePhysics(), FirstAudioProcessorEditor::setUpControlStrip(), FirstAudioProcessorEditor::setUpDelayRow(), FirstAudioProcessorEditor::setUpEqCornerSwitches(), FirstAudioProcessorEditor::setUpInlineLists() (+28 more)
 
 ### Community 11 - "pitch_test.cpp"
 Cohesion: 0.07
@@ -409,24 +414,24 @@ Cohesion: 0.04
 Nodes (54): ChainReplica, biasAmount, dcBlockR, dcX, dcY, driveAmount, finalOutputGain, generator (+46 more)
 
 ### Community 17 - "PanelAssets.h"
-Cohesion: 0.11
-Nodes (16): available(), BackgroundChoice, name, symbol, backgroundChoiceFor(), cachedImage(), loadDrawable(), loadImage() (+8 more)
+Cohesion: 0.08
+Nodes (18): available(), BackgroundChoice, name, symbol, backgroundChoiceFor(), cachedImage(), loadDrawable(), loadImage() (+10 more)
 
 ### Community 19 - "TransportRig"
-Cohesion: 0.04
-Nodes (37): softClip(), softKneeReductionDb(), StereoOffsetBuffer, length, samples, writePosition, State, play (+29 more)
+Cohesion: 0.07
+Nodes (26): State, play, start, stop, TransportRig, advancedToPlay, armedForHost, capstanScale (+18 more)
 
 ### Community 20 - "initGlobalBar"
 Cohesion: 0.07
 Nodes (48): agentStatusText(), barPaletteForTheme(), brandMarkSvg(), buildDesignHeader(), buildParamsPanel(), cursorForInsertAxis(), designPanelCss(), detectPageTheme() (+40 more)
 
 ### Community 21 - "dsp/shim.h"
-Cohesion: 0.07
+Cohesion: 0.06
 Nodes (11): main(), makeDetectorCoefficients(), makeSignal(), reportBudget(), Decibels, MathConstants, halfPi, pi (+3 more)
 
 ### Community 22 - "ValueTree"
-Cohesion: 0.16
-Nodes (5): main(), ValueTree::ValueTree(), escape(), ValueTree, writeTree()
+Cohesion: 0.08
+Nodes (19): main(), ValueTree::ValueTree(), ValueTreeData, depthOf(), escape(), Reader, position, text (+11 more)
 
 ### Community 23 - "SafetyLimiter"
 Cohesion: 0.12
@@ -437,7 +442,7 @@ Cohesion: 0.04
 Nodes (30): D3D12Renderer, activeBackBuffer, activeSlot, allocators, backBuffers, childWindow, clearColour, commandLists (+22 more)
 
 ### Community 25 - "ProcessorPresets.cpp"
-Cohesion: 0.07
+Cohesion: 0.05
 Nodes (25): FirstAudioProcessor::auditFactoryPresets(), parametersTrackedForDirtyBadge(), all(), FirstAudioProcessor::applyFactoryPreset(), FirstAudioProcessor::applyStateWithUndo(), FirstAudioProcessor::applyUserPreset(), FirstAudioProcessor::copyToCompareSlot(), FirstAudioProcessor::deleteUserPreset() (+17 more)
 
 ### Community 26 - "SaturationCore"
@@ -457,7 +462,7 @@ Cohesion: 0.04
 Nodes (39): DattorroRoom, active, controlCoefficient, currentDamping, currentLowCut, currentSize, currentWidth, lastDamping (+31 more)
 
 ### Community 30 - "SokolRenderer"
-Cohesion: 0.06
+Cohesion: 0.05
 Nodes (20): SokolRenderer, appliedPipeline, context, deviceReady, deviceSetupFailed, drawFailure, failure, frameMutex (+12 more)
 
 ### Community 31 - "CorrectorStage"
@@ -469,15 +474,15 @@ Cohesion: 0.09
 Nodes (3): Diag, Thread.UncaughtExceptionHandler, MainActivity
 
 ### Community 33 - "header_render.cpp"
-Cohesion: 0.15
-Nodes (33): badgeBox(), badgeIsAfterLevels(), badgeRow(), captionIsMeasuredFromItsWords(), checkBadge(), clipCaption(), drawnByBadge(), expect() (+25 more)
+Cohesion: 0.13
+Nodes (36): PaletteField, name, UiPalette, badgeBox(), badgeIsAfterLevels(), badgeRow(), captionIsMeasuredFromItsWords(), checkBadge() (+28 more)
 
 ### Community 34 - "MultibandCompressor"
 Cohesion: 0.05
 Nodes (42): AntiSpike, detector, filled, historyLeft, historyRight, lastLeft, lastRight, rate (+34 more)
 
 ### Community 35 - "NoiseLoader"
-Cohesion: 0.08
+Cohesion: 0.07
 Nodes (15): NoiseLoader, activePrint, controlLock, engineRate, generation, lastErrorMessage, loadedFileNameText, loadingFlag (+7 more)
 
 ### Community 36 - "TapeBlockState"
@@ -485,12 +490,12 @@ Cohesion: 0.03
 Nodes (76): TapeBlockState, activeChannels, antiPhaseGuardOn, autoGainEnabled, autoTuneStrength, channelData, clippingThisBlock, compensationCoefficient (+68 more)
 
 ### Community 37 - "String"
-Cohesion: 0.07
-Nodes (13): AudioParameterBool, defaultValue, value, CharPointer_UTF8, text, ignoreUnused(), ParameterID, id (+5 more)
+Cohesion: 0.05
+Nodes (21): AudioParameterBool, defaultValue, value, CharPointer_UTF8, text, ignoreUnused(), ParameterID, id (+13 more)
 
 ### Community 38 - "PluginProcessor.cpp"
 Cohesion: 0.06
-Nodes (17): FirstAudioProcessor::acceptsMidi(), FirstAudioProcessor::cacheRawParameterPointers(), FirstAudioProcessor::clearIr(), FirstAudioProcessor::createEditor(), FirstAudioProcessor::getCurrentProgram(), FirstAudioProcessor::getName(), FirstAudioProcessor::getNumPrograms(), FirstAudioProcessor::getTailLengthSeconds() (+9 more)
+Nodes (20): FirstAudioProcessor::acceptsMidi(), FirstAudioProcessor::cacheRawParameterPointers(), FirstAudioProcessor::clearIr(), FirstAudioProcessor::clearNeuralModel(), FirstAudioProcessor::createEditor(), FirstAudioProcessor::getCurrentProgram(), FirstAudioProcessor::getName(), FirstAudioProcessor::getNumPrograms() (+12 more)
 
 ### Community 39 - "FirstAudioProcessor"
 Cohesion: 0.13
@@ -501,16 +506,16 @@ Cohesion: 0.07
 Nodes (30): FirstAudioProcessor::getTelemetry(), TelemetryFrame, antiPhaseAmount, bypassActive, compressorActivity, evenHarmonicRatio, harmonicCharacter, inputClipping (+22 more)
 
 ### Community 41 - "D3D11Renderer"
-Cohesion: 0.06
-Nodes (18): D3D11Renderer, childWindow, clearColour, constantBuffer, context, depthStencilView, device, failure (+10 more)
+Cohesion: 0.05
+Nodes (24): D3D11Renderer, childWindow, clearColour, constantBuffer, context, depthStencilView, device, failure (+16 more)
 
-### Community 42 - "string"
-Cohesion: 0.08
-Nodes (20): NamBackend, inputFrame, inputPointers, lastErrorMessage, maxFrames, model, modelRate, outputFrame (+12 more)
+### Community 42 - "NamBackend"
+Cohesion: 0.06
+Nodes (28): NamBackend, inputFrame, inputPointers, lastErrorMessage, maxFrames, model, modelRate, outputFrame (+20 more)
 
 ### Community 43 - "UiPalette"
-Cohesion: 0.09
-Nodes (23): FirstAudioProcessorEditor::paint(), drawPanel(), drawScrew(), principleOf(), UiPalette, accent, background, border (+15 more)
+Cohesion: 0.10
+Nodes (21): drawPanel(), drawScrew(), UiPalette, accent, background, border, gaugeFace, gaugeInk (+13 more)
 
 ### Community 44 - "PitchTracker"
 Cohesion: 0.06
@@ -533,8 +538,8 @@ Cohesion: 0.07
 Nodes (29): ThreeBandEq, bellStateL, bellStateR, highCoefficient, highGain, hpActive, hpCoefficient, hpPoles (+21 more)
 
 ### Community 49 - ".getWidth"
-Cohesion: 0.09
-Nodes (25): FirstAudioProcessorEditor::CompressorMeter::CompressorMeter(), FirstAudioProcessorEditor::CompressorMeter::paint(), FirstAudioProcessorEditor::LevelMeter::LevelMeter(), FirstAudioProcessorEditor::LevelMeter::paint(), FirstAudioProcessorEditor::MixBar::paint(), FirstAudioProcessorEditor::PresetArtworkBadge::paint(), FirstAudioProcessorEditor::applyRenderBackend(), FirstAudioProcessorEditor::applyUiScale() (+17 more)
+Cohesion: 0.12
+Nodes (24): FirstAudioProcessorEditor::CompressorMeter::paint(), FirstAudioProcessorEditor::LevelMeter::paint(), FirstAudioProcessorEditor::MixBar::paint(), FirstAudioProcessorEditor::PresetArtworkBadge::paint(), FirstAudioProcessorEditor::paint(), FirstAudioProcessorEditor::applyRenderBackend(), FirstAudioProcessorEditor::applyUiScale(), FirstAudioProcessorEditor::setUpNativeScene() (+16 more)
 
 ### Community 50 - "parameter_audio.cpp"
 Cohesion: 0.08
@@ -544,9 +549,9 @@ Nodes (46): burstTrain(), channelLag(), check(), correlation(), dbOf(), dcMean()
 Cohesion: 0.07
 Nodes (25): Chorus, baseDelay, depth, leftDelay, leftLfo, rate, rightDelay, rightLfo (+17 more)
 
-### Community 52 - "Rect"
-Cohesion: 0.14
-Nodes (5): Rect, h, w, x, y
+### Community 52 - "J37LookAndFeel"
+Cohesion: 0.07
+Nodes (15): J37LookAndFeel::drawRotarySlider(), J37LookAndFeel::drawToggleButton(), J37LookAndFeel::offsetToTopLevel(), J37LookAndFeel::perspectiveFor(), J37LookAndFeel::setPanelCamera(), principleColour(), J37LookAndFeel, activity (+7 more)
 
 ### Community 53 - "RateBridge"
 Cohesion: 0.08
@@ -558,7 +563,7 @@ Nodes (24): add_defs(), atlas_image(), brand_atlas(), category_definitions(), co
 
 ### Community 55 - "PluginEditor.cpp"
 Cohesion: 0.05
-Nodes (39): index_of_tab_named(), ControlGeometry, autotuneTab, basicTab, cellWidth, characterTab, compressorTab, delayTab (+31 more)
+Nodes (40): index_of_tab_named(), ControlGeometry, autotuneTab, basicTab, cellWidth, characterTab, compressorTab, delayTab (+32 more)
 
 ### Community 56 - "OscRing"
 Cohesion: 0.06
@@ -601,28 +606,28 @@ Cohesion: 0.11
 Nodes (27): abandonForeignSession(), abandonSupersededGo(), applyOriginalAttrsToSvelteAnchor(), commitAcceptedSvelteComponentToDom(), componentModuleCandidates(), describeMountFailure(), detectDevServerBase(), discardOrphanedSession() (+19 more)
 
 ### Community 68 - "DiagCore.cpp"
-Cohesion: 0.21
-Nodes (11): audioReportText(), beginRun(), currentProcessId(), logPath(), mutableLogPath(), noteAudioBlock(), noteStereoBlock(), raiseTo() (+3 more)
+Cohesion: 0.15
+Nodes (20): audioReportText(), beginRun(), currentProcessId(), currentThreadId(), enabled(), environmentSaysOn(), logPath(), mutableLogPath() (+12 more)
 
 ### Community 69 - "FirstAudioProcessor"
 Cohesion: 0.10
 Nodes (11): FirstAudioProcessor, activeSlot, compareDirty, compareSlots, currentPresetName, dirtyBadgeParameters, lastPresetIndex, parameters (+3 more)
 
 ### Community 70 - "UserThemeWindow"
-Cohesion: 0.13
-Nodes (11): defaultWindowIcon(), deserializeUserPalette(), getPalette(), serializeUserPalette(), setBackground(), setPalette(), UserThemePane(), UserThemeWindow (+3 more)
+Cohesion: 0.09
+Nodes (13): defaultWindowIcon(), deserializeUserPalette(), getPalette(), LiveSelector, onColour, serializeUserPalette(), setBackground(), setPalette() (+5 more)
 
-### Community 71 - "J37LookAndFeel"
-Cohesion: 0.04
-Nodes (49): FirstAudioProcessorEditor::toggleParameterSheet(), FirstAudioProcessorEditor::applyTheme(), FirstAudioProcessorEditor::updateWorkflowButtons(), comboTextInset(), J37InlineLookAndFeel::drawButtonBackground(), J37InlineLookAndFeel::drawButtonText(), J37InlineLookAndFeel::drawComboBox(), J37InlineLookAndFeel::drawLabel() (+41 more)
+### Community 71 - "J37LookAndFeel.cpp"
+Cohesion: 0.08
+Nodes (22): FirstAudioProcessorEditor::toggleParameterSheet(), FirstAudioProcessorEditor::applyTheme(), FirstAudioProcessorEditor::updateWorkflowButtons(), comboTextInset(), J37InlineLookAndFeel::drawButtonBackground(), J37InlineLookAndFeel::drawButtonText(), J37InlineLookAndFeel::drawComboBox(), J37InlineLookAndFeel::drawLabel() (+14 more)
 
 ### Community 72 - "FirstAudioProcessor"
 Cohesion: 0.11
 Nodes (10): FirstAudioProcessor, activeSlot, compareDirty, compareSlots, currentPresetName, dirtyBadgeParameters, lastPresetIndex, parameters (+2 more)
 
 ### Community 73 - "ParameterTable.cpp"
-Cohesion: 0.11
-Nodes (40): digitalTypeNameList(), pentodeTypeNameList(), transformerTypeNameList(), transistorTypeNameList(), triodeTypeNameList(), valveTypeNameList(), FirstAudioProcessorEditor::setUpDeckSelectors(), addAmpVoicingControls() (+32 more)
+Cohesion: 0.25
+Nodes (26): addAmpVoicingControls(), addColourControls(), addCompressorControls(), addDeckControls(), addDelaySyncControls(), addDiBoxControls(), addEffectsRackControls(), addEqualiserControls() (+18 more)
 
 ### Community 74 - "PitchShifter"
 Cohesion: 0.12
@@ -677,28 +682,28 @@ Cohesion: 0.09
 Nodes (18): RepitchStage, bufferSeconds, consumeRate, hardCapSamples, hardCapSeconds, left, length, maxPullUp (+10 more)
 
 ### Community 87 - "SpectrumAnalyser"
-Cohesion: 0.10
-Nodes (26): SpectrumAnalyser, bandCount, bandsDb, compiledIn, edgesHz, fftSize, fill, floorDb (+18 more)
+Cohesion: 0.09
+Nodes (27): SpectrumAnalyser, bandCount, bandsDb, compiledIn, edgesHz, fftSize, fill, floorDb (+19 more)
 
 ### Community 88 - "SceneFrame"
-Cohesion: 0.10
-Nodes (15): SceneFrame, backgroundColour, draws, drive, flutter, glow, height, highlightColour (+7 more)
+Cohesion: 0.06
+Nodes (30): SceneDraw, baseColour, highlightColour, material, meshIndex, model, normalMatrix, parameters (+22 more)
 
 ### Community 89 - "reverb_test.cpp"
 Cohesion: 0.19
 Nodes (24): check(), energyEnvelope(), firstWetOnset(), highFrequencyEnergyRatio(), lowFrequencyEnergy(), main(), renderImpulse(), rms() (+16 more)
 
 ### Community 90 - "equaliser_test.cpp"
-Cohesion: 0.05
-Nodes (33): TransientShaper, appliedGain, fastEnvelope, slowEnvelope, Case, poles, slope, "ThreeBandEq: a neutral stage is off by the addition's rounding and nothing else" (+25 more)
+Cohesion: 0.10
+Nodes (17): Case, poles, slope, "ThreeBandEq: a neutral stage is off by the addition's rounding and nothing else", "ThreeBandEq: at neutral settings the stage is an identity to within a float step", "ThreeBandEq: HIGH lifts the top band and leaves the bottom alone", "ThreeBandEq: LOW is a shelf - it moves the low band and leaves the top alone", "ThreeBandEq: MID acts on its own band and only a little on the ends" (+9 more)
 
 ### Community 91 - "transport_test.cpp"
 Cohesion: 0.27
 Nodes (18): check(), main(), run(), testDurationsAndScalesAreSane(), testEngineFacingProperties(), testPlayIsSteady(), testRepitchBendsByThePlatter(), testRepitchIsIdentityAtSpeed() (+10 more)
 
-### Community 92 - "XmlElement"
-Cohesion: 0.16
-Nodes (6): MemoryBlock, bytes, data, XmlElement, name, payload
+### Community 92 - "loudness_test.cpp"
+Cohesion: 0.21
+Nodes (16): check(), format(), format2(), main(), MeterRun, meter, rate, window (+8 more)
 
 ### Community 93 - "HarmonicAnalyser"
 Cohesion: 0.11
@@ -709,16 +714,16 @@ Cohesion: 0.24
 Nodes (20): onePoleCoefficient(), check(), main(), makeTransientTrain(), peakToSustainRatio(), renderTransientShaper(), showOldArrangement(), testBlockRateCoefficients() (+12 more)
 
 ### Community 95 - "PluginEditor.h"
-Cohesion: 0.05
-Nodes (27): AsyncFileChooser, active, chooser, isEnabled(), PanelTextureWeights, grain, shimmer, wear (+19 more)
+Cohesion: 0.04
+Nodes (25): FirstAudioProcessorEditor::CompressorMeter::CompressorMeter(), FirstAudioProcessorEditor::LevelMeter::LevelMeter(), ControlSpec, caption, defaultValue, id, tab, AsyncFileChooser (+17 more)
 
 ### Community 96 - "ModalVoice"
 Cohesion: 0.14
 Nodes (13): ModalVoice, excitation, modeCount, modes, modeSpecs, outputTrim, sampleRate, ModeSpec (+5 more)
 
 ### Community 97 - "LevelMeter"
-Cohesion: 0.04
-Nodes (33): FirstAudioProcessorEditor::setUpModeSwitches(), FirstAudioProcessorEditor::refreshModeButtonCaption(), CompressorMeter, active, activity, caption, darkTheme, displayedDb (+25 more)
+Cohesion: 0.09
+Nodes (18): LevelMeter, active, clipping, combinedDb, darkTheme, displayedCombined, displayedLufs, displayedRms (+10 more)
 
 ### Community 98 - "onAnnotDown"
 Cohesion: 0.15
@@ -730,7 +735,7 @@ Nodes (20): name, runs-on, steps, timeout-minutes, env, BUILD_TYPE, J37_BUILD_JO
 
 ### Community 100 - "Sheet"
 Cohesion: 0.06
-Nodes (26): ParameterSheet, available, closeButton, palette, ParameterSheet::ParameterSheet(), sheet, ParameterSheet::Sheet::appendGroup(), ParameterSheet::Sheet::buildTree() (+18 more)
+Nodes (25): ParameterSheet, available, closeButton, palette, ParameterSheet::ParameterSheet(), sheet, ParameterSheet::Sheet::appendGroup(), ParameterSheet::Sheet::appendParameter() (+17 more)
 
 ### Community 101 - "character_test.cpp"
 Cohesion: 0.14
@@ -761,12 +766,16 @@ Cohesion: 0.19
 Nodes (17): createLiveBrowserSessionState(), clearHandled(), clearScrollY(), clearSession(), isHandled(), loadSession(), markHandled(), nextCheckpointRevision() (+9 more)
 
 ### Community 108 - "ChainSettings"
-Cohesion: 0.15
+Cohesion: 0.13
 Nodes (13): ChainSettings, bias, brightness, character, drive, flutter, injectInsideTapePath, inputDb (+5 more)
 
 ### Community 109 - "GlueOperatingPoints"
 Cohesion: 0.08
 Nodes (21): Coefficients, attack, release, slow, GlueCompressor, envelope, slowEnvelope, GlueOperatingPoints (+13 more)
+
+### Community 110 - "cstdio"
+Cohesion: 0.11
+Nodes (13): principleOf(), check(), format(), format2(), inputs(), main(), Principle, name (+5 more)
 
 ### Community 111 - "PhoneLayout.h"
 Cohesion: 0.16
@@ -785,8 +794,8 @@ Cohesion: 0.39
 Nodes (7): scaleName(), spindownCoastOn(), spinUpOn(), stopCoastOn(), testTapeSpeedScalesTheCapstan(), testTempoScalesEveryGesture(), testVinylSpeedScalesThePlatter()
 
 ### Community 115 - "EditorPreferences.h"
-Cohesion: 0.09
-Nodes (27): editorPreferences(), rememberBackground(), rememberedBackground(), rememberedEditorSize(), rememberEditorSize(), rememberedMetersVisible(), rememberedRenderBackend(), rememberedThemeChoice() (+19 more)
+Cohesion: 0.17
+Nodes (17): editorPreferences(), rememberBackground(), rememberedBackground(), rememberedEditorSize(), rememberEditorSize(), rememberedMetersVisible(), rememberedRenderBackend(), rememberedThemeChoice() (+9 more)
 
 ### Community 116 - "jobs"
 Cohesion: 0.12
@@ -808,9 +817,9 @@ Nodes (9): check_auto_gain_compensation(), check_mono_delay_feedback(), check_ne
 Cohesion: 0.12
 Nodes (8): IrStage, convolverL, convolverR, hasIr, lastLoadWasStereo, preparedChannels, preparedMaxBlock, preparedSampleRate
 
-### Community 122 - "VsUniforms"
-Cohesion: 0.17
-Nodes (12): DrawUniforms, fragment, vertex, VsUniforms, flutter, mode, model, normalMatrix (+4 more)
+### Community 122 - "FsUniforms"
+Cohesion: 0.08
+Nodes (24): DrawUniforms, fragment, vertex, FsUniforms, arcAngle, baseColour, drive, glow (+16 more)
 
 ### Community 123 - "nam_shapes.h"
 Cohesion: 0.24
@@ -820,9 +829,9 @@ Nodes (14): fill(), HeadShape, bias, headShape(), kernel, size, lstmBlocks(), ls
 Cohesion: 0.16
 Nodes (8): brace_end(), cut_banner_block(), cut_block(), cut_line(), header_source(), main(), processor_text(), source_of()
 
-### Community 125 - "var"
-Cohesion: 0.12
-Nodes (10): var, integer, Kind, boolean, integer, nothing, number, text (+2 more)
+### Community 125 - "FileDropButton"
+Cohesion: 0.14
+Nodes (9): FileDropButton, acceptsFiles, dragActive, onFileDropped, isEnabled(), PresetComboBox, onItemPicked, SpindownButton (+1 more)
 
 ### Community 126 - "steps"
 Cohesion: 0.08
@@ -831,10 +840,6 @@ Nodes (23): default, description, required, description, required, description, 
 ### Community 127 - "name"
 Cohesion: 0.36
 Nodes (17): steps, steps, steps, steps, steps, steps, steps, steps (+9 more)
-
-### Community 128 - "note"
-Cohesion: 0.17
-Nodes (8): enabled(), environmentSaysOn(), note(), noteFirstFrame(), setSink(), Sink, beginRunForThisPlatform(), diagnosticsFilePath()
 
 ### Community 129 - "transport/extract.py"
 Cohesion: 0.21
@@ -849,12 +854,12 @@ Cohesion: 0.20
 Nodes (9): brace_end(), editor_source(), function_bodies(), look_and_feel_members(), main(), reached_text(), strip_noise(), widget_members() (+1 more)
 
 ### Community 132 - "UserThemeWindow.h"
-Cohesion: 0.15
-Nodes (24): panelFont(), applyBackdrop(), applyPreset(), backdropAt(), backdropBounds(), closeBounds(), mouseDown(), mouseExit() (+16 more)
+Cohesion: 0.12
+Nodes (31): fillCylinderBarrel(), panelFont(), applyBackdrop(), applyPreset(), backdropAt(), backdropBounds(), closeBounds(), mouseDown() (+23 more)
 
-### Community 133 - "bench_nam.cpp"
-Cohesion: 0.06
-Nodes (38): keepNamCoreArchitecturesLinked(), NeuralStage, FirstAudioProcessor::clearNeuralModel(), FirstAudioProcessor::updateNeuralSampleRates(), check(), drive(), main(), readFixture() (+30 more)
+### Community 133 - "NeuralStage"
+Cohesion: 0.12
+Nodes (12): adoptPendingModel(), NeuralStage, reclaimRetiredModel(), check(), drive(), main(), readFixture(), check() (+4 more)
 
 ### Community 134 - "standard_compressor_test.cpp"
 Cohesion: 0.07
@@ -868,17 +873,17 @@ Nodes (20): computeKnobPerspective(), KnobMetrics, collar, faceCeiling, minorCle
 Cohesion: 0.12
 Nodes (15): :dependencyDashboard, schedule:automergeDaily, automerge, automergeType, branchPrefix, customManagers, enabledManagers, extends (+7 more)
 
-### Community 137 - "ThreadSlot"
+### Community 137 - "stage_test.cpp"
 Cohesion: 0.22
-Nodes (9): currentThreadId(), recordedThreadId(), recordThread(), slotWord(), ThreadSlot, audio, count, gl (+1 more)
+Nodes (13): check(), install(), loggedInputs(), main(), minimalNamFile(), resetCount(), run(), shouldLogInputs() (+5 more)
 
 ### Community 138 - "Rotary"
 Cohesion: 0.20
 Nodes (10): Rotary, centreDelay, depth, leftDelay, leftHornFilter, leftLfo, rate, rightDelay (+2 more)
 
 ### Community 139 - "rate_test.cpp"
-Cohesion: 0.06
-Nodes (46): check(), format(), format2(), main(), MeterRun, meter, rate, window (+38 more)
+Cohesion: 0.08
+Nodes (30): check(), drive(), main(), measure(), Pair, engine, model, name (+22 more)
 
 ### Community 140 - "BlockRateCoefficients"
 Cohesion: 0.17
@@ -921,20 +926,16 @@ Cohesion: 0.14
 Nodes (15): name, runs-on, strategy, name, runs-on, strategy, timeout-minutes, arch (+7 more)
 
 ### Community 150 - ".oversamplingSlot"
-Cohesion: 0.14
-Nodes (10): OversamplingFactor, off, x2, x4, x8, OversamplingFactor, off, x2 (+2 more)
-
-### Community 151 - "Rectangle"
-Cohesion: 0.09
-Nodes (12): EditorLayout, controls, deck, header, meters, FirstAudioProcessorEditor::shapersSpectrumBounds(), J37HeaderRenderProbe, Rectangle (+4 more)
+Cohesion: 0.10
+Nodes (14): OversamplingFactor, off, x2, x4, x8, SampleInputContext, detectorPower, trimmedByChannel (+6 more)
 
 ### Community 152 - "AudioParameterChoice"
-Cohesion: 0.17
-Nodes (6): AudioParameterChoice, choices, defaultIndex, index, jlimit(), jmax()
+Cohesion: 0.09
+Nodes (11): AudioParameterChoice, choices, defaultIndex, index, jlimit(), jmax(), MemoryBlock, bytes (+3 more)
 
 ### Community 153 - "TipDwell"
-Cohesion: 0.13
-Nodes (8): DwellTooltipWindow, dwell, TipDwell, allowedAtMs, control, dwellMs, check(), main()
+Cohesion: 0.16
+Nodes (6): DwellTooltipWindow, dwell, TipDwell, allowedAtMs, control, dwellMs
 
 ### Community 154 - "StateVariableFilter"
 Cohesion: 0.09
@@ -976,9 +977,9 @@ Nodes (5): colour3(), colour4(), matrix4(), TapeScene::appendDraw(), TapeScene::
 Cohesion: 0.48
 Nodes (4): StereoDelayFeedback, main(), near(), runRouting()
 
-### Community 167 - "simd_tanh_test.cpp"
-Cohesion: 0.24
-Nodes (10): check(), format(), format2(), inputs(), main(), Principle, name, which (+2 more)
+### Community 167 - "fixture_test.cpp"
+Cohesion: 0.30
+Nodes (10): buildAndAdopt(), check(), fixtureShapeSupported(), inputSample(), isFiniteAndBounded(), main(), readFixture(), referenceWaveNet() (+2 more)
 
 ### Community 168 - "argparse"
 Cohesion: 0.24
@@ -1000,9 +1001,9 @@ Nodes (19): check(), checkBool(), checkChoice(), checkFloat(), idOf(), main(), c
 Cohesion: 0.23
 Nodes (6): Gains, dry, wet, MixCrossfader, halfPi, openThreshold
 
-### Community 175 - "NeuralStage.h"
-Cohesion: 0.09
-Nodes (26): adoptPendingModel(), buildFromNam(), buildWithNamCore(), convertLstm(), InferenceModel, isLstm(), publish(), reclaimRetiredModel() (+18 more)
+### Community 175 - "json"
+Cohesion: 0.17
+Nodes (11): buildFromNam(), buildWithNamCore(), convertLstm(), InferenceModel, isLstm(), publish(), RtNeuralModel, inputFrame (+3 more)
 
 ### Community 176 - "FirstAudioProcessor"
 Cohesion: 0.11
@@ -1024,9 +1025,9 @@ Nodes (14): Granular, grainLength, leftDelay, randomState, rate, rightDelay, unt
 Cohesion: 0.17
 Nodes (12): Expect, def, end, id, kind, list, name, options (+4 more)
 
-### Community 183 - "Rect"
-Cohesion: 0.40
-Nodes (5): Rect, bottom, left, right, top
+### Community 183 - "transient_shaper_test.cpp"
+Cohesion: 0.16
+Nodes (12): peakIn(), pluck(), rmsIn(), through(), "TransientShaper: ATTACK acts on the leading edge, in both directions", "TransientShaper: ATTACK leaves the tail where it was", "TransientShaper: both amounts at zero return the input bit for bit", "TransientShaper: silence in, silence out, and no division by an empty envelope" (+4 more)
 
 ### Community 184 - "rmsRange"
 Cohesion: 0.57
@@ -1047,6 +1048,10 @@ Nodes (9): check(), compare(), main(), makeNoise(), makeTone(), referenceReading
 ### Community 189 - "with"
 Cohesion: 0.20
 Nodes (10): with, build-dir, deps-hash, fetch-depth, flavour, if-no-files-found, name, path (+2 more)
+
+### Community 190 - "Point"
+Cohesion: 0.13
+Nodes (14): Point, x, y, Perspective, centre, lean, squashX, squashY (+6 more)
 
 ### Community 191 - "noise_loader_test.cpp"
 Cohesion: 0.38
@@ -1076,6 +1081,10 @@ Nodes (7): MeshBinding, index, indexCount, indexMemory, vertex, vertexCount, ver
 Cohesion: 0.24
 Nodes (4): BlockProbe, measuring, sampleRate, started
 
+### Community 200 - "StateSwapAction"
+Cohesion: 0.18
+Nodes (4): PresetArtworkBadge, StateSwapAction, after, before
+
 ### Community 201 - "check_translations.py"
 Cohesion: 0.29
 Nodes (4): cpp_strings(), juce_unescape(), main(), parse_table()
@@ -1088,13 +1097,13 @@ Nodes (4): name, runs-on, timeout-minutes, build-linux-debug
 Cohesion: 0.22
 Nodes (7): AmpVoicing, cabinetLow1, cabinetLow2, cabinetPeak, presenceHighState, sagEnvelope, sagGain
 
-### Community 204 - "string"
-Cohesion: 0.14
-Nodes (11): ValueTreeData, depthOf(), Reader, position, text, readNode(), splitTabs(), unescape() (+3 more)
+### Community 204 - "SaturationCore.h"
+Cohesion: 0.37
+Nodes (10): digitalTypeNameList(), pentodeTypeNameList(), transformerTypeNameList(), transistorTypeNameList(), triodeTypeNameList(), valveTypeNameList(), FirstAudioProcessorEditor::setUpDeckSelectors(), addTypeSwitchControls() (+2 more)
 
 ### Community 205 - ".prepareToPlay"
-Cohesion: 0.06
-Nodes (19): InputStage, diGroundHumPhase, diLoadState, distortionLowState, diTransformerState, preampBiasState, preampLowState, LofiHoldClock (+11 more)
+Cohesion: 0.05
+Nodes (20): InputStage, diGroundHumPhase, diLoadState, distortionLowState, diTransformerState, preampBiasState, preampLowState, SampleClock (+12 more)
 
 ### Community 206 - "TapeScene::newOpenGLContextCreated"
 Cohesion: 0.17
@@ -1112,9 +1121,9 @@ Nodes (7): interval, updates, directory, open-pull-requests-limit, package-ecosy
 Cohesion: 0.12
 Nodes (14): Settings, damping, lowCutHz, mix, preDelayMs, size, width, Settings (+6 more)
 
-### Community 213 - "LiveSelector"
+### Community 213 - "TapeCondition"
 Cohesion: 0.15
-Nodes (5): LiveSelector, onColour, PaletteField, name, UiPalette
+Nodes (10): TapeCondition, driftCountdown, driftState, driftTarget, fluxLowL, fluxLowR, wearLowL, wearLowR (+2 more)
 
 ### Community 214 - "OscRingMetrics.h"
 Cohesion: 0.46
@@ -1129,8 +1138,8 @@ Cohesion: 0.20
 Nodes (9): FirstAudioProcessorEditor::nativeSceneConfig(), Config, framesInFlight, height, positionX, positionY, validation, vsyncInterval (+1 more)
 
 ### Community 218 - "DeckDust.h"
-Cohesion: 0.23
-Nodes (11): Corridor, bottom, left, right, top, corridorForDeck(), drawnReach(), orbInvalidation() (+3 more)
+Cohesion: 0.09
+Nodes (23): Corridor, bottom, left, right, top, corridorForDeck(), drawnReach(), Orb (+15 more)
 
 ### Community 219 - "Band"
 Cohesion: 0.25
@@ -1156,9 +1165,17 @@ Nodes (12): NoiseDecodeOutcome, fileChannels, frames, reason, status, NoiseDecod
 Cohesion: 0.33
 Nodes (4): StereoWidthFrame, stereoWidthFrame(), left, right
 
-### Community 229 - "SceneDraw"
-Cohesion: 0.12
-Nodes (15): SceneDraw, baseColour, highlightColour, material, meshIndex, model, normalMatrix, parameters (+7 more)
+### Community 229 - "CompressorMeter"
+Cohesion: 0.15
+Nodes (8): CompressorMeter, active, activity, caption, darkTheme, displayedDb, lastUpdate, title
+
+### Community 230 - "StereoOffsetBuffer"
+Cohesion: 0.21
+Nodes (6): StereoOffsetBuffer, length, samples, writePosition, main(), near()
+
+### Community 231 - "ThemeChoice"
+Cohesion: 0.17
+Nodes (7): ThemeChoice, charcoal, darkMetal, ivory, metal, user, whiteMonster
 
 ### Community 232 - "Mesh"
 Cohesion: 0.33
@@ -1169,8 +1186,8 @@ Cohesion: 0.33
 Nodes (6): ModeState, a1, a2, b0, y1, y2
 
 ### Community 234 - "audioReport"
-Cohesion: 0.20
-Nodes (10): audioReport(), blocks, leftPeak, loudestPeak, nonFinitePeaks, nonFiniteSides, overBudget, rightPeak (+2 more)
+Cohesion: 0.11
+Nodes (17): audioReport(), blocks, leftPeak, loudestPeak, nonFinitePeaks, nonFiniteSides, overBudget, rightPeak (+9 more)
 
 ### Community 235 - "HotPathProbeStats"
 Cohesion: 0.40
@@ -1183,6 +1200,10 @@ Nodes (13): logLock(), BlockedThread, label, letGo, mutex, released, thread, che
 ### Community 237 - "ControlBank"
 Cohesion: 0.33
 Nodes (5): ControlBank, body, key, knob, knobGlow
+
+### Community 238 - "mix_crossfader_test.cpp"
+Cohesion: 0.47
+Nodes (8): check(), main(), testBothLegsAreGated(), testClamp(), testEndpoints(), testEqualPower(), testLevelOnRenderedSignal(), testOpenThreshold()
 
 ### Community 239 - "dsp/run.sh"
 Cohesion: 0.53
@@ -1205,12 +1226,16 @@ Cohesion: 0.40
 Nodes (4): GpuMesh, indexCount, indices, vertices
 
 ### Community 245 - "TabSpec"
-Cohesion: 0.09
-Nodes (18): chipCaptionWidth(), ellipsisedChipCaptionCount(), fittedChipCaptionHeight(), controlIsInTab(), tabsCoverAllControls(), TabSpec, controls, count (+10 more)
+Cohesion: 0.14
+Nodes (16): chipCaptionWidth(), ellipsisedChipCaptionCount(), fittedChipCaptionHeight(), controlIsInTab(), tabsCoverAllControls(), TabSpec, controls, count (+8 more)
 
 ### Community 247 - "Built"
 Cohesion: 0.15
 Nodes (12): Built, areaHeight, cells, columns, grid, memberRow, rows, score (+4 more)
+
+### Community 249 - "String"
+Cohesion: 0.22
+Nodes (7): FirstAudioProcessorEditor::setUpModeSwitches(), FirstAudioProcessorEditor::refreshModeButtonCaption(), isModeOn(), TooltipSource, component, english, englishHints
 
 ### Community 253 - "interface"
 Cohesion: 0.50
@@ -1222,23 +1247,19 @@ Nodes (3): about, licence_policy, slots
 
 ### Community 255 - "UniformCache"
 Cohesion: 0.14
-Nodes (10): UniformCache, fragmentApplied, fragmentBlock, fragmentGeneration, generation, skippedBlocks, uploadedBlocks, vertexApplied (+2 more)
+Nodes (18): makeDrawUniforms(), UniformCache, fragmentApplied, fragmentBlock, fragmentGeneration, generation, skippedBlocks, uploadedBlocks (+10 more)
 
 ### Community 258 - "TrailPoint"
 Cohesion: 0.50
 Nodes (4): TrailPoint, age, x, y
 
 ### Community 259 - "vector"
-Cohesion: 0.07
-Nodes (11): ConfigFactory, finite(), isValid(), ControlPlacement, isKey, x, ControlTable, isGuard() (+3 more)
+Cohesion: 0.09
+Nodes (10): finite(), isValid(), ControlPlacement, isKey, x, ControlTable, isGuard(), main() (+2 more)
 
 ### Community 260 - "check_shaders.py"
 Cohesion: 0.32
 Nodes (4): extract_sources(), read(), unescape(), without_comments()
-
-### Community 262 - "Mesh"
-Cohesion: 0.20
-Nodes (6): Mesh, indexBuffer, indexCount, indexFormat, vertexBuffer, vertexStride
 
 ### Community 264 - "BlockContext"
 Cohesion: 0.50
@@ -1247,6 +1268,14 @@ Nodes (4): BlockContext, channels, sampleRate, samples
 ### Community 268 - "TrackBleed.h"
 Cohesion: 0.50
 Nodes (4): TrackBleedFrame, trackBleedFrame(), left, right
+
+### Community 269 - "ToggleGlide"
+Cohesion: 0.50
+Nodes (4): ToggleGlide, initialised, position, target
+
+### Community 320 - "Sample"
+Cohesion: 0.50
+Nodes (3): Sample, x, y
 
 ### Community 323 - "TapeTransportFrame"
 Cohesion: 0.33
@@ -1269,8 +1298,8 @@ Cohesion: 0.33
 Nodes (4): Crossings, crossings, frames, previous
 
 ### Community 340 - "LofiHold"
-Cohesion: 0.29
-Nodes (6): LofiHold, clock, held, holdFrames, main(), sameFrame()
+Cohesion: 0.21
+Nodes (8): LofiHoldClock, countdown, LofiHold, clock, held, holdFrames, main(), sameFrame()
 
 ### Community 343 - "Sine"
 Cohesion: 0.40
@@ -1281,43 +1310,27 @@ Cohesion: 0.22
 Nodes (3): FirstAudioProcessorEditor::UiSoundEngine::audioDeviceAboutToStart(), FirstAudioProcessorEditor::UiSoundEngine::audioDeviceIOCallbackWithContext(), FirstAudioProcessorEditor::UiSoundEngine::trigger()
 
 ### Community 347 - "SpectrumAnalyser.h"
-Cohesion: 0.26
+Cohesion: 0.22
 Nodes (10): PlanDeleter, process(), transform(), fftwf_complex, fftwf_destroy_plan(), fftwf_execute_dft_r2c(), fftwf_plan, fftwf_plan_dft_r2c_1d() (+2 more)
 
-### Community 391 - "ActiveTabStub"
-Cohesion: 0.40
-Nodes (3): ActiveTabStub, controls, count
-
-### Community 392 - "Orb"
-Cohesion: 0.20
-Nodes (7): Orb, radius, vx, vy, x, y, World
-
-### Community 395 - "FsUniforms"
-Cohesion: 0.17
-Nodes (12): FsUniforms, arcAngle, baseColour, drive, glow, highlightColour, keyDown, lightDirection (+4 more)
-
 ### Community 396 - "Coverage"
-Cohesion: 0.14
-Nodes (13): Coverage, bottomHalf, leftHalf, maxX, maxY, minX, minY, rightHalf (+5 more)
+Cohesion: 0.17
+Nodes (10): Coverage, bottomHalf, leftHalf, maxX, maxY, minX, minY, rightHalf (+2 more)
 
 ### Community 397 - "deck_dust_test.cpp"
-Cohesion: 0.32
+Cohesion: 0.42
 Nodes (10): check(), checkDustCoverage(), checkDustInvalidation(), checkStatusBadge(), coversCorridor(), Deck, hugsCaption(), legacyCorridor() (+2 more)
 
 ### Community 398 - "WidthUnderTest"
 Cohesion: 0.50
 Nodes (4): WidthUnderTest, height, name, width
 
-### Community 401 - "checkCache"
-Cohesion: 0.61
-Nodes (8): makeDrawUniforms(), check(), checkCache(), checkMapping(), checkMaterials(), main(), makeDraw(), makeFrame()
-
 ### Community 402 - "Box"
 Cohesion: 0.31
 Nodes (8): badgeForCaption(), Box, h, w, x, y, lampCentreX(), lampDiscRight()
 
 ### Community 403 - "Worker"
-Cohesion: 0.36
+Cohesion: 0.31
 Nodes (3): Worker, file, requestGeneration
 
 ### Community 405 - "DeckRect"
@@ -1327,13 +1340,13 @@ Nodes (6): DeckRect, h, name, w, x, y
 ## Knowledge Gaps
 - **2431 isolated node(s):** `image`, `header`, `badge`, `caption`, `levels` (+2426 more)
   These have ≤1 connection - possible missing edges. (Counts symbols only; 3696 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **159 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **163 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `FirstAudioProcessor` connect `FirstAudioProcessor` to `TapeBlockState`, `vector`, `bench_nam.cpp`, `ProcessorSignalPath.cpp`, `BlockContext`, `phase_test.cpp`, `VinylStage`, `State`, `cmath`, `Biquad`, `TransportRig`, `.getBypassParameter`, `.oversamplingSlot`, `SafetyLimiter`, `.getUndoManager`, `ProcessorPresets.cpp`, `SaturationCore`, `ValueTree`, `DattorroRoom`, `CorrectorStage`, `.active`, `MultibandCompressor`, `NoiseLoader`, `TapeBlockState`, `PluginProcessor.cpp`, `TelemetryFrame`, `RangedAudioParameter`, `PitchTracker`, `FxRack`, `ThreeBandEq`, `parameter_audio.cpp`, `gain_test.cpp`, `SubharmonicGenerator`, `TelemetryFrame`, `ParameterTable.cpp`, `AmpVoicing`, `FxTargets`, `.prepareToPlay`, `SampleInputContext`, `Surface`, `RepitchStage`, `SpectrumAnalyser`, `equaliser_test.cpp`, `HarmonicAnalyser`, `ModalVoice`, `LevelMeter`, `Sheet`, `String`, `GlueOperatingPoints`, `cstdio`, `IrStage`?**
-  _High betweenness centrality (0.246) - this node is a cross-community bridge._
+- **Why does `FirstAudioProcessor` connect `FirstAudioProcessor` to `TapeBlockState`, `vector`, `NeuralStage`, `ProcessorSignalPath.cpp`, `BlockContext`, `phase_test.cpp`, `VinylStage`, `State`, `cmath`, `Biquad`, `TransportRig`, `.getBypassParameter`, `.oversamplingSlot`, `SafetyLimiter`, `.getUndoManager`, `ProcessorPresets.cpp`, `SaturationCore`, `ValueTree`, `DattorroRoom`, `CorrectorStage`, `.active`, `MultibandCompressor`, `NoiseLoader`, `TapeBlockState`, `PluginProcessor.cpp`, `fixture_test.cpp`, `TelemetryFrame`, `RangedAudioParameter`, `PitchTracker`, `FxRack`, `ThreeBandEq`, `parameter_audio.cpp`, `gain_test.cpp`, `SubharmonicGenerator`, `TelemetryFrame`, `StateSwapAction`, `ParameterTable.cpp`, `AmpVoicing`, `FxTargets`, `.prepareToPlay`, `SampleInputContext`, `Surface`, `LofiHold`, `TapeCondition`, `RepitchStage`, `SpectrumAnalyser`, `HarmonicAnalyser`, `ModalVoice`, `Sheet`, `StereoOffsetBuffer`, `GlueOperatingPoints`, `cstdio`, `IrStage`?**
+  _High betweenness centrality (0.233) - this node is a cross-community bridge._
 - **Are the 7 inferred relationships involving `FirstAudioProcessor` (e.g. with `.perform()` and `.undo()`) actually correct?**
   _`FirstAudioProcessor` has 7 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `image`, `header`, `badge` to the rest of the system?**
@@ -1341,8 +1354,8 @@ _Questions this graph is uniquely positioned to answer:_
 - **Should `FirstAudioProcessor` be split into smaller, more focused modules?**
   _Cohesion score 0.0035778175313059034 - nodes in this community are weakly interconnected._
 - **Why does `FxRack` connect `FxRack` to `FirstAudioProcessor`, `Rotary`, `checkRackGate`, `cmath`, `StateVariableFilter`, `FxStutter`, `OnePole`, `MultibandCompressor`, `Vocoder`, `.processSample`, `Phaser`, `Granular`, `.prepare`, `Phaser`, `PitchShifter`, `FxTargets`, `Amounts`, `RateCrusher`, `character_test.cpp`, `StateVariableFilter`, `Fuzz`?**
-  _High betweenness centrality (0.039) - this node is a cross-community bridge._
+  _High betweenness centrality (0.035) - this node is a cross-community bridge._
 - **Should `live-browser.js` be split into smaller, more focused modules?**
   _Cohesion score 0.028943278943278944 - nodes in this community are weakly interconnected._
-- **Why does `VulkanRenderer` connect `VulkanRenderer` to `.isPresentable`, `vector`, `.initialise`, `MeshBinding`, `.clear`, `EditorPreferences.h`, `.resize`, `SceneFrame`, `NativeRenderer`?**
-  _High betweenness centrality (0.029) - this node is a cross-community bridge._
+- **Why does `TapeScene` connect `TapeScene` to `vector`, `TapeSceneFrame.cpp`, `Mesh`, `ControlBank`, `TapeScene::newOpenGLContextCreated`, `.getWidth`, `ControlPlacement`, `TapeScene::uniformRevision`, `TapeScene.cpp`?**
+  _High betweenness centrality (0.034) - this node is a cross-community bridge._

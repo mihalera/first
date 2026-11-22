@@ -111,6 +111,8 @@ struct J37HeaderRenderProbe
         longer caption in the same row) and a palette is different ink on the same
         geometry. Neither writes a preference: persisting belongs to the handlers the
         user drives, not to these two. */
+    j37panel::ThemeChoice theme() const { return editor.themeChoice; }
+
     void useTheme (j37panel::ThemeChoice choice)
     {
         editor.themeChoice = choice;
@@ -118,6 +120,11 @@ struct J37HeaderRenderProbe
     }
 
     void useLanguage (int languageIndex) { editor.applyLanguage (languageIndex); }
+
+    /**  The USER palette is a global the editor copies at applyTheme() time, so a
+        harness that does not set it renders whatever palette this machine's owner
+        saved. The matrix sets its own, and the run puts this one back. */
+    void useUserPalette (const j37panel::UiPalette& palette) { j37panel::userPalette = palette; }
 
     FirstAudioProcessorEditor& editor;
 };
@@ -544,6 +551,16 @@ int main()
 
     Probe probe (*editor);
 
+    /*  What this machine had before the run. The editor's DESTRUCTOR writes the theme
+        choice, the USER palette and its own size into the machine-wide preferences (see
+        ~FirstAudioProcessorEditor), so a harness that ends on `user` at the 780 x 664
+        floor would edit the desk it ran on. These three are put back before the editor
+        goes away. */
+    const auto originalTheme = probe.theme();
+    const auto originalWidth = editor->getWidth();
+    const auto originalHeight = editor->getHeight();
+    const auto originalUserPalette = j37panel::userPalette;
+
     /*  The panel's live shimmer: dots whose positions follow a clock that steps eight
         times a second (EditorPaint.cpp), drawn over the whole surface. Two paints that
         straddle a step differ in those dots and in nothing else, so a pixel-for-pixel
@@ -710,6 +727,14 @@ int main()
     probe.openPage (mainPage);
     pumpMessages (50);
 
+    //  A TEST-OWNED USER palette. The real one is whatever this machine's owner saved,
+    //  and a valid but low-contrast choice would make the lamp claim measure their taste
+    //  rather than the panel's geometry. This one is light on purpose (the stock USER
+    //  default is not), with a status ink that is nothing like the ivory panel's.
+    auto testUserPalette = j37panel::paletteForTheme (j37panel::ThemeChoice::ivory);
+    testUserPalette.status = juce::Colour (0xff2f7f5f);
+    probe.useUserPalette (testUserPalette);
+
     int matrixCases = 0;
 
     for (const auto choice : palettes)
@@ -812,6 +837,13 @@ int main()
 
         probe.showCaption (longest);
     }
+
+    //  The desk is put back as it was found: the destructor below writes the theme, the
+    //  USER palette and the size to machine-wide preferences, so these are returned to
+    //  the values this machine had before the run.
+    probe.useTheme (originalTheme);
+    probe.useUserPalette (originalUserPalette);
+    editor->setSize (originalWidth, originalHeight);
 
     std::printf ("\nHEADER RENDER  %d checks, %d failures\n", checks, failures);
 
