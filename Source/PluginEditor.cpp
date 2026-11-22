@@ -1620,13 +1620,17 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     // hung off the frame it belongs to. The pill is now the label's own rectangle
     // plus two pixels, and the hairline under the header is drawn before it (see
     // paint()), so nothing cuts through it either.
-    //  Centred between SYMMETRIC margins rather than pushed off the lamp by a
-    //  left-only border. The badge spans a third of the header, and a caption that
-    //  starts 26 px in and then ends in air reads as a crooked line rather than as
-    //  a centred state. The lamp sits at pill.x + 15, so 26 px on both sides clears
-    //  it and puts the text's own centre back on the pill's.
-    statusLabel.setBounds (statusLeft + 26, statusRowY, juce::jmax (1, statusWidth - 52),
-                           statusHeight);
+    //  The caption's box is the pill's, inset by the same margin each side - see
+    //  GUI/StatusBadge.h for why a left-only inset was not centred, and
+    //  tests/layout/deck_dust_test.cpp for the margins and the lamp clearance it
+    //  measures on this geometry.
+    const j37panel::badge::Box pill {statusLeft - j37panel::badge::pillPadX,
+                                     statusRowY - j37panel::badge::pillPadY,
+                                     statusWidth + 2 * j37panel::badge::pillPadX,
+                                     statusHeight + 2 * j37panel::badge::pillPadY};
+    const auto captionBox = j37panel::badge::textArea (pill);
+    statusLabel.setBounds (captionBox.x, captionBox.y, juce::jmax (1, captionBox.w),
+                           captionBox.h);
     statusLabel.setJustificationType (juce::Justification::centred);
     statusLabel.setFont (statusLabel.getFont().withHeight (uiFontSize (9.5f)));
     statusLabel.setBorderSize (juce::BorderSize<int> (0));
@@ -2257,8 +2261,16 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     //  each one invalidates only its own footprint (repaintDeckParticles), so the
     //  wider corridor costs six small rectangles per animated frame instead of a
     //  repaint of the deck and every caption on it.
-    deckParticleCorridorX = { deck.getX() + 10, deck.getRight() - 10 };
-    deckParticleCorridorY = { deck.getY() + 6, deck.getBottom() - 6 };
+    //  The inset itself is stated once, in GUI/DeckDust.h, because the mapping that
+    //  turns a world position into a pixel has to be measured against the same
+    //  corridor - and that header is what the harness steps frame by frame.
+    const auto dustCorridor = j37panel::dust::corridorForDeck (
+        static_cast<float> (deck.getX()), static_cast<float> (deck.getY()),
+        static_cast<float> (deck.getWidth()), static_cast<float> (deck.getHeight()));
+    deckParticleCorridorX = {juce::roundToInt (dustCorridor.left),
+                             juce::roundToInt (dustCorridor.right)};
+    deckParticleCorridorY = {juce::roundToInt (dustCorridor.top),
+                             juce::roundToInt (dustCorridor.bottom)};
 }
 
 //==============================================================================

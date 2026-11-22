@@ -18,7 +18,6 @@
 #include <functional>
 #include <vector>
 
-#include <juce_box2d/juce_box2d.h>
 #include <juce_opengl/juce_opengl.h>
 
 // The panel's paint kit, its page table and the nine principles it paints with
@@ -26,8 +25,10 @@
 // here: the classes below count the principles, draw with the palettes and are
 // handed the theme the palettes select on, so the header of the panel's paint
 // kit is the one file the editor's own header has to include.
+#include "GUI/DeckDust.h"
 #include "GUI/PanelPaint.h"
 #include "GUI/PhoneLayout.h"
+#include "GUI/StatusBadge.h"
 
 // The deck's OSC ring - a j37panel component like the parameter sheet below, so
 // it comes after the paint kit it reads its palette through.
@@ -608,12 +609,6 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
         FirstAudioProcessor& processor;
     };
 
-    struct PhysicsOrb {
-        b2Body *body = nullptr;
-        float radius = 0.0f;
-        juce::Colour colour;
-    };
-
     struct RenderOrb {
         juce::Point<float> position;
         float radius = 0.0f;
@@ -678,7 +673,11 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     static constexpr int tabColumns = 4;
     // Twenty-two pages under three large families (TAPE / FX / SETUP).
     static constexpr int numTabs = 23;
-    static constexpr std::size_t decorativeOrbCount = 6;
+    // The deck's dust population is the header's, so the two cannot drift apart:
+    // the world in GUI/DeckDust.h is what the timer steps and this is how many
+    // snapshots the paint routine copies out of it.
+    static constexpr std::size_t decorativeOrbCount =
+        static_cast<std::size_t>(j37panel::dust::orbCount);
 
     // Header grid dimensions for the two engine-switch rows and language selector.
     //  Six engine-switch columns remain intact; the LEVELS visibility switch takes
@@ -895,14 +894,9 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     /** The rectangle the drifting dust is mapped into, repainted separately from the reel. */
     juce::Rectangle<int> deckParticleBounds() const;
 
-    /** Where one mote lands on screen, and how big it is drawn: paint() and the
-        invalidator share these, so a mote cannot be drawn on one rectangle and
-        invalidated on another. */
-    juce::Point<float> deckOrbScreenPosition (juce::Point<float> worldPosition) const;
-    float deckOrbScreenRadius (float worldRadius) const;
-
     /** Invalidates every mote's own footprint. The dust crosses the whole deck now,
-        so its corridor is no longer a cheap strip to repaint. */
+        so its corridor is no longer a cheap strip to repaint. The rectangle comes
+        from j37panel::dust::orbInvalidation, which is also what paint() draws. */
     void repaintDeckParticles();
 
     // Shared by the constructor and by resized(): the knob-grid section captions
@@ -1659,8 +1653,11 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
         return underlying.isBool() && static_cast<bool>(underlying);
     }
 
-    std::unique_ptr<b2World> physicsWorld;
-    std::array<PhysicsOrb, decorativeOrbCount> physicsOrbs{};
+    // The deck's dust. It used to be a Box2D world of six bodies; JUCE's Box2D
+    // allocates through juce_core, which put the animation out of reach of a
+    // harness that has no JUCE, so the step lives in GUI/DeckDust.h and is
+    // measured frame by frame in tests/layout.
+    j37panel::dust::World dustWorld;
     std::array<RenderOrb, decorativeOrbCount> renderOrbs{};
     juce::SpinLock renderOrbsLock;
     juce::OpenGLContext openGLContext;

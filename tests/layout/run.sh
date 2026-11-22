@@ -63,3 +63,39 @@ if grep -q "Justification::centred, false" "${SRC}/GUI/J37LookAndFeel.cpp"; then
     echo "a button caption can be clipped again: an ellipsise-if-too-big is off" >&2
     exit 1
 fi
+
+# ---------------------------------------------------------------------------
+#  The deck's dust and the header's state badge. Both were fixed by eye once -
+#  a corridor that was an 86 x 14 px strip at the right end of the badge line,
+#  and a caption pushed 26 px into its pill by a left-only border - and neither
+#  could be measured, because the dust was Box2D bodies and the inset was written
+#  inline in the layout. They live in Source/GUI/DeckDust.h and
+#  Source/GUI/StatusBadge.h now, and this runs them: thirty seconds of animation
+#  at the timer's rate, mapped with the same functions paint() calls, plus the
+#  margins and lamp clearance of the caption box.
+# ---------------------------------------------------------------------------
+"${CXX}" "${J37_CXX_STD}" -O1 "${J37_WARNINGS[@]}" -I "${SRC}" \
+    "${HERE}/deck_dust_test.cpp" -o "${BUILD}/deck_dust_test"
+"${BUILD}/deck_dust_test"
+
+# A measurement of a header nobody uses is a measurement of nothing, so the four
+# call sites that make these the panel's own arithmetic are pinned: the deck's
+# corridor comes from the header, the paint routine maps with it, the invalidator
+# dirties its rectangles, and the caption's box comes from the badge's.
+grep -q "j37panel::dust::corridorForDeck" "${SRC}/PluginEditor.cpp" || {
+    echo "placeDeck no longer takes the dust's corridor from GUI/DeckDust.h" >&2
+    exit 1
+}
+grep -q "j37panel::dust::screenX" "${SRC}/GUI/EditorPaint.cpp" || {
+    echo "the paint routine no longer maps the motes with GUI/DeckDust.h" >&2
+    exit 1
+}
+grep -q "j37panel::dust::orbInvalidation" "${SRC}/GUI/EditorTimer.cpp" || {
+    echo "the dust invalidator no longer uses the rect the paint routine draws" >&2
+    exit 1
+}
+grep -A4 "captionBox = j37panel::badge::textArea" "${SRC}/PluginEditor.cpp" \
+    | grep -q "Justification::centred" || {
+    echo "the state caption is no longer centred in the box GUI/StatusBadge.h gives it" >&2
+    exit 1
+}

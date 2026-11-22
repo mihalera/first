@@ -669,9 +669,9 @@
     "semantic_hash": ""
   },
   "Source/GUI/EditorPaint.cpp": {
-    "mtime": 1795363099.969029,
-    "seen": 1795363237.903139,
-    "ast_hash": "1dcb78b0a752acf6af1cea62986ef3c1",
+    "mtime": 1795364020.887505,
+    "seen": 1795364216.1609502,
+    "ast_hash": "e561694c7ca50a6bde558512b8c84c9b",
     "semantic_hash": ""
   },
   "Source/GUI/EditorPreferences.h": {
@@ -682,21 +682,21 @@
     "language": "language=.cpp"
   },
   "Source/GUI/EditorSetup.cpp": {
-    "mtime": 1795280065.1052105,
-    "seen": 1795359787.926094,
-    "ast_hash": "f5b3e4a9dd2cedf6b4b1abb241d33886",
+    "mtime": 1795364020.8882709,
+    "seen": 1795364216.160966,
+    "ast_hash": "a2b086507fc58420010b4d4b6abc6701",
     "semantic_hash": ""
   },
   "Source/GUI/EditorTheme.cpp": {
-    "mtime": 1795268091.174955,
-    "seen": 1795359787.9260995,
-    "ast_hash": "d668a8992cc2bd84880118b7f606c2d3",
+    "mtime": 1795364020.888491,
+    "seen": 1795364216.160973,
+    "ast_hash": "7261d668a1a98e45ef1d60962a0888f5",
     "semantic_hash": ""
   },
   "Source/GUI/EditorTimer.cpp": {
-    "mtime": 1795363095.0547366,
-    "seen": 1795363237.9031656,
-    "ast_hash": "3962db32b2d6a4e2b6e6d2575be2e9be",
+    "mtime": 1795364020.887777,
+    "seen": 1795364216.1609805,
+    "ast_hash": "b52716754707de04b3f899d1a15fbcd7",
     "semantic_hash": ""
   },
   "Source/GUI/J37LookAndFeel.cpp": {
@@ -1029,15 +1029,15 @@
     "semantic_hash": ""
   },
   "Source/PluginEditor.cpp": {
-    "mtime": 1795363122.2933,
-    "seen": 1795363237.9035013,
-    "ast_hash": "f98354063beadb72f36df19f7c35e609",
+    "mtime": 1795364020.8880265,
+    "seen": 1795364216.1613724,
+    "ast_hash": "36224b5d1b1aa49ed3f9cd6126e899a2",
     "semantic_hash": ""
   },
   "Source/PluginEditor.h": {
-    "mtime": 1795363087.58121,
-    "seen": 1795363237.9035072,
-    "ast_hash": "8294981ba1414cbaedc27ff31217971f",
+    "mtime": 1795364168.45009,
+    "seen": 1795364216.1613798,
+    "ast_hash": "e1e9273868f6ac411d094e528e1fa6cf",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
@@ -1649,10 +1649,10 @@
     "semantic_hash": ""
   },
   "tests/layout/run.sh": {
-    "mtime": 1794490930.433914,
-    "seen": 1794648118.5952883,
-    "ast_hash": "9e78edd504f74ef88e8b2bc1c3045c2f",
-    "semantic_hash": "9e78edd504f74ef88e8b2bc1c3045c2f"
+    "mtime": 1795364110.1910517,
+    "seen": 1795364216.1621902,
+    "ast_hash": "e2ef449b3c660a9049862e08c250c116",
+    "semantic_hash": ""
   },
   "tests/lib/harness.sh": {
     "mtime": 1795168297.963976,
@@ -2798,9 +2798,9 @@
     "semantic_hash": ""
   },
   "CMakeLists.txt": {
-    "mtime": 1795032694.625225,
-    "seen": 1795044408.8102539,
-    "ast_hash": "ef483cf7ec54a72e0b1961b276c555db",
+    "mtime": 1795363929.4147475,
+    "seen": 1795364216.1637833,
+    "ast_hash": "1c22214bb0214b813c8668f7a19deae5",
     "semantic_hash": ""
   },
   "CODE_OF_CONDUCT.md": {
@@ -2912,9 +2912,9 @@
     "semantic_hash": ""
   },
   "tests/README.md": {
-    "mtime": 1795183197.6512227,
-    "seen": 1795183358.7568767,
-    "ast_hash": "8a78b42cab9d888562c70c4c1bcaf160",
+    "mtime": 1795364171.3720639,
+    "seen": 1795364216.1639655,
+    "ast_hash": "c9d577fec65539a14574ae385923ae9a",
     "semantic_hash": ""
   },
   "tests/shaders/VulkanSceneShaders/README.md": {
@@ -3138,6 +3138,26 @@
     "mtime": 1795350931.1971729,
     "seen": 1795359787.9284673,
     "ast_hash": "fcd51086cf5fbd2e986a81331dfe0d95",
+    "semantic_hash": ""
+  },
+  "Source/GUI/DeckDust.h": {
+    "mtime": 1795364149.2993476,
+    "seen": 1795364216.1609173,
+    "ast_hash": "e51d7d57073799202ba9664e5836a74e",
+    "semantic_hash": "",
+    "language": "language=.cpp"
+  },
+  "Source/GUI/StatusBadge.h": {
+    "mtime": 1795364149.3229842,
+    "seen": 1795364216.161257,
+    "ast_hash": "7762cb83c462fca01f077be0a9702be0",
+    "semantic_hash": "",
+    "language": "language=.cpp"
+  },
+  "tests/layout/deck_dust_test.cpp": {
+    "mtime": 1795364125.308169,
+    "seen": 1795364216.1621668,
+    "ast_hash": "2dd79bf5c6f1fa3408a2d6333115dca3",
     "semantic_hash": ""
   }
 }
