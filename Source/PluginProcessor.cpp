@@ -932,7 +932,11 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // Auto Glue's share of the glue compression ramps like every other gain, so
     // toggling it during playback fades the reduction in and out instead of
     // stepping it by the existing envelope's full amount on the next block.
-    glueShareSmoothed.reset (sampleRateToUse, smoothingSeconds);
+    // The smoother advances once per ENGINE sample (processTapeEngine runs at
+    // the oversampled rate), so its ramp must be timed at the engine rate;
+    // timing it at the host rate makes the transition 1x..8x too fast.
+    glueShareSmoothed.reset (sampleRateToUse * static_cast<double> (oversamplingRateFactor),
+                             smoothingSeconds);
     glueShareSmoothed.setCurrentAndTargetValue (glueOnParam == nullptr || glueOnParam->load() >= 0.5f
                                                    ? 1.0f : 0.0f);
 
@@ -1262,8 +1266,10 @@ void FirstAudioProcessor::resetSampleRateDependentState()
         subFundamentalParam != nullptr ? subFundamentalParam->load() : 0.0f);
 
     // Auto Glue's share is re-timed with the control ramp on a rate change, so a
-    // rate switch cannot leave it stepping at the old rate's pace.
-    glueShareSmoothed.reset (sampleRate, controlRampSeconds);
+    // rate switch cannot leave it stepping at the old rate's pace. Timed at the
+    // engine rate, matching the per-engine-sample advance in processTapeEngine.
+    glueShareSmoothed.reset (sampleRate * static_cast<double> (oversamplingRateFactor),
+                             controlRampSeconds);
     glueShareSmoothed.setCurrentAndTargetValue (glueOnParam == nullptr || glueOnParam->load() >= 0.5f
                                                    ? 1.0f : 0.0f);
 
@@ -1372,6 +1378,15 @@ void FirstAudioProcessor::setOversamplingFactor (OversamplingFactor factor, int 
         oversamplingRateFactor = 8.0f;
     else
         oversamplingRateFactor = 1.0f;
+
+    // Re-time Auto Glue's share smoother for the new engine rate: it advances
+    // once per engine sample, so a factor change (1x -> 8x) must not leave the
+    // 20 ms ramp sized for the old rate. Preserve the current value so the
+    // switch does not step the gain.
+    const float currentGlueShare = glueShareSmoothed.getCurrentValue();
+    glueShareSmoothed.reset (sampleRate * static_cast<double> (oversamplingRateFactor),
+                             0.02);
+    glueShareSmoothed.setCurrentAndTargetValue (currentGlueShare);
 
     // Select the PREPARED slot. prepareToPlay has already called prepare() on the
     // corrector, IR, trackers and repitch stage for every factor, so nothing here
