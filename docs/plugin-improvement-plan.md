@@ -263,8 +263,12 @@ mark the preset dirty, or they are named as session-level like the twelve.
 
 ### 9. Make translation coverage a number
 
-`uk.txt` is 367 live entries against 1,434 distinct source strings (analysis §3,
-§9). `tests/translations/check_translations.py` now gates dead keys, missing
+`uk.txt` is 420 live entries against 1,744 distinct source strings in 140 source
+files (current `tests/translations/check_translations.py` output: `2 table(s) [en.txt,
+uk.txt], 420 entries, 1744 distinct strings in 140 source file(s)`). The tooltip
+sentences are now fully translated into Ukrainian (PR #390: PENTODE/TRIODE/
+TRANSISTOR type selectors and the 26 effects-rack stages); what remains open is
+printing the untranslated count per language on every run. `tests/translations/check_translations.py` now gates dead keys, missing
 lookups and empty entries; printing the untranslated count per language on every
 run - as a report line, not a gate, because a half-translated panel showing English
 is the deliberate design - is the half that is still open. It would turn "how
@@ -367,7 +371,7 @@ logs of the day. Its items, and where they stand:
 | Give the rendering backends a compile check | **open** - item 6 |
 | Drive `processBlock` with real buffer shapes | **open** - item 5 |
 | Say what a mono instance reads, or change it | **open** - item 10 |
-| Make translation coverage a number | **partly** - `tests/translations/check_translations.py` gates dead keys, missing lookups and empty entries, but the untranslated count per language is not printed yet (item 9) |
+| Make translation coverage a number | **partly** - `tests/translations/check_translations.py` gates dead keys, missing lookups and empty entries (420 entries / 1,744 distinct strings in 140 source files, PASSED), but the untranslated count per language is still not printed (item 9). Tooltip sentences are now fully translated into Ukrainian (PR #390: PENTODE/TRIODE/TRANSISTOR type selectors and the 26 effects-rack stages) |
 | An index of what the suite guarantees | **done** - [tests/README.md](../tests/README.md) |
 | A fast compile gate, and ccache | **open** - item 2 |
 
