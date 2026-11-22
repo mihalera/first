@@ -171,7 +171,7 @@ endfunction()
 #    ThirdParty/dattorro-verb/       el-visio/dattorro-verb @ 41e976a0 (verb.c,
 #                                    compiled below)
 #
-#  Every licence ships inside its own folder and THIRD_PARTY_NOTICES.md carries
+#  Every licence ships inside its own folder and docs/THIRD_PARTY_NOTICES.md carries
 #  the attribution notices. The list used to carry a second exception to the
 #  permissive rule - SoundTouch, LGPL-2.1 - which is gone with the rest of that
 #  dependency in WP4; see the note where its block used to be.
@@ -345,7 +345,7 @@ CPMAddPackage(
 #  cannot compile the wrapper at all, and the alternative (a second pin for each
 #  submodule) would be a version of CLAP nobody tested the wrapper against.
 #
-#  Licence: MIT, the same as CLAP itself. See THIRD_PARTY_NOTICES.md.
+#  Licence: MIT, the same as CLAP itself. See docs/THIRD_PARTY_NOTICES.md.
 # ==============================================================================
 CPMAddPackage(
     NAME clap-juce-extensions
@@ -527,7 +527,7 @@ endif ()
 #  Eigen rides beside it as an INTERFACE target: NAM's headers include
 #  <Eigen/Dense> and the convolutional layers <unsupported/Eigen/FFT>, and the
 #  vendored tree is the commit NAM Core's own submodule pins, which is the one
-#  combination upstream tests. MPL-2.0 - see THIRD_PARTY_NOTICES.md; its own
+#  combination upstream tests. MPL-2.0 - see docs/THIRD_PARTY_NOTICES.md; its own
 #  files stay under MPL while the linked binary as a whole does not.
 #
 #  NAM_ENABLE_A2_FAST is deliberately NOT defined. It routes models whose

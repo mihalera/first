@@ -58,7 +58,7 @@ of scope.
 | What is checked in instead of fetched? | `ThirdParty/`, `.gitmodules` |
 | What is discovered on the machine? | [`cmake/J37VendorLibraries.cmake`](../cmake/J37VendorLibraries.cmake) |
 | What is test-only? | [`cmake/J37Tests.cmake`](../cmake/J37Tests.cmake), `tests/` |
-| What licence obligations follow? | [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) |
+| What licence obligations follow? | [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) |
 
 CMake's `NAME` is not always the published name - `signalsmith-dsp` is the
 signalsmith-stretch repository, `nlohmann_json` is nlohmann/json,

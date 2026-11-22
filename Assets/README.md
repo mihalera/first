@@ -79,7 +79,7 @@ python tests/assets/check_assets.py
   empty licence.
 - Inspiration sources that usually clear this bar: Poly Haven (CC0 textures),
   ambientCG (CC0), Kenney (CC0), game-icons.net (CC BY 3.0 — **attribution
-  required**, so either credit it in `THIRD_PARTY_NOTICES.md` or redraw), and
+  required**, so either credit it in `../docs/THIRD_PARTY_NOTICES.md` or redraw), and
   your own drawings.
 
 ## Adding a file — the whole workflow
