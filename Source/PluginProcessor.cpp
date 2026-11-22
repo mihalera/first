@@ -929,6 +929,13 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // restores rather than ramping into it.
     deltaListenSmoothed.setCurrentAndTargetValue (deltaParam != nullptr && deltaParam->load() >= 0.5f ? 1.0f : 0.0f);
 
+    // Auto Glue's share of the glue compression ramps like every other gain, so
+    // toggling it during playback fades the reduction in and out instead of
+    // stepping it by the existing envelope's full amount on the next block.
+    glueShareSmoothed.reset (sampleRateToUse, smoothingSeconds);
+    glueShareSmoothed.setCurrentAndTargetValue (glueOnParam == nullptr || glueOnParam->load() >= 0.5f
+                                                   ? 1.0f : 0.0f);
+
     inputPeakLevel.store (0.0f, std::memory_order_relaxed);
     inputRmsLevel.store (0.0f, std::memory_order_relaxed);
     inputPeakDb.store (-70.0f, std::memory_order_relaxed);
@@ -1253,6 +1260,12 @@ void FirstAudioProcessor::resetSampleRateDependentState()
     subFundamentalSmoothed.reset (sampleRate, controlRampSeconds);
     subFundamentalSmoothed.setCurrentAndTargetValue (
         subFundamentalParam != nullptr ? subFundamentalParam->load() : 0.0f);
+
+    // Auto Glue's share is re-timed with the control ramp on a rate change, so a
+    // rate switch cannot leave it stepping at the old rate's pace.
+    glueShareSmoothed.reset (sampleRate, controlRampSeconds);
+    glueShareSmoothed.setCurrentAndTargetValue (glueOnParam == nullptr || glueOnParam->load() >= 0.5f
+                                                   ? 1.0f : 0.0f);
 
     // A rate change invalidates any switch in progress, so the countdown is cleared and
     // the next block re-seeds activeTapeType instead of treating the new rate as a
