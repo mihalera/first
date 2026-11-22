@@ -563,6 +563,12 @@ int main()
         editor->setSize (size.width, size.height);
         pumpMessages (200);
 
+        //  The caption the panel opens on, stated rather than inherited: the timer is
+        //  the panel's only writer and it returns while the editor is not on a desktop,
+        //  so a render taken here would otherwise depend on what the constructor
+        //  happened to leave in the label.
+        probe.showCaption (xlat ("STEREO / REAL TIME"));
+
         std::printf ("\n%s %dx%d  badge shown %d  text \"%s\"\n", size.name, editor->getWidth(),
                      editor->getHeight(), static_cast<int> (probe.badgeShown()),
                      probe.caption().toRawUTF8());

@@ -19,13 +19,14 @@
 # plugin has to compile, so this is minutes rather than seconds: CI runs it in the
 # job that already builds the plugin for the DSP harnesses.
 set -euo pipefail
+# The shared preamble for the repository root, the compiler and the build
+# directory rules every harness under tests/ uses - see tests/lib/harness.sh.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
-HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "${HERE}/../.." && pwd)"
-BUILD="${J37_TESTS_BUILD_DIR:-${ROOT}/build-tests}"
+BUILD="${J37_TESTS_BUILD_DIR:-${REPO}/build-tests}"
 
 if [ ! -f "${BUILD}/CMakeCache.txt" ]; then
-    cmake -S "${ROOT}" -B "${BUILD}" -DCMAKE_BUILD_TYPE=Release -DJ37_BUILD_TESTS=ON
+    cmake -S "${REPO}" -B "${BUILD}" -DCMAKE_BUILD_TYPE=Release -DJ37_BUILD_TESTS=ON
 fi
 
 cmake --build "${BUILD}" --target j37_header_render_test --parallel "${J37_TEST_JOBS:-2}"

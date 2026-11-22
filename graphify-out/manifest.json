@@ -3161,15 +3161,15 @@
     "semantic_hash": ""
   },
   "tests/header_render.cpp": {
-    "mtime": 1795375029.943686,
-    "seen": 1795375070.289056,
-    "ast_hash": "18c3fff43262fe8344b36639b4357cc6",
+    "mtime": 1795375488.2878203,
+    "seen": 1795375930.5893176,
+    "ast_hash": "74cc237bc4cffbc157b2a4a59dde0cad",
     "semantic_hash": ""
   },
   "tests/layout/render.sh": {
-    "mtime": 1795374772.042528,
-    "seen": 1795375070.2890952,
-    "ast_hash": "a9e54aff55452c078560ba45998f7b37",
+    "mtime": 1795375501.9475436,
+    "seen": 1795375930.5893528,
+    "ast_hash": "e5a7f15229b68ac7c1a41643cd4e860e",
     "semantic_hash": ""
   }
 }
