@@ -701,6 +701,17 @@ jobs:
           #  in a local terminal.
           ctest --test-dir build-tests -C Release -V -R parameter_audio --timeout 1800
 
+      #  The header's state badge measured on the PIXELS: the real editor painted
+      #  into a juce::Image at three window widths, with the plate this replaced,
+      #  a pill wider than the sign and a clipped glyph all refused as negative
+      #  controls. It links the same `first` target this job has already built, and
+      #  the log is scanned for warnings like every other build step here.
+      - name: Build and run the header render test
+        run: |
+          set -o pipefail
+          bash tests/layout/render.sh 2>&1 | tee "$RUNNER_TEMP/header-render.log"
+          python3 tests/lib/check_compiler_warnings.py "$RUNNER_TEMP/header-render.log"
+
       #  The job's last step, so the numbers cover everything it compiled, and
       #  the counters were zeroed before the build: these are this job's own.
       - name: Report the compiler cache position

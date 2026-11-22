@@ -1,0 +1,702 @@
+/*  ============================================================================
+    The header's offscreen render: what the panel actually puts on the pixels.
+
+    WHY THIS EXISTS. The machine-state badge - the lamp and the words STEREO /
+    REAL TIME, or BYPASSED / DRY - has been wrong on screen three times while every
+    geometric harness was green: a pill wider than the header, a pill a third of the
+    header wide with the caption pushed into it, and a caption on a plate bigger than
+    the caption. tests/layout/deck_dust_test.cpp measures the numbers those reports
+    were about - the badge is the words plus the lamp's reach - and numbers were never
+    the whole story: "the sign is crooked" is a claim about the rendering.
+
+    So this harness renders. JUCE paints a component into a juce::Image through an
+    ordinary Graphics with no window and no display, which is why the check can be an
+    ordinary test binary: the editor is built the way a host builds it, its whole
+    surface is painted into an image at three real window widths, and every claim
+    below is made against the pixels that came out. There is no new UI framework here
+    and no second implementation of the header to drift from the first.
+
+    THE ONE THING THAT MAKES "NO PLATE" A PIXEL FACT. The header has a gradient, a
+    grain layer and a live shimmer, so "compare it with the panel colour" is a
+    guess with a tolerance. Instead the harness paints the SAME editor a second time
+    in the same frame with the caption collapsed to nothing (Probe::collapseCaption)
+    and subtracts: every pixel of the header's second row that changes between the
+    two renders is a pixel the badge drew. The claim is that those pixels are the
+    lamp's disc and bloom and the caption's own glyphs - and nothing else, at zero
+    tolerance, anywhere in the row. A plate behind the words changes thousands of
+    pixels that are neither; so does a pill wider than the sign.
+
+    The claims, per width, on the main page (and the badge's ABSENCE on SETTINGS):
+
+      plate  nothing is drawn in the badge's row but the lamp and the glyphs. Every
+             pixel that differs between the two renders is inside the glyph ink or
+             inside the lamp's disc and bloom - so there is no plate, no pill and no
+             shadow, neither around the words nor in the gaps between them.
+      fit    the caption's ink is inside its box on every side, so no glyph is
+             clipped by the edge the words are drawn against, and the ink is tall
+             enough to be glyphs rather than a smear.
+      lamp   the lamp's disc is drawn and the gap between it and the first glyph is
+             empty: the lamp does not sit on the words.
+      row    the lamp starts after LEVELS ON/OFF ends and the badge ends inside the
+             header, so the second row is shared rather than overdrawn.
+      state  BYPASSED / DRY and STEREO / REAL TIME give the same lamp pixel and boxes
+             measured from their own words, and switching back restores the first
+             state's box exactly - no leftover of the previous width.
+
+    Every claim has a negative control at the foot of this file: the same analysis is
+    run against an image this harness deliberately damages - the plate painted back
+    behind the words, a pill wider than the sign, a glyph clipped by the box, the lamp
+    moved onto the first letter, the badge widened over LEVELS, the previous state's
+    width left behind - and each control must FAIL the claim it targets. A check that
+    cannot fail is not a check, and these are the reports the user actually made.
+
+    Reads the panel through the friend declaration in PluginEditor.h
+    (`J37HeaderRenderProbe`): the badge's box, the LEVELS switch, the caption's own
+    text and the page on screen are facts the panel already uses, and a render test
+    that re-derived them could agree with itself while disagreeing with the paint
+    routine it is supposed to be checking.
+   ============================================================================ */
+
+#include <juce_gui_basics/juce_gui_basics.h>
+
+#include "GUI/PanelTabs.h"
+#include "PluginEditor.h"
+#include "PluginProcessor.h"
+
+#include <cstdio>
+#include <vector>
+
+//==============================================================================
+/*  The panel's own members, through the friend declaration in PluginEditor.h.
+
+    Global scope on purpose: that is where the friend declaration names it, and the
+    helpers below only alias it.
+*/
+struct J37HeaderRenderProbe
+{
+    explicit J37HeaderRenderProbe (FirstAudioProcessorEditor& e) : editor (e) {}
+
+    juce::Rectangle<int> badge() const { return editor.statusBadgeBounds(); }
+    juce::Rectangle<int> levels() const { return editor.levelsButton.getBounds(); }
+    juce::Rectangle<int> header() const { return editor.getEditorLayout().header; }
+    const j37panel::UiPalette& palette() const { return j37panel::paletteFor (editor.darkTheme); }
+    bool badgeShown() const { return editor.statusLabel.isVisible(); }
+    juce::String caption() const { return editor.statusLabel.getText(); }
+    int tab() const { return editor.currentTab; }
+    void openPage (int page) { editor.setCurrentTab (page); }
+
+    /**  The caption, through the two calls the panel's timer makes for it. The timer
+        itself cannot be used here: it returns immediately unless the editor is on a
+        desktop (`isShowing()`), and this harness deliberately has no window. These
+        are the same two lines the timer runs - set the words, re-measure the badge -
+        so the harness cannot produce a box the panel would not. */
+    void showCaption (const juce::String& text)
+    {
+        editor.statusLabel.setText (text, juce::dontSendNotification);
+        editor.placeStatusBadge();
+    }
+
+    /**  The caption collapsed to nothing, for the second render: the same frame with
+        no badge in it. Its text is left alone, so a later placeStatusBadge() puts the
+        badge back exactly where it was. */
+    void collapseCaption() { editor.statusLabel.setBounds (0, 0, 0, 0); }
+    void restoreCaption() { editor.placeStatusBadge(); }
+
+    FirstAudioProcessorEditor& editor;
+};
+
+//==============================================================================
+namespace
+{
+
+using Probe = J37HeaderRenderProbe;
+
+int failures = 0;
+int checks = 0;
+
+void expect (bool ok, const juce::String& what)
+{
+    ++checks;
+
+    if (! ok)
+    {
+        ++failures;
+        std::printf ("FAIL  %s\n", what.toRawUTF8());
+    }
+}
+
+juce::Colour pixel (const juce::Image& image, int x, int y)
+{
+    if (! image.getBounds().contains (x, y))
+        return {};
+
+    return image.getPixelAt (x, y);
+}
+
+int luma (juce::Colour c) noexcept
+{
+    return (c.getRed() * 299 + c.getGreen() * 587 + c.getBlue() * 114) / 1000;
+}
+
+int levelDifference (juce::Colour a, juce::Colour b) noexcept
+{
+    return juce::jmax (std::abs (a.getRed() - b.getRed()),
+                       std::abs (a.getGreen() - b.getGreen()),
+                       std::abs (a.getBlue() - b.getBlue()));
+}
+
+//==============================================================================
+/*  One rendered state of the panel: the image plus everything the claims need to
+    name a rectangle in it. */
+struct Shot
+{
+    juce::Image image;
+    juce::Rectangle<int> header;
+    juce::Rectangle<int> badge;
+    juce::Rectangle<int> caption;
+    juce::Rectangle<int> levels;
+    juce::String text;
+    bool shown = false;
+};
+
+juce::Image paint (juce::Component& editor)
+{
+    juce::Image image (juce::Image::ARGB, juce::jmax (1, editor.getWidth()),
+                       juce::jmax (1, editor.getHeight()), true);
+
+    juce::Graphics g (image);
+    editor.paintEntireComponent (g, true);
+
+    return image;
+}
+
+Shot takeShot (juce::Component& editor, const Probe& probe)
+{
+    Shot shot;
+    shot.image = paint (editor);
+    shot.header = probe.header();
+    shot.levels = probe.levels();
+    shot.badge = probe.badge();
+    shot.text = probe.caption();
+    shot.shown = probe.badgeShown() && ! shot.badge.isEmpty();
+
+    if (shot.shown)
+        shot.caption = shot.badge.withTrimmedLeft (j37panel::badge::lampReach);
+
+    return shot;
+}
+
+/** The badge's row: LEVELS ON/OFF ends on its left, the header's right edge on its
+    right, and it is two pixels taller than the badge on each side, so a plate taller
+    than the words cannot hide outside it. */
+juce::Rectangle<int> badgeRow (const Shot& shot)
+{
+    const auto left = shot.levels.getRight() + 1;
+    const auto right = shot.header.getRight() - 6;
+
+    return {left, shot.badge.getY() - 2, juce::jmax (0, right - left), shot.badge.getHeight() + 4};
+}
+
+/** The caption's ink: pixels whose luminance is far from the box's dominant one. The
+    box's own two levels are measured from the box, so this works on a light panel and
+    on a dark one without a palette. */
+juce::Rectangle<int> inkBounds (const juce::Image& image, juce::Rectangle<int> box)
+{
+    std::vector<int> histogram (256, 0);
+
+    for (int y = box.getY(); y < box.getBottom(); ++y)
+        for (int x = box.getX(); x < box.getRight(); ++x)
+            ++histogram[static_cast<std::size_t> (luma (pixel (image, x, y)))];
+
+    int background = 0;
+    for (int i = 1; i < 256; ++i)
+        if (histogram[static_cast<std::size_t> (i)]
+            > histogram[static_cast<std::size_t> (background)])
+            background = i;
+
+    //  `far` is a macro in the Windows headers, so the other end of the box's
+    //  contrast is named for what it is.
+    int extreme = background;
+    int offset = 0;
+    for (int i = 0; i < 256; ++i)
+        if (std::abs (i - background) > offset && histogram[static_cast<std::size_t> (i)] > 0)
+        {
+            offset = std::abs (i - background);
+            extreme = i;
+        }
+
+    const auto threshold = juce::jmax (12, std::abs (extreme - background) / 3);
+
+    juce::Rectangle<int> bounds;
+    for (int y = box.getY(); y < box.getBottom(); ++y)
+        for (int x = box.getX(); x < box.getRight(); ++x)
+            if (std::abs (luma (pixel (image, x, y)) - background) > threshold)
+                bounds = bounds.isEmpty()
+                             ? juce::Rectangle<int> (x, y, 1, 1)
+                             : bounds.getUnion (juce::Rectangle<int> (x, y, 1, 1));
+
+    return bounds;
+}
+
+int inkCount (const juce::Image& image, juce::Rectangle<int> box, int background)
+{
+    int count = 0;
+
+    for (int y = box.getY(); y < box.getBottom(); ++y)
+        for (int x = box.getX(); x < box.getRight(); ++x)
+            if (std::abs (luma (pixel (image, x, y)) - background) > 40)
+                ++count;
+
+    return count;
+}
+
+//==============================================================================
+/*  The claims, each one a predicate so the negative controls can ask the same
+    question of a damaged image. */
+
+/** The badge's box in the form StatusBadge.h speaks: the shipped helpers below take
+    this, so the test does not re-do the lamp's arithmetic. */
+j37panel::badge::Box badgeBox (const Shot& shot)
+{
+    return {shot.badge.getX(), shot.badge.getY(), shot.badge.getWidth(), shot.badge.getHeight()};
+}
+
+/** Where the lamp is allowed to be: its disc and the bloom around it, with a pixel
+    of air for the anti-aliasing on the ellipse's edge. lampReach is what the badge's
+    width already reserves for exactly this. */
+juce::Rectangle<int> lampBox (const Shot& shot)
+{
+    const auto radius = j37panel::badge::lampRadius + 2 * j37panel::badge::lampGlow + 1;
+    const auto centreX = j37panel::badge::lampCentreX (badgeBox (shot));
+
+    return {centreX - radius, shot.badge.getCentreY() - radius, radius * 2, radius * 2};
+}
+
+/** Everything the badge is allowed to paint in its row: its glyphs and its lamp. */
+juce::Rectangle<int> drawnByBadge (const Shot& shot)
+{
+    return inkBounds (shot.image, shot.caption).expanded (1).getUnion (lampBox (shot).expanded (1));
+}
+
+/**  Plate: the badge's row contains the lamp and the glyphs and NOTHING else.
+
+     `bare` is the same editor painted in the same frame with the caption collapsed,
+     so every pixel that differs between the two is a pixel the badge put there. Each
+     of them has to be inside the glyph ink or inside the lamp - a plate behind the
+     words would change the whole row, and the gaps between the letters would be the
+     first thing to give it away.
+
+     `allowed` comes from the undamaged render: the negative controls pass the same
+     rectangle, so a plate that covers the glyphs is measured against where the glyphs
+     were. Returns the number of pixels drawn outside those two places. */
+int strayDrawing (const Shot& shot, const juce::Image& bare, juce::Rectangle<int> allowed)
+{
+    if (! shot.shown)
+        return -1;
+
+    int drawn = 0;
+    int stray = 0;
+    juce::Rectangle<int> where;
+
+    for (int y = badgeRow (shot).getY(); y < badgeRow (shot).getBottom(); ++y)
+        for (int x = badgeRow (shot).getX(); x < badgeRow (shot).getRight(); ++x)
+        {
+            if (levelDifference (pixel (shot.image, x, y), pixel (bare, x, y)) == 0)
+                continue;
+
+            ++drawn;
+
+            if (allowed.contains (x, y))
+                continue;
+
+            ++stray;
+            where = where.isEmpty() ? juce::Rectangle<int> (x, y, 1, 1)
+                                    : where.getUnion (juce::Rectangle<int> (x, y, 1, 1));
+        }
+
+    std::printf ("      the badge drew %d px in its row: %d of them outside the glyphs and the "
+                 "lamp",
+                 drawn, stray);
+
+    if (stray > 0)
+        std::printf (", from %d,%d to %d,%d", where.getX(), where.getY(), where.getRight(),
+                     where.getBottom());
+
+    std::printf ("\n");
+
+    return stray;
+}
+
+/** Fit: glyphs on the pixels, inside the box, with air on every side. A caption too
+    wide for its box is squeezed by drawFittedText and its ink runs into the right
+    edge - which is what "the sign is cut off" looked like. The left edge is not
+    required to have air: the pen starts there and a glyph's left bearing is allowed
+    to be zero. */
+bool glyphsFit (const Shot& shot)
+{
+    if (! shot.shown || shot.caption.isEmpty())
+        return false;
+
+    const auto ink = inkBounds (shot.image, shot.caption);
+
+    if (ink.isEmpty() || ink.getWidth() <= 8 || ink.getHeight() < 5)
+        return false;
+
+    return ink.getX() >= shot.caption.getX() && ink.getRight() < shot.caption.getRight()
+        && ink.getY() > shot.caption.getY() && ink.getBottom() < shot.caption.getBottom();
+}
+
+/** The box hugs this state's own words: the gap between the measured text and the ink
+    is the pixel drawFittedText keeps for the last bearing, never a leftover width
+    from the caption before it. */
+bool captionIsMeasuredFromItsWords (const Shot& shot)
+{
+    if (! shot.shown || shot.caption.isEmpty())
+        return false;
+
+    const auto ink = inkBounds (shot.image, shot.caption);
+
+    return ! ink.isEmpty() && shot.caption.getWidth() - ink.getWidth() <= 4;
+}
+
+/** Lamp: a disc on the panel, and an empty gap between it and the first glyph. */
+bool lampClearOfWords (const Shot& shot)
+{
+    if (! shot.shown)
+        return false;
+
+    const auto centre = lampBox (shot).getCentre();
+    const auto panel = pixel (shot.image, shot.header.getRight() - 4, centre.y);
+
+    if (levelDifference (pixel (shot.image, centre.x, centre.y), panel) <= 24)
+        return false;
+
+    const auto ink = inkBounds (shot.image, shot.caption);
+
+    if (ink.isEmpty())
+        return false;
+
+    const auto discRight = j37panel::badge::lampDiscRight (badgeBox (shot));
+    const auto gap = juce::Rectangle<int> (discRight, shot.badge.getY(), ink.getX() - discRight,
+                                           shot.badge.getHeight());
+
+    return ! gap.isEmpty() && inkCount (shot.image, gap, luma (panel)) == 0;
+}
+
+/** Row: after LEVELS, and inside the header. */
+bool badgeIsAfterLevels (const Shot& shot)
+{
+    if (! shot.shown)
+        return false;
+
+    const auto lampLeft = shot.badge.getX() + j37panel::badge::lampGlow;
+
+    return lampLeft > shot.levels.getRight() && shot.badge.getRight() <= shot.header.getRight() - 6;
+}
+
+//==============================================================================
+/** Everything a rendered badge has to be, given its own text and box. */
+void checkBadge (const Shot& shot, const juce::Image& bare, const juce::String& where)
+{
+    const auto name = [&where] (const char* claim) { return juce::String (where) + ": " + claim; };
+
+    expect (shot.shown, name ("the badge is on screen on the main page"));
+
+    if (! shot.shown || shot.caption.isEmpty())
+        return;
+
+    const auto ink = inkBounds (shot.image, shot.caption);
+
+    std::printf ("      %s: badge %dx%d at %d,%d, caption %dx%d, ink %dx%d at %d,%d\n",
+                 where.toRawUTF8(), shot.badge.getWidth(), shot.badge.getHeight(),
+                 shot.badge.getX(), shot.badge.getY(), shot.caption.getWidth(),
+                 shot.caption.getHeight(), ink.getWidth(), ink.getHeight(), ink.getX(),
+                 ink.getY());
+
+    //  The caption is the badge, less the lamp's reach: StatusBadge.h is the one
+    //  definition of that reach and the panel paints with the same header.
+    expect (shot.badge.getWidth() == shot.caption.getWidth() + j37panel::badge::lampReach,
+            name ("the badge is the caption plus the lamp's reach and nothing else"));
+
+    expect (glyphsFit (shot), name ("every glyph is inside its box, none clipped"));
+    expect (captionIsMeasuredFromItsWords (shot),
+            name ("the caption box is measured from this state's own words"));
+    expect (lampClearOfWords (shot), name ("the lamp does not overlap the first glyph"));
+    expect (badgeIsAfterLevels (shot),
+            name ("the badge starts after LEVELS ON/OFF and ends inside the header"));
+    expect (strayDrawing (shot, bare, drawnByBadge (shot)) == 0,
+            name ("nothing is drawn in the badge's row but the lamp and the glyphs"));
+}
+
+//==============================================================================
+/*  Damage, exactly as the panel looked when the user reported it: the plate this
+    replaced was `palette.raised.darker (0.16f)` filled as a rounded rectangle over the
+    whole of the badge's row - once a pill a third of the header wide. */
+void paintPlate (Shot& shot, const j37panel::UiPalette& palette, int extraWidth)
+{
+    juce::Graphics g (shot.image);
+    g.setColour (palette.raised.darker (0.16f));
+
+    const auto plate = shot.badge.withWidth (shot.badge.getWidth() + extraWidth);
+    g.fillRoundedRectangle (plate.toFloat(), 4.0f);
+}
+
+/*  Damage: the caption's last glyph pushed into the box's right edge - what a caption
+    too wide for its box looks like after drawFittedText squeezes it. */
+void clipCaption (Shot& shot)
+{
+    juce::Graphics g (shot.image);
+    g.setColour (juce::Colours::white);
+    g.fillRect (juce::Rectangle<int> (shot.caption.getRight() - 1, shot.caption.getY(), 1,
+                                      shot.caption.getHeight()));
+}
+
+/*  Damage: the lamp drawn on top of the first letter. */
+void lampOntoWords (Shot& shot)
+{
+    const auto ink = inkBounds (shot.image, shot.caption);
+
+    juce::Graphics g (shot.image);
+    g.setColour (juce::Colours::white);
+    g.fillEllipse (static_cast<float> (ink.getX()) - 3.0f,
+                   static_cast<float> (shot.badge.getCentreY()) - 3.0f, 7.0f, 7.0f);
+}
+
+/*  The panel's timer, without a window: the editor is never on the desktop here, so
+    nothing pumps the message queue - and `runDispatchLoopUntil` is compiled out of a
+    JUCE build without modal loops. Sleeping and then dispatching the timers that came
+    due is what the message queue would have done, and it is enough for the layout,
+    which resized() has already done. */
+void pumpMessages (int milliseconds)
+{
+    for (int elapsed = 0; elapsed < milliseconds; elapsed += 16)
+    {
+        juce::Thread::sleep (16);
+        juce::Timer::callPendingTimersSynchronously();
+    }
+}
+
+struct WidthUnderTest
+{
+    const char* name;
+    int width;
+    int height;
+};
+
+} // namespace
+
+//==============================================================================
+int main()
+{
+    juce::ScopedJuceInitialiser_GUI juceInitialiser;
+
+    FirstAudioProcessor processor;
+    processor.prepareToPlay (48000.0, 512);
+
+    std::unique_ptr<juce::AudioProcessorEditor> owned (processor.createEditor());
+
+    if (owned == nullptr)
+    {
+        std::printf ("FAIL  the processor built no editor\n");
+        return 1;
+    }
+
+    auto* editor = dynamic_cast<FirstAudioProcessorEditor*> (owned.get());
+
+    if (editor == nullptr)
+    {
+        std::printf ("FAIL  the processor's editor is not the panel\n");
+        return 1;
+    }
+
+    Probe probe (*editor);
+
+    /*  The panel's live shimmer: dots whose positions follow a clock that steps eight
+        times a second (EditorPaint.cpp), drawn over the whole surface. Two paints that
+        straddle a step differ in those dots and in nothing else, so a pixel-for-pixel
+        subtraction between them would be measuring the clock. The two renders are
+        therefore taken inside ONE step, and remade if the boundary fell between them. */
+    const auto shimmerStep = [] {
+        return static_cast<long long> (
+            std::floor (juce::Time::getMillisecondCounterHiRes() * 0.001 * 8.0));
+    };
+
+    /*  One state of the panel, rendered twice: with the badge, and in the same frame
+        with the caption collapsed. Both images come from the same editor, the same
+        size and the same shimmer step, so the panel's gradient, grain and texture
+        cancel out exactly and what is left is the badge. */
+    const auto renderState = [&]() {
+        for (int attempt = 0; attempt < 200; ++attempt)
+        {
+            const auto step = shimmerStep();
+            const auto withBadge = takeShot (*editor, probe);
+
+            probe.collapseCaption();
+            const auto bare = paint (*editor);
+            probe.restoreCaption();
+
+            if (shimmerStep() == step)
+                return std::pair<Shot, juce::Image> {withBadge, bare};
+
+            //  The step moved between the two paints: let it move again to a fresh
+            //  one and start over, rather than compare two different moments.
+            while (shimmerStep() == step)
+                juce::Thread::sleep (2);
+        }
+
+        std::printf ("FAIL  the two renders would not land in one shimmer step\n");
+        ++failures;
+
+        return std::pair<Shot, juce::Image> {takeShot (*editor, probe), paint (*editor)};
+    };
+
+    //  The panel's minimum, the size it opens at, and a wide window: the badge sits in
+    //  one row of all three, and the row is what the user reported on.
+    const WidthUnderTest widths[] = {{"minimum", 780, 664}, {"typical", 1060, 916},
+                                     {"wide", 1440, 1000}};
+
+    Shot lastShot;
+    juce::Image lastBare;
+
+    for (const auto& size : widths)
+    {
+        editor->setSize (size.width, size.height);
+        pumpMessages (200);
+
+        std::printf ("\n%s %dx%d  badge shown %d  text \"%s\"\n", size.name, editor->getWidth(),
+                     editor->getHeight(), static_cast<int> (probe.badgeShown()),
+                     probe.caption().toRawUTF8());
+
+        auto [shot, bare] = renderState();
+
+        std::printf ("      levels %d,%d %dx%d  header %dx%d  row %d,%d %dx%d\n",
+                     shot.levels.getX(), shot.levels.getY(), shot.levels.getWidth(),
+                     shot.levels.getHeight(), shot.header.getWidth(), shot.header.getHeight(),
+                     badgeRow (shot).getX(), badgeRow (shot).getY(), badgeRow (shot).getWidth(),
+                     badgeRow (shot).getHeight());
+
+        checkBadge (shot, bare, size.name);
+
+        lastShot = shot;
+        lastBare = bare;
+    }
+
+    //  The two machine states, at the width the panel opens at. The words are the
+    //  panel's own two captions from its own translation table, and they go through the
+    //  timer's own two calls (see Probe::showCaption).
+    editor->setSize (1060, 916);
+    pumpMessages (200);
+
+    const auto realTimeText = xlat ("STEREO / REAL TIME");
+    const auto bypassText = xlat ("BYPASSED / DRY");
+
+    probe.showCaption (realTimeText);
+
+    const auto [realTime, realTimeBare] = renderState();
+    checkBadge (realTime, realTimeBare, "state: real time");
+
+    probe.showCaption (bypassText);
+
+    const auto [bypassed, bypassedBare] = renderState();
+
+    std::printf ("\nstate: bypass  text \"%s\"  badge %d,%d %dx%d\n", bypassed.text.toRawUTF8(),
+                 bypassed.badge.getX(), bypassed.badge.getY(), bypassed.badge.getWidth(),
+                 bypassed.badge.getHeight());
+
+    expect (bypassed.text != realTime.text, "state: the caption follows the machine");
+    expect (bypassed.caption.getWidth() != realTime.caption.getWidth(),
+            "state: the two captions are different widths, so a leftover would show");
+    expect (bypassed.badge.getX() == realTime.badge.getX()
+                && bypassed.badge.getY() == realTime.badge.getY(),
+            "state: both states put the lamp on the same pixel");
+
+    checkBadge (bypassed, bypassedBare, "state: bypass");
+
+    probe.showCaption (realTimeText);
+
+    const auto [returned, returnedBare] = renderState();
+
+    expect (returned.badge == realTime.badge,
+            "state: switching back restores the first state's box, to the pixel");
+
+    checkBadge (returned, returnedBare, "state: back to real time");
+
+    //  SETTINGS: the one page the badge is hidden on, because its row belongs to the
+    //  language selector there. The claim is that absence, and that the row is not left
+    //  blank by it: the selector paints where the badge would have been.
+    probe.openPage (j37panel::index_of_tab_named ("SETTINGS"));
+    pumpMessages (200);
+
+    {
+        const auto settings = takeShot (*editor, probe);
+
+        std::printf ("\nsettings  badge shown %d  text \"%s\"\n",
+                     static_cast<int> (probe.badgeShown()), probe.caption().toRawUTF8());
+
+        expect (probe.tab() == j37panel::index_of_tab_named ("SETTINGS"),
+                "settings: the page opened");
+        expect (! probe.badgeShown(),
+                "settings: the badge is hidden where the row is the language selector");
+
+        const auto row = juce::Rectangle<int> (settings.levels.getRight(), settings.levels.getY(),
+                                               settings.header.getRight()
+                                                   - settings.levels.getRight(),
+                                               settings.levels.getHeight());
+        expect (inkCount (settings.image, row,
+                          luma (pixel (settings.image, settings.header.getRight() - 4,
+                                       row.getCentreY())))
+                    > 0,
+                "settings: the row is the language selector, not an empty gap");
+    }
+
+    //==========================================================================
+    //  The negative controls. Each one damages a real render the way the panel
+    //  looked when the report was made, and its claim has to REFUSE it.
+    //==========================================================================
+    std::printf ("\nnegative controls\n");
+
+    {
+        auto damaged = lastShot;
+        paintPlate (damaged, probe.palette(), 0);
+        expect (strayDrawing (damaged, lastBare, drawnByBadge (lastShot)) > 0,
+                "control: a plate behind the words is refused by the plate claim");
+    }
+
+    {
+        auto damaged = lastShot;
+        paintPlate (damaged, probe.palette(), 40);
+        expect (strayDrawing (damaged, lastBare, drawnByBadge (lastShot)) > 0,
+                "control: a pill wider than the sign is refused by the plate claim");
+    }
+
+    {
+        auto damaged = lastShot;
+        clipCaption (damaged);
+        expect (! glyphsFit (damaged), "control: a clipped glyph is refused by the fit claim");
+    }
+
+    {
+        auto damaged = lastShot;
+        lampOntoWords (damaged);
+        expect (! lampClearOfWords (damaged),
+                "control: a lamp on the first letter is refused by the lamp claim");
+    }
+
+    {
+        auto damaged = lastShot;
+        damaged.badge = damaged.badge.withX (damaged.levels.getRight() - 10);
+        expect (! badgeIsAfterLevels (damaged),
+                "control: a badge over LEVELS is refused by the row claim");
+    }
+
+    {
+        auto damaged = lastShot;
+        damaged.badge = damaged.badge.withWidth (damaged.badge.getWidth() + 40);
+        expect (! captionIsMeasuredFromItsWords (damaged),
+                "control: a leftover width is refused by the measurement claim");
+    }
+
+    std::printf ("\nHEADER RENDER  %d checks, %d failures\n", checks, failures);
+
+    return failures == 0 ? 0 : 1;
+}

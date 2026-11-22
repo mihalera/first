@@ -108,3 +108,12 @@ add_test(NAME processor_boundaries COMMAND j37_processor_boundary_tests)
 #  driven through the real processor's processBlock the way a host calls it.
 j37_add_harness_target(j37_parameter_audio_tests parameter_audio.cpp)
 add_test(NAME parameter_audio COMMAND j37_parameter_audio_tests)
+
+#  The header render harness: the real editor painted into a juce::Image at real
+#  window widths, so the state badge's claims - no plate behind the words, no
+#  clipped glyph, no lamp on the first letter, no second row shared with LEVELS -
+#  are made against the pixels that came out rather than against the numbers the
+#  paint routine was handed. It needs no display and no window: JUCE paints a
+#  component into an image through an ordinary Graphics.
+j37_add_harness_target(j37_header_render_test header_render.cpp)
+add_test(NAME header_render COMMAND j37_header_render_test)
