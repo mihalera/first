@@ -91,6 +91,50 @@ places where a drawing would replace arithmetic that is currently doing its best
 | `tape_stock_swatches.png` | 1024 × 128 (13 × 78) | A colour chip per tape stock, for the TAPE list's rows: the twelve stocks plus OFF. Cheap to draw, and it turns a list of names into a shelf. |
 | `level_scale.png` | 512 × 128 | The LEVELS card's dial face at high resolution: a printed scale with dB marks and a needle rest. The card is the most-read instrument on the panel. |
 
+## Implementation plan for a new asset slot
+
+The five slots above are the only assets currently planned beyond the 15
+filled ones. Adding one is a documentation-first, code-second change: the slot
+table, the manifest and the PNG must agree before any drawing code changes.
+
+1. Choose the slot: lowercase `snake_case` name, `name.png` file, exact
+   `width x height`, alpha requirement, and the draw site. Keep the size in the
+   header; do not invent a new size in the manifest.
+2. Add one row to `Source/GUI/PanelAssetSlots.h`:
+   `{ "name", "name.png", "name_png", width, height, "purpose" }`.
+   The symbol is always the file name with `.` replaced by `_`; `check_assets`
+   rejects any other form.
+3. Add the matching entry to `Assets/manifest.json` (`name`, `file`, `width`,
+   `height`, `used_by`, `licence`, `source`, `author`). `licence`, `source` and
+   `author` must be non-empty; CC0/public domain only.
+4. If the slot is a sprite atlas, add its grid and item list to
+   `Assets/asset_catalog.json` and extend `Assets/generate_asset_pack.py` so the
+   order is derived from the project's own tables (`controlSpecs`,
+   `FACTORY_PRESET_FILES`, the model name arrays). Standalone illustrations such
+   as `signal_path.png` need only the catalog's `standalone` entry.
+5. Drop the PNG into `Assets/` at the exact dimensions with an alpha channel.
+   CMake globs `Assets/*.png` into the binary data target (`CONFIGURE_DEPENDS`),
+   so no CMake edit is needed.
+6. Wire the draw site with `j37panel::assets::cachedImage("name_png")` and keep
+   the existing drawn fallback when it is invalid. Likely anchors:
+   - `knob_caps.png` - knob rendering in `Source/GUI/J37LookAndFeel.cpp` /
+     `Source/GUI/EditorPaint.cpp`;
+   - `deck_plate.png` - `rebuildPanelTextureLayers()` in `Source/GUI/EditorPaint.cpp`;
+   - `rack_pedals.png` - the RACK pages in `Source/GUI/EditorSetup.cpp`;
+   - `tape_stock_swatches.png` - the tape stock selectors in `Source/GUI/EditorSetup.cpp`;
+   - `level_scale.png` - the LEVELS card in `Source/GUI/EditorMeters.cpp`.
+7. Verify:
+   ```sh
+   python tests/assets/check_assets.py
+   cmake --build build --config Release --target <plugin target>
+   ```
+   `check_assets` must print `ASSET CHECK PASSED`; CI runs it on every pull
+   request. A build with an empty `Assets/` directory must still behave exactly
+   as before.
+
+No proposed slot is implemented yet; each one needs its own row, file and draw
+site before it can be considered done.
+
 ## What to draw first, in one sentence
 
 Draw `brand_mark` and `window_icon` (the two Windows shows without the plugin
