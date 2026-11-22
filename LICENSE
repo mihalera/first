@@ -51,7 +51,7 @@ than MIT in places. What you have to know before shipping a binary:
 - **`rack_dsp`** comes from VCVRack/Rack, which is GPL-3.0-or-later with a
   plugin exception for plugins distributed free of charge.
 
-`THIRD_PARTY_NOTICES.md` lists each component, its pin and its licence, and
+`docs/THIRD_PARTY_NOTICES.md` lists each component, its pin and its licence, and
 `README.md` section
 [Licensing, and what ships in a binary](README.md#licensing-and-what-ships-in-a-binary)
 explains what that means for a distributed build. Check both before you publish
