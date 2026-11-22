@@ -125,6 +125,11 @@ mkdir -p "${BUILD}/corpus"
 #                        script returns. A run that trips it FAILS the gate with
 #                        its log rather than hanging the job silently.
 CLANG="$(command -v clang++ || true)"
+# Gate this compiler through the same warning scanner as CXX/CC, so a warning
+# in the fuzzed source cannot slip past the harness's zero-warning contract.
+if [ -n "${CLANG}" ] && [ -n "${j37_warning_gate_log:-}" ]; then
+    CLANG="$(j37_wrap_compiler "${CLANG}" clang++)"
+fi
 SECONDS_TO_FUZZ="${J37_FUZZ_SECONDS:-20}"
 FUZZ_COVERAGE="${J37_FUZZ_COVERAGE:-1}"
 
