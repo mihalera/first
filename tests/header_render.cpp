@@ -26,7 +26,10 @@
     tolerance, anywhere in the row. A plate behind the words changes thousands of
     pixels that are neither; so does a pill wider than the sign.
 
-    The claims, per width, on the main page (and the badge's ABSENCE on SETTINGS):
+    The claims are made per width on the main page - and per PALETTE and per
+    TRANSLATION at the panel's minimum width, because the badge is measured from its
+    words: a longer translation is a layout case, and a different palette is different
+    ink on the same geometry. And on SETTINGS, where the badge's absence is the claim.
 
       plate  nothing is drawn in the badge's row but the lamp and the glyphs. Every
              pixel that differs between the two renders is inside the glyph ink or
@@ -82,6 +85,7 @@ struct J37HeaderRenderProbe
     const j37panel::UiPalette& palette() const { return j37panel::paletteFor (editor.darkTheme); }
     bool badgeShown() const { return editor.statusLabel.isVisible(); }
     juce::String caption() const { return editor.statusLabel.getText(); }
+    juce::Font captionFont() const { return editor.statusLabel.getFont(); }
     int tab() const { return editor.currentTab; }
     void openPage (int page) { editor.setCurrentTab (page); }
 
@@ -101,6 +105,27 @@ struct J37HeaderRenderProbe
         badge back exactly where it was. */
     void collapseCaption() { editor.statusLabel.setBounds (0, 0, 0, 0); }
     void restoreCaption() { editor.placeStatusBadge(); }
+
+    /**  A palette and a language, applied the way the panel applies them. Both are
+        live properties of the editor rather than of its construction, and the badge's
+        geometry comes from MEASURED text - so a translation is a layout case (a
+        longer caption in the same row) and a palette is different ink on the same
+        geometry. Neither writes a preference: persisting belongs to the handlers the
+        user drives, not to these two. */
+    j37panel::ThemeChoice theme() const { return editor.themeChoice; }
+
+    void useTheme (j37panel::ThemeChoice choice)
+    {
+        editor.themeChoice = choice;
+        editor.applyTheme();
+    }
+
+    void useLanguage (int languageIndex) { editor.applyLanguage (languageIndex); }
+
+    /**  The USER palette is a global the editor copies at applyTheme() time, so a
+        harness that does not set it renders whatever palette this machine's owner
+        saved. The matrix sets its own, and the run puts this one back. */
+    void useUserPalette (const j37panel::UiPalette& palette) { j37panel::userPalette = palette; }
 
     FirstAudioProcessorEditor& editor;
 };
@@ -346,17 +371,23 @@ bool glyphsFit (const Shot& shot)
         && ink.getY() > shot.caption.getY() && ink.getBottom() < shot.caption.getBottom();
 }
 
-/** The box hugs this state's own words: the gap between the measured text and the ink
-    is the pixel drawFittedText keeps for the last bearing, never a leftover width
-    from the caption before it. */
-bool captionIsMeasuredFromItsWords (const Shot& shot)
+/** The box IS the measured text: placeStatusBadge() gives the label the width the
+    panel measures for its own words, clamped to the room the row has. Comparing the
+    box with that measurement - rather than with the ink - is what makes this hold on
+    Windows and on Linux: JUCE's fitted text shrinks a caption into a box too narrow
+    for it, so a squeezed caption can still have ink that fills the box (the ink check
+    below) while the box has stopped being its words. */
+bool captionIsMeasuredFromItsWords (const Shot& shot, const juce::Font& captionFont)
 {
     if (! shot.shown || shot.caption.isEmpty())
         return false;
 
+    const auto measured = juce::roundToInt (
+        juce::GlyphArrangement::getStringWidth (captionFont, shot.text) + 1.0f);
     const auto ink = inkBounds (shot.image, shot.caption);
 
-    return ! ink.isEmpty() && shot.caption.getWidth() - ink.getWidth() <= 4;
+    return shot.caption.getWidth() == measured && ! ink.isEmpty()
+        && measured - ink.getWidth() <= 4;
 }
 
 /** Lamp: a disc on the panel, and an empty gap between it and the first glyph. */
@@ -396,7 +427,8 @@ bool badgeIsAfterLevels (const Shot& shot)
 
 //==============================================================================
 /** Everything a rendered badge has to be, given its own text and box. */
-void checkBadge (const Shot& shot, const juce::Image& bare, const juce::String& where)
+void checkBadge (const Shot& shot, const juce::Image& bare, const juce::Font& captionFont,
+                 const juce::String& where)
 {
     const auto name = [&where] (const char* claim) { return juce::String (where) + ": " + claim; };
 
@@ -419,7 +451,7 @@ void checkBadge (const Shot& shot, const juce::Image& bare, const juce::String& 
             name ("the badge is the caption plus the lamp's reach and nothing else"));
 
     expect (glyphsFit (shot), name ("every glyph is inside its box, none clipped"));
-    expect (captionIsMeasuredFromItsWords (shot),
+    expect (captionIsMeasuredFromItsWords (shot, captionFont),
             name ("the caption box is measured from this state's own words"));
     expect (lampClearOfWords (shot), name ("the lamp does not overlap the first glyph"));
     expect (badgeIsAfterLevels (shot),
@@ -483,6 +515,22 @@ struct WidthUnderTest
     int height;
 };
 
+/** A palette by the name the panel's own selector uses, for the log. */
+juce::String themeName (j37panel::ThemeChoice choice)
+{
+    switch (choice)
+    {
+        case j37panel::ThemeChoice::ivory: return "ivory";
+        case j37panel::ThemeChoice::charcoal: return "charcoal";
+        case j37panel::ThemeChoice::metal: return "metal";
+        case j37panel::ThemeChoice::darkMetal: return "darkMetal";
+        case j37panel::ThemeChoice::whiteMonster: return "whiteMonster";
+        case j37panel::ThemeChoice::user: return "user";
+    }
+
+    return "unknown";
+}
+
 } // namespace
 
 //==============================================================================
@@ -510,6 +558,16 @@ int main()
     }
 
     Probe probe (*editor);
+
+    /*  What this machine had before the run. The editor's DESTRUCTOR writes the theme
+        choice, the USER palette and its own size into the machine-wide preferences (see
+        ~FirstAudioProcessorEditor), so a harness that ends on `user` at the 780 x 664
+        floor would edit the desk it ran on. These three are put back before the editor
+        goes away. */
+    const auto originalTheme = probe.theme();
+    const auto originalWidth = editor->getWidth();
+    const auto originalHeight = editor->getHeight();
+    const auto originalUserPalette = j37panel::userPalette;
 
     /*  The panel's live shimmer: dots whose positions follow a clock that steps eight
         times a second (EditorPaint.cpp), drawn over the whole surface. Two paints that
@@ -550,6 +608,16 @@ int main()
         return std::pair<Shot, juce::Image> {takeShot (*editor, probe), paint (*editor)};
     };
 
+    /*  One caption, measured and checked: the two renders, the claims against them,
+        and the shot back for a caller that wants to compare two states. */
+    const auto shotFor = [&] (const juce::String& caption, const juce::String& where) {
+        probe.showCaption (caption);
+        auto [shot, bare] = renderState();
+        checkBadge (shot, bare, probe.captionFont(), where);
+
+        return shot;
+    };
+
     //  The panel's minimum, the size it opens at, and a wide window: the badge sits in
     //  one row of all three, and the row is what the user reported on.
     const WidthUnderTest widths[] = {{"minimum", 780, 664}, {"typical", 1060, 916},
@@ -581,7 +649,7 @@ int main()
                      badgeRow (shot).getX(), badgeRow (shot).getY(), badgeRow (shot).getWidth(),
                      badgeRow (shot).getHeight());
 
-        checkBadge (shot, bare, size.name);
+        checkBadge (shot, bare, probe.captionFont(), size.name);
 
         lastShot = shot;
         lastBare = bare;
@@ -596,14 +664,8 @@ int main()
     const auto realTimeText = xlat ("STEREO / REAL TIME");
     const auto bypassText = xlat ("BYPASSED / DRY");
 
-    probe.showCaption (realTimeText);
-
-    const auto [realTime, realTimeBare] = renderState();
-    checkBadge (realTime, realTimeBare, "state: real time");
-
-    probe.showCaption (bypassText);
-
-    const auto [bypassed, bypassedBare] = renderState();
+    const auto realTime = shotFor (realTimeText, "state: real time");
+    const auto bypassed = shotFor (bypassText, "state: bypass");
 
     std::printf ("\nstate: bypass  text \"%s\"  badge %d,%d %dx%d\n", bypassed.text.toRawUTF8(),
                  bypassed.badge.getX(), bypassed.badge.getY(), bypassed.badge.getWidth(),
@@ -616,20 +678,16 @@ int main()
                 && bypassed.badge.getY() == realTime.badge.getY(),
             "state: both states put the lamp on the same pixel");
 
-    checkBadge (bypassed, bypassedBare, "state: bypass");
-
-    probe.showCaption (realTimeText);
-
-    const auto [returned, returnedBare] = renderState();
+    const auto returned = shotFor (realTimeText, "state: back to real time");
 
     expect (returned.badge == realTime.badge,
             "state: switching back restores the first state's box, to the pixel");
 
-    checkBadge (returned, returnedBare, "state: back to real time");
-
     //  SETTINGS: the one page the badge is hidden on, because its row belongs to the
     //  language selector there. The claim is that absence, and that the row is not left
     //  blank by it: the selector paints where the badge would have been.
+    const auto mainPage = probe.tab();
+
     probe.openPage (j37panel::index_of_tab_named ("SETTINGS"));
     pumpMessages (200);
 
@@ -655,6 +713,69 @@ int main()
                 "settings: the row is the language selector, not an empty gap");
     }
 
+    //  The palette the width loop rendered in. The controls below damage THAT shot,
+    //  so their plate is drawn in the ink it already carries.
+    const j37panel::UiPalette controlPalette = probe.palette();
+
+    //==========================================================================
+    //  EVERY palette and EVERY translation, at the panel's minimum width.
+    //
+    //  The badge is measured from its words, so a translation is a LAYOUT case - the
+    //  longest caption in the tightest row - and a palette is different ink on the
+    //  same geometry. The minimum width is where a caption that no longer fits is
+    //  squeezed first, which is what the user saw as "the sign is cut off", so the
+    //  matrix runs there rather than at a size that would flatter it.
+    //==========================================================================
+    const j37panel::ThemeChoice palettes[] = {
+        j37panel::ThemeChoice::ivory,        j37panel::ThemeChoice::charcoal,
+        j37panel::ThemeChoice::metal,        j37panel::ThemeChoice::darkMetal,
+        j37panel::ThemeChoice::whiteMonster, j37panel::ThemeChoice::user};
+
+    //  Back to the page the badge lives on: SETTINGS above hid it on purpose.
+    probe.openPage (mainPage);
+    pumpMessages (50);
+
+    //  A TEST-OWNED USER palette. The real one is whatever this machine's owner saved,
+    //  and a valid but low-contrast choice would make the lamp claim measure their taste
+    //  rather than the panel's geometry. This one is light on purpose (the stock USER
+    //  default is not), with a status ink that is nothing like the ivory panel's.
+    auto testUserPalette = j37panel::paletteForTheme (j37panel::ThemeChoice::ivory);
+    testUserPalette.status = juce::Colour (0xff2f7f5f);
+    probe.useUserPalette (testUserPalette);
+
+    int matrixCases = 0;
+
+    for (const auto choice : palettes)
+        for (int language = 0; language < 2; ++language)
+        {
+            probe.useTheme (choice);
+            probe.useLanguage (language);
+            editor->setSize (780, 664);
+            pumpMessages (50);
+
+            const auto where = themeName (choice) + (language == 0 ? "/en" : "/uk");
+
+            std::printf ("\n%s  %dx%d\n", where.toRawUTF8(), editor->getWidth(),
+                         editor->getHeight());
+
+            const auto realTimeHere = shotFor (xlat ("STEREO / REAL TIME"), where + " real time");
+            const auto bypassHere = shotFor (xlat ("BYPASSED / DRY"), where + " bypass");
+
+            expect (realTimeHere.badge.getX() == bypassHere.badge.getX()
+                        && realTimeHere.badge.getY() == bypassHere.badge.getY(),
+                    where + ": both states put the lamp on the same pixel");
+
+            //  How much row the caption left over, printed so a translation that grows
+            //  towards the edge is visible in the log before it ever fails.
+            std::printf ("      captions %d px and %d px wide, %d px of row to the header edge\n",
+                         realTimeHere.caption.getWidth(), bypassHere.caption.getWidth(),
+                         realTimeHere.header.getRight() - 6 - realTimeHere.badge.getRight());
+
+            ++matrixCases;
+        }
+
+    expect (matrixCases == 12, "the matrix covered every palette in both translations");
+
     //==========================================================================
     //  The negative controls. Each one damages a real render the way the panel
     //  looked when the report was made, and its claim has to REFUSE it.
@@ -663,14 +784,14 @@ int main()
 
     {
         auto damaged = lastShot;
-        paintPlate (damaged, probe.palette(), 0);
+        paintPlate (damaged, controlPalette, 0);
         expect (strayDrawing (damaged, lastBare, drawnByBadge (lastShot)) > 0,
                 "control: a plate behind the words is refused by the plate claim");
     }
 
     {
         auto damaged = lastShot;
-        paintPlate (damaged, probe.palette(), 40);
+        paintPlate (damaged, controlPalette, 40);
         expect (strayDrawing (damaged, lastBare, drawnByBadge (lastShot)) > 0,
                 "control: a pill wider than the sign is refused by the plate claim");
     }
@@ -698,9 +819,39 @@ int main()
     {
         auto damaged = lastShot;
         damaged.badge = damaged.badge.withWidth (damaged.badge.getWidth() + 40);
-        expect (! captionIsMeasuredFromItsWords (damaged),
+        expect (! captionIsMeasuredFromItsWords (damaged, probe.captionFont()),
                 "control: a leftover width is refused by the measurement claim");
     }
+
+    {
+        //  The matrix above lives one step from this: the LONGEST translation in the
+        //  TIGHTEST row. A caption longer than that row still fits nothing, so the
+        //  fit claim has to refuse it there too - otherwise the matrix could be green
+        //  in a case it cannot actually fail.
+        const auto longest = xlat ("STEREO / REAL TIME");
+        probe.showCaption (longest + " " + juce::String::repeatedString ("W", 30));
+
+        const auto crowded = takeShot (*editor, probe);
+
+        //  JUCE does not clip an over-long caption here, it SHRINKS it into the box the
+        //  row left - so the failure the user saw is not "a cut glyph" but a box that no
+        //  longer hugs its words, and that is the claim which has to refuse this.
+        std::printf ("\ncontrol: a %d px box for a caption the row had to squeeze\n",
+                     crowded.caption.getWidth());
+
+        expect (! captionIsMeasuredFromItsWords (crowded, probe.captionFont()),
+                "control: a caption wider than the tight row is refused by the measurement "
+                "claim");
+
+        probe.showCaption (longest);
+    }
+
+    //  The desk is put back as it was found: the destructor below writes the theme, the
+    //  USER palette and the size to machine-wide preferences, so these are returned to
+    //  the values this machine had before the run.
+    probe.useTheme (originalTheme);
+    probe.useUserPalette (originalUserPalette);
+    editor->setSize (originalWidth, originalHeight);
 
     std::printf ("\nHEADER RENDER  %d checks, %d failures\n", checks, failures);
 
