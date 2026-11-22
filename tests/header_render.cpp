@@ -85,6 +85,7 @@ struct J37HeaderRenderProbe
     const j37panel::UiPalette& palette() const { return j37panel::paletteFor (editor.darkTheme); }
     bool badgeShown() const { return editor.statusLabel.isVisible(); }
     juce::String caption() const { return editor.statusLabel.getText(); }
+    juce::Font captionFont() const { return editor.statusLabel.getFont(); }
     int tab() const { return editor.currentTab; }
     void openPage (int page) { editor.setCurrentTab (page); }
 
@@ -370,17 +371,23 @@ bool glyphsFit (const Shot& shot)
         && ink.getY() > shot.caption.getY() && ink.getBottom() < shot.caption.getBottom();
 }
 
-/** The box hugs this state's own words: the gap between the measured text and the ink
-    is the pixel drawFittedText keeps for the last bearing, never a leftover width
-    from the caption before it. */
-bool captionIsMeasuredFromItsWords (const Shot& shot)
+/** The box IS the measured text: placeStatusBadge() gives the label the width the
+    panel measures for its own words, clamped to the room the row has. Comparing the
+    box with that measurement - rather than with the ink - is what makes this hold on
+    Windows and on Linux: JUCE's fitted text shrinks a caption into a box too narrow
+    for it, so a squeezed caption can still have ink that fills the box (the ink check
+    below) while the box has stopped being its words. */
+bool captionIsMeasuredFromItsWords (const Shot& shot, const juce::Font& captionFont)
 {
     if (! shot.shown || shot.caption.isEmpty())
         return false;
 
+    const auto measured = juce::roundToInt (
+        juce::GlyphArrangement::getStringWidth (captionFont, shot.text) + 1.0f);
     const auto ink = inkBounds (shot.image, shot.caption);
 
-    return ! ink.isEmpty() && shot.caption.getWidth() - ink.getWidth() <= 4;
+    return shot.caption.getWidth() == measured && ! ink.isEmpty()
+        && measured - ink.getWidth() <= 4;
 }
 
 /** Lamp: a disc on the panel, and an empty gap between it and the first glyph. */
@@ -420,7 +427,8 @@ bool badgeIsAfterLevels (const Shot& shot)
 
 //==============================================================================
 /** Everything a rendered badge has to be, given its own text and box. */
-void checkBadge (const Shot& shot, const juce::Image& bare, const juce::String& where)
+void checkBadge (const Shot& shot, const juce::Image& bare, const juce::Font& captionFont,
+                 const juce::String& where)
 {
     const auto name = [&where] (const char* claim) { return juce::String (where) + ": " + claim; };
 
@@ -443,7 +451,7 @@ void checkBadge (const Shot& shot, const juce::Image& bare, const juce::String& 
             name ("the badge is the caption plus the lamp's reach and nothing else"));
 
     expect (glyphsFit (shot), name ("every glyph is inside its box, none clipped"));
-    expect (captionIsMeasuredFromItsWords (shot),
+    expect (captionIsMeasuredFromItsWords (shot, captionFont),
             name ("the caption box is measured from this state's own words"));
     expect (lampClearOfWords (shot), name ("the lamp does not overlap the first glyph"));
     expect (badgeIsAfterLevels (shot),
@@ -605,7 +613,7 @@ int main()
     const auto shotFor = [&] (const juce::String& caption, const juce::String& where) {
         probe.showCaption (caption);
         auto [shot, bare] = renderState();
-        checkBadge (shot, bare, where);
+        checkBadge (shot, bare, probe.captionFont(), where);
 
         return shot;
     };
@@ -641,7 +649,7 @@ int main()
                      badgeRow (shot).getX(), badgeRow (shot).getY(), badgeRow (shot).getWidth(),
                      badgeRow (shot).getHeight());
 
-        checkBadge (shot, bare, size.name);
+        checkBadge (shot, bare, probe.captionFont(), size.name);
 
         lastShot = shot;
         lastBare = bare;
@@ -811,7 +819,7 @@ int main()
     {
         auto damaged = lastShot;
         damaged.badge = damaged.badge.withWidth (damaged.badge.getWidth() + 40);
-        expect (! captionIsMeasuredFromItsWords (damaged),
+        expect (! captionIsMeasuredFromItsWords (damaged, probe.captionFont()),
                 "control: a leftover width is refused by the measurement claim");
     }
 
@@ -831,7 +839,7 @@ int main()
         std::printf ("\ncontrol: a %d px box for a caption the row had to squeeze\n",
                      crowded.caption.getWidth());
 
-        expect (! captionIsMeasuredFromItsWords (crowded),
+        expect (! captionIsMeasuredFromItsWords (crowded, probe.captionFont()),
                 "control: a caption wider than the tight row is refused by the measurement "
                 "claim");
 
