@@ -2786,9 +2786,9 @@
     "semantic_hash": ""
   },
   "Assets/README.md": {
-    "mtime": 1795382045.5190535,
-    "seen": 1795382080.2056296,
-    "ast_hash": "1458c219e1b8c2f2f0545b442604ac80",
+    "mtime": 1795383725.3712099,
+    "seen": 1795384132.1327062,
+    "ast_hash": "cf0cbd6346774a9b7b100525e978f644",
     "semantic_hash": ""
   },
   "CLAUDE.md": {
@@ -2810,9 +2810,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1795382045.517046,
-    "seen": 1795382080.2057111,
-    "ast_hash": "140f516181616fad047345bc3e08ce9e",
+    "mtime": 1795383725.3732145,
+    "seen": 1795384132.132732,
+    "ast_hash": "eaf47103f9cc791102a74ec6858328ac",
     "semantic_hash": ""
   },
   "Source/Translations/en.txt": {
@@ -2825,6 +2825,12 @@
     "mtime": 1795350931.1966648,
     "seen": 1795359787.9284534,
     "ast_hash": "7a0a68a734cefa89faac8292befc2566",
+    "semantic_hash": ""
+  },
+  "THIRD_PARTY_NOTICES.md": {
+    "mtime": 1795383725.3732145,
+    "seen": 1795384132.1327507,
+    "ast_hash": "55453caf2da2cbe61e2b6167bb776cf4",
     "semantic_hash": ""
   },
   "docs/architecture.md": {
@@ -2846,9 +2852,9 @@
     "semantic_hash": ""
   },
   "docs/external-libraries-report.md": {
-    "mtime": 1795382045.5205705,
-    "seen": 1795382080.205789,
-    "ast_hash": "f0f9d526b637234a7d8cb9ed422519eb",
+    "mtime": 1795383725.3757274,
+    "seen": 1795384132.1327822,
+    "ast_hash": "f5a9b0fcc06e019ff793cfac6e713625",
     "semantic_hash": ""
   },
   "docs/library-candidates.md": {
@@ -2907,7 +2913,7 @@
   },
   "tests/README.md": {
     "mtime": 1795381103.2366803,
-    "seen": 1795382080.2059393,
+    "seen": 1795384132.1328616,
     "ast_hash": "79b5c4c551f91ab87364e5a228b87707",
     "semantic_hash": ""
   },
@@ -3155,21 +3161,15 @@
     "semantic_hash": ""
   },
   "tests/header_render.cpp": {
-    "mtime": 1795381103.2375445,
-    "seen": 1795382080.2040427,
-    "ast_hash": "e1326c83ef82be7fce103a73c01c10d7",
+    "mtime": 1795383780.6591017,
+    "seen": 1795384132.1314049,
+    "ast_hash": "df3f404d7f376505b2bef996e15bb41c",
     "semantic_hash": ""
   },
   "tests/layout/render.sh": {
     "mtime": 1795377004.7689722,
     "seen": 1795378064.7115777,
     "ast_hash": "6c3ac6d4fb0ae588198fcff1b77f2853",
-    "semantic_hash": ""
-  },
-  "docs/THIRD_PARTY_NOTICES.md": {
-    "mtime": 1795382322.8961515,
-    "seen": 1795382349.3159556,
-    "ast_hash": "6757a2cd743fc5d701277c2c795ce623",
     "semantic_hash": ""
   }
 }

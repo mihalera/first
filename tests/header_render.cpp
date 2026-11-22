@@ -127,6 +127,13 @@ struct J37HeaderRenderProbe
         saved. The matrix sets its own, and the run puts this one back. */
     void useUserPalette (const j37panel::UiPalette& palette) { j37panel::userPalette = palette; }
 
+    /**  The panel's live shimmer - the dots that drift eight times a second over the
+        surface. It is a clock, not the badge, and two paints in different steps differ
+        in those dots and in nothing else, so it is read and written here to take the
+        clock out of the measurement. */
+    float shimmer() const { return editor.panelTextureWeights.shimmer; }
+    void setShimmer (float value) { editor.panelTextureWeights.shimmer = value; }
+
     FirstAudioProcessorEditor& editor;
 };
 
@@ -569,43 +576,24 @@ int main()
     const auto originalHeight = editor->getHeight();
     const auto originalUserPalette = j37panel::userPalette;
 
-    /*  The panel's live shimmer: dots whose positions follow a clock that steps eight
-        times a second (EditorPaint.cpp), drawn over the whole surface. Two paints that
-        straddle a step differ in those dots and in nothing else, so a pixel-for-pixel
-        subtraction between them would be measuring the clock. The two renders are
-        therefore taken inside ONE step, and remade if the boundary fell between them. */
-    const auto shimmerStep = [] {
-        return static_cast<long long> (
-            std::floor (juce::Time::getMillisecondCounterHiRes() * 0.001 * 8.0));
-    };
-
     /*  One state of the panel, rendered twice: with the badge, and in the same frame
-        with the caption collapsed. Both images come from the same editor, the same
-        size and the same shimmer step, so the panel's gradient, grain and texture
-        cancel out exactly and what is left is the badge. */
+        with the caption collapsed. Both images come from the same editor, the same size
+        and the same texture, so the panel's gradient, grain and material cancel out
+        exactly and what is left is the badge. The live shimmer is switched off for the
+        pair - it is a clock rather than the badge, and catching one 125 ms step with two
+        whole-panel paints is a race this measurement does not need to run. */
     const auto renderState = [&]() {
-        for (int attempt = 0; attempt < 200; ++attempt)
-        {
-            const auto step = shimmerStep();
-            const auto withBadge = takeShot (*editor, probe);
+        const auto shimmer = probe.shimmer();
+        probe.setShimmer (0.0f);
 
-            probe.collapseCaption();
-            const auto bare = paint (*editor);
-            probe.restoreCaption();
+        const auto withBadge = takeShot (*editor, probe);
+        probe.collapseCaption();
+        const auto bare = paint (*editor);
+        probe.restoreCaption();
 
-            if (shimmerStep() == step)
-                return std::pair<Shot, juce::Image> {withBadge, bare};
+        probe.setShimmer (shimmer);
 
-            //  The step moved between the two paints: let it move again to a fresh
-            //  one and start over, rather than compare two different moments.
-            while (shimmerStep() == step)
-                juce::Thread::sleep (2);
-        }
-
-        std::printf ("FAIL  the two renders would not land in one shimmer step\n");
-        ++failures;
-
-        return std::pair<Shot, juce::Image> {takeShot (*editor, probe), paint (*editor)};
+        return std::pair<Shot, juce::Image> {withBadge, bare};
     };
 
     /*  One caption, measured and checked: the two renders, the claims against them,
