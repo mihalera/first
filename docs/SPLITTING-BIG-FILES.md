@@ -963,3 +963,14 @@ more useful: the link failed on `FactoryPresets::isSentinelValue(float)`, whose 
 Release, where every use sits under `jassert` and compiles away, and does not in Debug. Both
 entry points have external linkage now, and with those two fixes in, all seven jobs are green
 on `103aadb`, the revision that merged as `dee1b87`.
+
+---
+
+## Moved to /docs
+
+This document now lives at `docs/SPLITTING-BIG-FILES.md` (moved from the
+repository root). Internal references were updated accordingly; the source
+paths it cites (`Source/...`) are unchanged.
+
+Re-measured on the current tree: `Source/ProcessorSignalPath.cpp` is 4,353
+lines and `processTapeEngine()` spans lines 1251-4353 (3,103 lines).

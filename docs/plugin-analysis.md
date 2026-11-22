@@ -48,7 +48,7 @@ The largest files, and what they are:
 
 `Source/DSP/` holds **26 headers** and `Source/GUI/` **26 files**. Four years of
 "the file is too long to read" work has already been done here (see
-[SPLITTING-BIG-FILES.md](../SPLITTING-BIG-FILES.md)), and it shows: the DSP is
+[SPLITTING-BIG-FILES.md](SPLITTING-BIG-FILES.md)), and it shows: the DSP is
 one concern per header, the editor is one concern per file, and the extraction
 layer in the tests is shrinking rather than growing.
 
