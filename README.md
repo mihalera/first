@@ -1,5 +1,7 @@
 # MiBoX
 
+> **Alpha version.** The plugin is in active development: breaking changes to parameters, presets and saved state are acceptable, so changes can be risked.
+
 **A JUCE 9.0.5 saturation plugin built around a nonlinear magnetic tape machine** - nine saturation principles you can blend, a transport you can start and stop, and a mastering-grade output chain around it. Repository: <https://github.com/mihalera/first>
 
 | | |
