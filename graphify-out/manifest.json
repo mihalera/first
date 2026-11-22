@@ -93,9 +93,9 @@
     "semantic_hash": ""
   },
   ".github/workflows/build.yml": {
-    "mtime": 1795187095.4591718,
-    "seen": 1795187743.169845,
-    "ast_hash": "b7ed15ab0a73c5bb9a2941c20d121ce0",
+    "mtime": 1795357981.0999205,
+    "seen": 1795359787.9255419,
+    "ast_hash": "739b27207fe435346e5dd9be433d9a8e",
     "semantic_hash": ""
   },
   ".github/workflows/release-draft.yml": {
@@ -380,9 +380,9 @@
     "language": "language=.cpp"
   },
   "Source/DSP/NoiseLoader.h": {
-    "mtime": 1794870168.6166017,
-    "seen": 1794870563.5482528,
-    "ast_hash": "9208d573a3fc8370e279c684b6f0e43f",
+    "mtime": 1795292781.5196207,
+    "seen": 1795359787.9258444,
+    "ast_hash": "61ec8f78cb74786bb46329222ce0395f",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
@@ -642,8 +642,8 @@
     "language": "language=.cpp"
   },
   "Source/GUI/DeckBands.h": {
-    "mtime": 1795257530.2605894,
-    "seen": 1795257659.6227243,
+    "mtime": 1795260140.057365,
+    "seen": 1795359787.926061,
     "ast_hash": "3377cb0b515d82778c2a39663b5e3d7c",
     "semantic_hash": "",
     "language": "language=.cpp"
@@ -669,34 +669,34 @@
     "semantic_hash": ""
   },
   "Source/GUI/EditorPaint.cpp": {
-    "mtime": 1795099572.9884632,
-    "seen": 1795119419.5681458,
-    "ast_hash": "5c90b1e669b8a0252a446f29a56e9407",
+    "mtime": 1795268517.112116,
+    "seen": 1795359787.926083,
+    "ast_hash": "f76768843e6d9bcb298f70867c38decb",
     "semantic_hash": ""
   },
   "Source/GUI/EditorPreferences.h": {
-    "mtime": 1795091994.653481,
-    "seen": 1795119419.5681531,
-    "ast_hash": "6374f475eabd86b4d2ca19ff3428baed",
+    "mtime": 1795267296.724713,
+    "seen": 1795359787.9260883,
+    "ast_hash": "17c80f8ea4d026ea4b23e3b924656cc9",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
   "Source/GUI/EditorSetup.cpp": {
-    "mtime": 1795091994.6549811,
-    "seen": 1795119419.5681608,
-    "ast_hash": "f445a14660e36330d9b22024c94966d9",
+    "mtime": 1795280065.1052105,
+    "seen": 1795359787.926094,
+    "ast_hash": "f5b3e4a9dd2cedf6b4b1abb241d33886",
     "semantic_hash": ""
   },
   "Source/GUI/EditorTheme.cpp": {
-    "mtime": 1795091994.6554813,
-    "seen": 1795119419.5681674,
-    "ast_hash": "8de8b20b8d68e150483befd7ed6332cd",
+    "mtime": 1795268091.174955,
+    "seen": 1795359787.9260995,
+    "ast_hash": "d668a8992cc2bd84880118b7f606c2d3",
     "semantic_hash": ""
   },
   "Source/GUI/EditorTimer.cpp": {
-    "mtime": 1795091994.655981,
-    "seen": 1795119419.5681736,
-    "ast_hash": "594e50f2c1b842bf72f6395d23a33d2f",
+    "mtime": 1795297647.2797132,
+    "seen": 1795359787.9261045,
+    "ast_hash": "e9d10155a3aa70da49f82fa217f1aba5",
     "semantic_hash": ""
   },
   "Source/GUI/J37LookAndFeel.cpp": {
@@ -726,10 +726,10 @@
     "semantic_hash": "b11358f7fca4aeafb64b7a224d81d037"
   },
   "Source/GUI/NativeRenderer.h": {
-    "mtime": 1794237380.5675967,
-    "seen": 1794648118.5793717,
-    "ast_hash": "15bebf2644b6eb5dc18cf2273aaa4d02",
-    "semantic_hash": "15bebf2644b6eb5dc18cf2273aaa4d02",
+    "mtime": 1795297647.2807136,
+    "seen": 1795359787.926133,
+    "ast_hash": "2208db3c7264398b8b8db2fad2dcc9bf",
+    "semantic_hash": "",
     "language": "language=.cpp"
   },
   "Source/GUI/NativeRenderer_Bgfx.cpp": {
@@ -785,9 +785,9 @@
     "semantic_hash": "dd9d77c77147f4a4624d360eaa005d4e"
   },
   "Source/GUI/NativeRenderer_Sokol.cpp": {
-    "mtime": 1794773798.3889296,
-    "seen": 1794869323.1190946,
-    "ast_hash": "ca02fbe94dd4b6c36c5019e3f0ea155a",
+    "mtime": 1795299064.5382903,
+    "seen": 1795359787.9261832,
+    "ast_hash": "5c33e911a78c22ee7deb2eca2a6e0ef0",
     "semantic_hash": ""
   },
   "Source/GUI/NativeRenderer_Sokol.h": {
@@ -1023,28 +1023,28 @@
     "language": "language=.cpp"
   },
   "Source/ParameterTable.cpp": {
-    "mtime": 1795091994.6594808,
-    "seen": 1795119419.5771167,
-    "ast_hash": "f4b8f06c398aa9800f223fb172e30b5b",
+    "mtime": 1795302569.0003657,
+    "seen": 1795359787.926385,
+    "ast_hash": "bcd4c0aa8605749e00fb9eb1fc313cbb",
     "semantic_hash": ""
   },
   "Source/PluginEditor.cpp": {
-    "mtime": 1795258583.8889096,
-    "seen": 1795258618.8757343,
-    "ast_hash": "dcb782a57493d25bf2146e1f78c44e34",
+    "mtime": 1795288882.83538,
+    "seen": 1795359787.92639,
+    "ast_hash": "6268ac0448fcd0011632034f18e210d9",
     "semantic_hash": ""
   },
   "Source/PluginEditor.h": {
-    "mtime": 1795091994.6614866,
-    "seen": 1795119419.5771444,
-    "ast_hash": "b023f09754c6e64f8076acf6e617d8d3",
+    "mtime": 1795281799.893328,
+    "seen": 1795359787.9263952,
+    "ast_hash": "0d74b3abba8a8b58fbec9abb24581b38",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
   "Source/PluginProcessor.cpp": {
-    "mtime": 1795183206.2078018,
-    "seen": 1795183358.6918359,
-    "ast_hash": "12b4ccb60472cfafe9aa975bb8949c84",
+    "mtime": 1795345660.0749042,
+    "seen": 1795359787.9264004,
+    "ast_hash": "6030cee38fe4bb178b4275d885845174",
     "semantic_hash": ""
   },
   "Source/PluginProcessor.h": {
@@ -1278,9 +1278,9 @@
     "language": "language=.cpp"
   },
   "Source/ProcessorSignalPath.cpp": {
-    "mtime": 1795183197.649714,
-    "seen": 1795183358.6995287,
-    "ast_hash": "57a158f50f590144c8f8d8fe49ce1d1d",
+    "mtime": 1795304213.872204,
+    "seen": 1795359787.926663,
+    "ast_hash": "e0169aec4154a12df69998557086f230",
     "semantic_hash": ""
   },
   "Source/ProcessorStateFormat.h": {
@@ -1589,16 +1589,16 @@
     "semantic_hash": "9cc466997e7214205b2a20a076ef8725"
   },
   "tests/fuzz/fuzz_noise_decoder.cpp": {
-    "mtime": 1792858980.5261054,
-    "seen": 1794648118.5939867,
-    "ast_hash": "edd5cb19c275926fcbb9b894d0444ae6",
-    "semantic_hash": "edd5cb19c275926fcbb9b894d0444ae6"
+    "mtime": 1795345660.0764165,
+    "seen": 1795359787.9270027,
+    "ast_hash": "45d9712d0a70effb764eb7be6d858c14",
+    "semantic_hash": ""
   },
   "tests/fuzz/run.sh": {
-    "mtime": 1794640488.1547632,
-    "seen": 1794648118.5941172,
-    "ast_hash": "5b829453e925ebde91d86fadaf32b904",
-    "semantic_hash": "5b829453e925ebde91d86fadaf32b904"
+    "mtime": 1795345660.0769167,
+    "seen": 1795359787.9270086,
+    "ast_hash": "b5d874a946114a79e40b560a3baf9ea8",
+    "semantic_hash": ""
   },
   "tests/fx/fx_test.cpp": {
     "mtime": 1794237380.5865722,
@@ -1643,9 +1643,9 @@
     "semantic_hash": "e8018db2bbda83302df7d1256518f9d3"
   },
   "tests/layout/layout_test.cpp": {
-    "mtime": 1795091994.737568,
-    "seen": 1795119419.5896935,
-    "ast_hash": "2cd03221b0412fd05f292975bd29d9ac",
+    "mtime": 1795288882.8368857,
+    "seen": 1795359787.9270627,
+    "ast_hash": "6756468cafa63a1d583752b01b7ffa73",
     "semantic_hash": ""
   },
   "tests/layout/run.sh": {
@@ -1956,9 +1956,9 @@
     "semantic_hash": ""
   },
   "tests/state/juce_stub.h": {
-    "mtime": 1794935105.0228686,
-    "seen": 1794936264.6604364,
-    "ast_hash": "ee63bb95c85d2cc0c4169db06179bbf3",
+    "mtime": 1795302569.0028832,
+    "seen": 1795359787.9274526,
+    "ast_hash": "b61665c3ecf548cdc61471461eb77bb9",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
@@ -2810,15 +2810,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1795091994.6499808,
-    "seen": 1795119419.6287618,
-    "ast_hash": "9f80a3d32488b71f78d5a78baf5f4c7d",
-    "semantic_hash": ""
-  },
-  "SPLITTING-BIG-FILES.md": {
-    "mtime": 1793089513.5355692,
-    "seen": 1794869323.1488528,
-    "ast_hash": "f4f21a96384136f6b4af36e30d3db90c",
+    "mtime": 1795350931.1941307,
+    "seen": 1795359787.9284384,
+    "ast_hash": "43cbdcf66a5162ee6017b755db641673",
     "semantic_hash": ""
   },
   "Source/Translations/en.txt": {
@@ -2828,9 +2822,9 @@
     "semantic_hash": ""
   },
   "Source/Translations/uk.txt": {
-    "mtime": 1795091994.6795003,
-    "seen": 1795119419.6291466,
-    "ast_hash": "24b3d142cdf572df8d379f55472976b5",
+    "mtime": 1795350931.1966648,
+    "seen": 1795359787.9284534,
+    "ast_hash": "7a0a68a734cefa89faac8292befc2566",
     "semantic_hash": ""
   },
   "THIRD_PARTY_NOTICES.md": {
@@ -2846,9 +2840,9 @@
     "semantic_hash": ""
   },
   "docs/asset-plan.md": {
-    "mtime": 1794935104.988775,
-    "seen": 1794936264.6863797,
-    "ast_hash": "4ce2a9eb3183f21e24854228b4cd6aab",
+    "mtime": 1795355062.7171986,
+    "seen": 1795359787.9284806,
+    "ast_hash": "d1c39ec995e2e19c667a3a0239f1053a",
     "semantic_hash": ""
   },
   "docs/diagnostics.md": {
@@ -2876,15 +2870,15 @@
     "semantic_hash": ""
   },
   "docs/plugin-analysis.md": {
-    "mtime": 1794935104.989275,
-    "seen": 1794936264.68718,
-    "ast_hash": "50a0562f3482a03220caf0d9b4cac1d1",
+    "mtime": 1795350931.1997032,
+    "seen": 1795359787.9285147,
+    "ast_hash": "03d263a50b3041dd9b10e78758043a73",
     "semantic_hash": ""
   },
   "docs/plugin-improvement-plan.md": {
-    "mtime": 1794320288.3382916,
-    "seen": 1794869323.148917,
-    "ast_hash": "2213395d1f5621413063c23b6aea1351",
+    "mtime": 1795350931.200712,
+    "seen": 1795359787.9285212,
+    "ast_hash": "dace2f08f369aa6aa733bd031c330b79",
     "semantic_hash": ""
   },
   "docs/presets.md": {
@@ -2912,9 +2906,9 @@
     "semantic_hash": ""
   },
   "docs/signal-path.md": {
-    "mtime": 1794935104.9907753,
-    "seen": 1794936264.68771,
-    "ast_hash": "4b11ff6bce2cf2469145b145ccb0c592",
+    "mtime": 1795350931.2012148,
+    "seen": 1795359787.928555,
+    "ast_hash": "3968a4dfde7a273b72ddae0fa2eb0183",
     "semantic_hash": ""
   },
   "tests/README.md": {
@@ -3119,6 +3113,31 @@
     "mtime": 1795119756.1493049,
     "seen": 1795183358.7157335,
     "ast_hash": "b640e3f62e5c83ed7dd19b5fd72bc2b4",
+    "semantic_hash": ""
+  },
+  ".agents/skills/impeccable/scripts/data/font-index.json": {
+    "mtime": 1793871699.7811935,
+    "seen": 1795359787.9254348,
+    "ast_hash": "4a4426c85ec12df1d9a487a39d656ff4",
+    "semantic_hash": ""
+  },
+  "Source/API/J37.cpp": {
+    "mtime": 1795298869.1721218,
+    "seen": 1795359787.925624,
+    "ast_hash": "5cafd70d2fa0de061aba01963dc5b818",
+    "semantic_hash": ""
+  },
+  "Source/API/J37.h": {
+    "mtime": 1795298869.1726258,
+    "seen": 1795359787.9256315,
+    "ast_hash": "9bce950828802d173e7f21744ca54dc2",
+    "semantic_hash": "",
+    "language": "language=.cpp"
+  },
+  "docs/SPLITTING-BIG-FILES.md": {
+    "mtime": 1795350931.1971729,
+    "seen": 1795359787.9284673,
+    "ast_hash": "fcd51086cf5fbd2e986a81331dfe0d95",
     "semantic_hash": ""
   }
 }
