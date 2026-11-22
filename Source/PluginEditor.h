@@ -883,10 +883,16 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
         fraction of its area. */
     void repaintAnimatedSurfaces();
 
-    /** The rectangle paint() fills for the header's machine-state pill, lamp and
-        all. Shared with repaintAnimatedSurfaces() so the lamp cannot be drawn on
+    /** The machine-state badge: the lamp's reach and the caption, and nothing behind
+        them. Shared with repaintAnimatedSurfaces() so the lamp cannot be drawn on
         one rectangle and invalidated on another. */
-    juce::Rectangle<int> statusPillBounds() const;
+    juce::Rectangle<int> statusBadgeBounds() const;
+
+    /** Sizes the caption to its own words, in the header's second row where LEVELS
+        ON/OFF ends. It reads STEREO / REAL TIME or BYPASSED / DRY and a language
+        switch changes both, so the badge is re-measured rather than handed the rest
+        of the row. */
+    void placeStatusBadge();
 
     /** The software reel's top-right corner while the 3D scene is not live. */
     juce::Rectangle<int> deckAnimationBounds() const;
@@ -1534,6 +1540,8 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     float reelAngle = 0.0f;
     float reelSpeed = 0.0f;
     bool currentBypassDisplay = false;
+    // The caption's own text, so a language switch or a bypass toggle re-measures it.
+    juce::String lastShownStatusText;
     // paint() draws the neural picker's card behind the MODELS page's member
     // band's first column - the page whose NEURAL knob the picker belongs to.
     bool activeTabIsShapers = false;

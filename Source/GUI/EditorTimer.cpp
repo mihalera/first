@@ -227,19 +227,16 @@ int FirstAudioProcessorEditor::currentTransportState() const {
 }
 
 //==============================================================================
-juce::Rectangle<int> FirstAudioProcessorEditor::statusPillBounds() const {
-    const auto layout = getEditorLayout();
-    const auto headerColumnWidth = headerColumnWidthFor (layout.header.getWidth());
-    const auto headerGridWidth =
-        headerColumnCount * headerColumnWidth + (headerColumnCount - 1) * headerColumnGap;
-    const auto statusWidth = headerGridWidth - 18;
-    const auto statusX = layout.header.getRight() - 6 - headerGridWidth;
-    // The same status band placeHeader puts the label in, expanded by the pill's
-    // own two pixels a side, so the pill stays inside the header panel.
-    const juce::Rectangle<int> pill(statusX,
-                                    layout.header.getY() + headerStatusOffset,
-                                    statusWidth, headerStatusHeight);
-    return pill.expanded (j37panel::badge::pillPadX, j37panel::badge::pillPadY);
+juce::Rectangle<int> FirstAudioProcessorEditor::statusBadgeBounds() const {
+    const auto caption = statusLabel.getBounds();
+    if (caption.isEmpty())
+        return {};
+
+    //  The caption's own rectangle plus the lamp's reach to its left, and nothing
+    //  else: the badge has no plate, so there is nothing else to invalidate.
+    const auto box = j37panel::badge::badgeForCaption (caption.getX(), caption.getY(),
+                                                       caption.getWidth(), caption.getHeight());
+    return {box.x, box.y, box.w, box.h};
 }
 
 juce::Rectangle<int> FirstAudioProcessorEditor::deckAnimationBounds() const {
@@ -329,7 +326,7 @@ void FirstAudioProcessorEditor::repaintAnimatedSurfaces() {
 
     // The status lamp and the deck's own transport, both drawn by paint().
     if (!j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
-        repaint(statusPillBounds());
+        repaint(statusBadgeBounds());
 
     if (!j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
     {
@@ -654,8 +651,17 @@ void FirstAudioProcessorEditor::timerCallback() {
     // for a bypass toggle to change the state first.
     const auto bypassed = telemetry.bypassActive;
     currentBypassDisplay = bypassed;
-    statusLabel.setText(bypassed ? xlat("BYPASSED / DRY") : xlat("STEREO / REAL TIME"),
-                        juce::dontSendNotification);
+    const auto statusText = bypassed ? xlat("BYPASSED / DRY") : xlat("STEREO / REAL TIME");
+    statusLabel.setText (statusText, juce::dontSendNotification);
+
+    //  The badge is as wide as its words, so a bypass toggle or a language switch
+    //  re-measures it instead of leaving the previous caption's width behind.
+    if (statusText != lastShownStatusText)
+    {
+        lastShownStatusText = statusText;
+        placeStatusBadge();
+    }
+
     statusLabel.setColour(juce::Label::textColourId, bypassed ? paletteFor(darkTheme).secondary
                                                               : paletteFor(darkTheme).status);
 

@@ -669,9 +669,9 @@
     "semantic_hash": ""
   },
   "Source/GUI/EditorPaint.cpp": {
-    "mtime": 1795364020.887505,
-    "seen": 1795364216.1609502,
-    "ast_hash": "e561694c7ca50a6bde558512b8c84c9b",
+    "mtime": 1795365300.0743687,
+    "seen": 1795365496.9512758,
+    "ast_hash": "960709c6e02b05285ca32635b7b47b08",
     "semantic_hash": ""
   },
   "Source/GUI/EditorPreferences.h": {
@@ -694,9 +694,9 @@
     "semantic_hash": ""
   },
   "Source/GUI/EditorTimer.cpp": {
-    "mtime": 1795364020.887777,
-    "seen": 1795364216.1609805,
-    "ast_hash": "b52716754707de04b3f899d1a15fbcd7",
+    "mtime": 1795365293.9006488,
+    "seen": 1795365496.9513056,
+    "ast_hash": "c4a421ea572548b13b3db41278b36dd6",
     "semantic_hash": ""
   },
   "Source/GUI/J37LookAndFeel.cpp": {
@@ -1029,15 +1029,15 @@
     "semantic_hash": ""
   },
   "Source/PluginEditor.cpp": {
-    "mtime": 1795364020.8880265,
-    "seen": 1795364216.1613724,
-    "ast_hash": "36224b5d1b1aa49ed3f9cd6126e899a2",
+    "mtime": 1795365288.2522948,
+    "seen": 1795365496.9516876,
+    "ast_hash": "f9da5da0df117320f259500687fb6fa6",
     "semantic_hash": ""
   },
   "Source/PluginEditor.h": {
-    "mtime": 1795364168.45009,
-    "seen": 1795364216.1613798,
-    "ast_hash": "e1e9273868f6ac411d094e528e1fa6cf",
+    "mtime": 1795365272.566235,
+    "seen": 1795365496.9516952,
+    "ast_hash": "3eb2c4fee61cbec4c1c48e7eea66b240",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
@@ -1649,9 +1649,9 @@
     "semantic_hash": ""
   },
   "tests/layout/run.sh": {
-    "mtime": 1795364110.1910517,
-    "seen": 1795364216.1621902,
-    "ast_hash": "e2ef449b3c660a9049862e08c250c116",
+    "mtime": 1795365344.4083042,
+    "seen": 1795365496.952469,
+    "ast_hash": "383af56f2132c3cc14dc334b1fa6ecce",
     "semantic_hash": ""
   },
   "tests/lib/harness.sh": {
@@ -2810,9 +2810,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1795350931.1941307,
-    "seen": 1795359787.9284384,
-    "ast_hash": "43cbdcf66a5162ee6017b755db641673",
+    "mtime": 1795365355.7232864,
+    "seen": 1795365496.9539533,
+    "ast_hash": "eaf47103f9cc791102a74ec6858328ac",
     "semantic_hash": ""
   },
   "Source/Translations/en.txt": {
@@ -2834,9 +2834,9 @@
     "semantic_hash": ""
   },
   "docs/architecture.md": {
-    "mtime": 1794935104.988275,
-    "seen": 1794936264.6863732,
-    "ast_hash": "75d4e114f723325f0f7b8ec1b4253bc7",
+    "mtime": 1795365368.119583,
+    "seen": 1795365496.9539897,
+    "ast_hash": "0730b32e09ed22b758e34657c7ed7a69",
     "semantic_hash": ""
   },
   "docs/asset-plan.md": {
@@ -2852,15 +2852,15 @@
     "semantic_hash": ""
   },
   "docs/external-libraries-report.md": {
-    "mtime": 1793809834.121644,
-    "seen": 1794869323.1488948,
-    "ast_hash": "dc0974eb015b25f9097564538e613f4b",
+    "mtime": 1795365446.1112072,
+    "seen": 1795365496.9540107,
+    "ast_hash": "f5a9b0fcc06e019ff793cfac6e713625",
     "semantic_hash": ""
   },
   "docs/library-candidates.md": {
-    "mtime": 1794320288.337287,
-    "seen": 1794869323.1489,
-    "ast_hash": "36349d2ccffd32f753d6b4966f5a895d",
+    "mtime": 1795365360.0996213,
+    "seen": 1795365496.9540172,
+    "ast_hash": "e381b4a2a733a4a87fa7a4bdfc3a9c32",
     "semantic_hash": ""
   },
   "docs/library-integration-plan.md": {
@@ -3148,16 +3148,16 @@
     "language": "language=.cpp"
   },
   "Source/GUI/StatusBadge.h": {
-    "mtime": 1795364149.3229842,
-    "seen": 1795364216.161257,
-    "ast_hash": "7762cb83c462fca01f077be0a9702be0",
+    "mtime": 1795365469.325468,
+    "seen": 1795365496.9515748,
+    "ast_hash": "9318630be3cf50491b7e09f0ccab7025",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
   "tests/layout/deck_dust_test.cpp": {
-    "mtime": 1795364125.308169,
-    "seen": 1795364216.1621668,
-    "ast_hash": "2dd79bf5c6f1fa3408a2d6333115dca3",
+    "mtime": 1795365442.4403615,
+    "seen": 1795365496.952447,
+    "ast_hash": "d1c29f5528713be46952e662055bd462",
     "semantic_hash": ""
   }
 }

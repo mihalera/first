@@ -1803,7 +1803,6 @@ Projucer project enabled:
 | `juce_dsp` | `Oversampling`, `AudioBlock` |
 | `juce_gui_extra` | drawing extras used by the editor |
 | `juce_opengl` | `OpenGLContext`, the best-effort panel accelerator |
-| `juce_box2d` | decorative physics particles on the tape deck |
 
 ### Third-party libraries
 

@@ -94,8 +94,18 @@ grep -q "j37panel::dust::orbInvalidation" "${SRC}/GUI/EditorTimer.cpp" || {
     echo "the dust invalidator no longer uses the rect the paint routine draws" >&2
     exit 1
 }
-grep -A4 "captionBox = j37panel::badge::textArea" "${SRC}/PluginEditor.cpp" \
-    | grep -q "Justification::centred" || {
-    echo "the state caption is no longer centred in the box GUI/StatusBadge.h gives it" >&2
+grep -q "j37panel::badge::badgeForCaption" "${SRC}/GUI/EditorTimer.cpp" || {
+    echo "the badge's invalidated region no longer comes from GUI/StatusBadge.h" >&2
     exit 1
 }
+grep -q "j37panel::badge::lampReach" "${SRC}/PluginEditor.cpp" || {
+    echo "the state caption is no longer placed with the lamp's reach from GUI/StatusBadge.h" >&2
+    exit 1
+}
+#  The badge has no plate: it is the caption plus the lamp. If a plate comes back,
+#  the geometry above stops describing what is drawn, so it is pinned out of the
+#  paint routine by name.
+if grep -q "statusPillBounds" "${SRC}/GUI/EditorPaint.cpp" "${SRC}/GUI/EditorTimer.cpp"; then
+    echo "a plate behind the state caption is back (statusPillBounds)" >&2
+    exit 1
+fi

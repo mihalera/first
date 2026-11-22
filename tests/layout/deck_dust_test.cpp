@@ -20,9 +20,9 @@
 //   * every mote's invalidation rectangle is the one repaintDeckParticles()
 //     dirties; it has to contain the mote's whole drawn footprint, halo included,
 //     and has to stay inside the deck.
-//   * the badge's caption box is the one placeHeaderStatus() sets, measured on the
-//     pill the paint routine fills: symmetric margins, a centre on the pill's, and
-//     a lamp the text clears.
+//   * the state badge is the caption plus the lamp's reach and nothing else - no
+//     plate - so it cannot be wider than the words on it, its lamp cannot reach the
+//     first glyph, and the band it used to sit on fails that measurement.
 //
 // Every geometric claim is paired with a NEGATIVE CONTROL: the same measurement is
 // run against the placement that shipped before the fix, and the check must reject
@@ -256,61 +256,58 @@ void checkDustInvalidation() {
     }
 }
 
+//  The badge has no plate: it is as wide as the caption plus the lamp's reach and
+//  not a pixel more. This is the check, stated once so the negative control below
+//  can be measured with the same rule the live geometry is.
+bool hugsCaption(int badgeWidth, int captionWidth) {
+    return badgeWidth - captionWidth == badge::lampReach;
+}
+
 void checkStatusBadge() {
-    std::printf("\n- the state caption is centred on its pill\n");
+    std::printf("\n- the state badge hugs its caption\n");
 
-    constexpr int pillHeights[] = {20, 24, 28};
+    constexpr int captionWidths[] = {48, 96, 120, 168, 240};
+    constexpr int captionHeights[] = {20, 24, 28};
 
-    for (const auto height : pillHeights) {
-        for (int width = 200; width <= 700; width += 50) {
-            const badge::Box pill {100, 200, width, height};
-            const auto text = badge::textArea(pill);
+    for (const auto captionWidth : captionWidths) {
+        for (const auto captionHeight : captionHeights) {
+            const badge::Box caption {400, 100, captionWidth, captionHeight};
+            const auto box = badge::badgeForCaption(caption.x, caption.y, caption.w, caption.h);
 
-            const auto leftMargin = text.x - pill.x;
-            const auto rightMargin = (pill.x + pill.w) - (text.x + text.w);
-            const auto textCentre = text.x + text.w * 0.5f;
-            const auto pillCentre = pill.x + pill.w * 0.5f;
-
-            check(leftMargin == rightMargin,
-                  "pill " + std::to_string(width) + "x" + std::to_string(height) +
-                      ": the caption's margins are symmetric (" + std::to_string(leftMargin) +
-                      " left, " + std::to_string(rightMargin) + " right)");
-            check(std::abs(textCentre - pillCentre) <= 0.5f,
-                  "pill " + std::to_string(width) + "x" + std::to_string(height) +
-                      ": the caption's centre is the pill's centre");
-            check(text.x >= pill.x + badge::lampRight() + badge::lampClearance,
-                  "pill " + std::to_string(width) + "x" + std::to_string(height) +
-                      ": the caption clears the lamp");
-            check(text.w > 0, "pill " + std::to_string(width) + "x" + std::to_string(height) +
-                                  ": the caption has room to be drawn");
+            check(hugsCaption(box.w, caption.w),
+                  "caption " + std::to_string(captionWidth) +
+                      ": the badge is the caption plus the lamp's reach, and nothing else");
+            check(box.x + box.w == caption.x + caption.w,
+                  "caption " + std::to_string(captionWidth) +
+                      ": the badge ends where the caption ends");
+            check(box.y == caption.y && box.h == caption.h,
+                  "caption " + std::to_string(captionWidth) +
+                      ": the badge is no taller than the caption");
+            check(badge::lampCentreX(box) - badge::lampRadius >= box.x,
+                  "caption " + std::to_string(captionWidth) +
+                      ": the lamp's disc stays inside the badge");
+            check(caption.x - badge::lampDiscRight(box) >= badge::lampGap,
+                  "caption " + std::to_string(captionWidth) +
+                      ": the lamp does not reach the first glyph");
         }
     }
 
-    // The negative control: the placement that shipped before the fix - a label
-    // spanning the whole pill with a 26 px LEFT-only border and nothing on the
-    // right. Its effective text box is asymmetric by the whole right half of the
-    // pill, which is the "crooked" the user reported.
-    constexpr int legacyBorder = 26;
-    const badge::Box pill {100, 200, 420, 24};
-    const int legacyLeft = pill.x + badge::pillPadX + legacyBorder;
-    const int legacyRight = pill.x + pill.w - badge::pillPadX;
-    const auto legacyLeftMargin = legacyLeft - pill.x;
-    const auto legacyRightMargin = (pill.x + pill.w) - legacyRight;
-    const auto legacyCentre = legacyLeft + (legacyRight - legacyLeft) * 0.5f;
+    std::printf("  painted badge: caption + %d px (glow %d, lamp %d, gap %d)\n",
+                badge::lampReach, badge::lampGlow, 2 * badge::lampRadius, badge::lampGap);
 
-    std::printf("  legacy placement: margins %d/%d px, centre offset %.0f px\n",
-                legacyLeftMargin, legacyRightMargin,
-                legacyCentre - (pill.x + pill.w * 0.5f));
+    // The negative controls: the two plates this replaced. Both were sized by the
+    // row rather than by the words, which is exactly what `hugsCaption` rejects.
+    constexpr int caption = 120;
+    constexpr int legacyBand = 420; // the full-grid band the caption used to sit in
+    constexpr int legacyPill = 300; // and the pill before that, a third of the header
 
-    check(legacyLeftMargin != legacyRightMargin,
-          "the old left-only inset must FAIL the symmetry check (negative control)");
-    check(std::abs(legacyCentre - (pill.x + pill.w * 0.5f)) > 0.5f,
-          "the old left-only inset must FAIL the centre check (negative control)");
+    std::printf("  legacy plate: %d px around a %d px caption (+%d)\n", legacyBand, caption,
+                legacyBand - caption);
 
-    std::printf("  current placement: margins %d/%d px on a %d px pill\n",
-                badge::textArea(pill).x - pill.x,
-                (pill.x + pill.w) - (badge::textArea(pill).x + badge::textArea(pill).w),
-                pill.w);
+    check(!hugsCaption(legacyBand, caption),
+          "the old full-width band must FAIL the hugs-the-caption check (negative control)");
+    check(!hugsCaption(legacyPill, caption),
+          "the old wide pill must FAIL the hugs-the-caption check (negative control)");
 }
 
 } // namespace

@@ -1,20 +1,23 @@
 /*  ============================================================================
-    The machine-state badge: where its caption sits inside its pill.
+    The machine-state badge: a lamp and its caption, and nothing behind them.
 
-    WHY THIS IS A HEADER OF ITS OWN. The badge is the header's only caption on a
-    pill, and it was placed twice - once by the layout as a label with a left-only
-    border, and once by the paint routine as a pill around that label - with the
-    two insets written in different places. A left-only inset is not centred: on a
-    pill a third of the header wide, the caption started 26 px in, ran its length
-    and then stopped in air, which reads as a crooked line rather than a centred
-    state. The lamp sits at the pill's left edge and owns that side, so the fix is
-    not "centre in the whole pill" either - it is symmetric margins that clear the
-    lamp.
+    WHY THIS IS A HEADER OF ITS OWN. The badge has been wrong every time for the
+    same reason: it was a PLATE, and the plate was sized by the space it had
+    rather than by the words on it. First a pill expanded past the label so it
+    hung off the header's own frame; then a pill a third of the header wide with
+    the caption pushed 26 px into it by a left-only border; then the same wide
+    pill with the caption centred in all that air. Each time the report was "the
+    sign is crooked", and each time the cause was a caption sitting on a plate far
+    bigger than the caption.
 
-    So the inset is stated once, as a symmetric margin, and the pill's own padding
-    is stated beside it. tests/layout/deck_dust_test.cpp measures the margins, the
-    centres and the lamp clearance over a range of pill widths; the old placement
-    is one of the cases it must reject.
+    There is no plate now. The badge is the lamp and the words, on the panel's own
+    metal, in the header's second row where LEVELS ON/OFF ends. Its width is the
+    measured text plus the lamp's reach - that is the whole of it - so it cannot be
+    wider than the sign however much room the row has.
+
+    tests/layout/deck_dust_test.cpp measures exactly that: the badge is wider than
+    its caption by the lamp's reach and by nothing else, the lamp does not reach
+    the first glyph, and the plate this replaced fails both checks.
   ============================================================================ */
 
 #pragma once
@@ -22,31 +25,37 @@
 namespace j37panel {
 namespace badge {
 
-// The lamp: its centre is this far from the pill's left edge (the paint routine
-// draws it at pill.x + 15, with a 3.5 px disc inside a soft glow), and it is
-// drawn this big. The caption has to clear the whole disc plus a hair.
-inline constexpr int lampCentreX = 15;
+// The lamp's solid disc, and the bloom it draws around itself. The bloom is what
+// `lampGlow` of overhang is for: it is counted in the badge's reach so the
+// invalidation rectangle cannot crop it.
 inline constexpr int lampRadius = 4;
-inline constexpr int lampClearance = 4;
+inline constexpr int lampGlow = 2;
 
-// The pill's own padding around the label, on all four sides.
-inline constexpr int pillPadX = 2;
-inline constexpr int pillPadY = 2;
+// Between the lamp's disc and the first glyph.
+inline constexpr int lampGap = 8;
 
-// The caption's margin, SYMMETRIC: the lamp lives inside the left one.
-inline constexpr int textInset = 28;
+// Everything the badge adds to the left of a caption: bloom, lamp, gap.
+inline constexpr int lampReach = lampGlow + 2 * lampRadius + lampGap;
 
 struct Box {
     int x = 0, y = 0, w = 0, h = 0;
 };
 
-/** The caption's box inside a pill: the pill, inset by the same margin each side. */
-inline Box textArea(Box pill) noexcept {
-    return {pill.x + textInset, pill.y + pillPadY, pill.w - 2 * textInset, pill.h - 2 * pillPadY};
+/** The badge around a caption box: the caption, plus the lamp's reach on the left.
+
+    No padding on the other three sides, because there is no plate to pad: the
+    background behind the words is the panel itself.
+*/
+inline Box badgeForCaption(int captionX, int captionY, int captionWidth,
+                           int captionHeight) noexcept {
+    return {captionX - lampReach, captionY, captionWidth + lampReach, captionHeight};
 }
 
-/** The left edge of the lamp's circle, from the pill's left edge. */
-inline int lampRight() noexcept { return lampCentreX + lampRadius; }
+/** The lamp's centre, given the badge's left edge. */
+inline int lampCentreX(Box badge) noexcept { return badge.x + lampGlow + lampRadius; }
+
+/** Where the lamp's disc ends: the caption has to start at least `lampGap` later. */
+inline int lampDiscRight(Box badge) noexcept { return badge.x + lampGlow + 2 * lampRadius; }
 
 } // namespace badge
 } // namespace j37panel

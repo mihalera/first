@@ -109,7 +109,7 @@ machine has them; §6 covers those paths.
 
 | Library | Pin | Licence | Integration | Role / caller | Deeper integration? |
 | --- | --- | --- | --- | --- | --- |
-| **JUCE** | `9.0.5` submodule | AGPLv3 or commercial | `add_subdirectory(JUCE)`, 8 modules linked | The framework: processor, editor, formats, DSP, `box2d` | **No.** Keep the submodule; vendoring or forking the framework would be a maintenance and licence liability |
+| **JUCE** | `9.0.5` submodule | AGPLv3 or commercial | `add_subdirectory(JUCE)`, 7 modules linked | The framework: processor, editor, formats, DSP | **No.** Keep the submodule; vendoring or forking the framework would be a maintenance and licence liability |
 | **chowdsp_math + chowdsp_simd** | `v2.4.0` | BSD-3 | CPM subproject, JUCE modules, `EXCLUDE_FROM_ALL`/`SYSTEM` | `J37Math.h` (`PowApprox`, `LogApprox`), metering and auto-gain (`DecibelsApprox`) | **No.** The per-module split is what keeps GPLv3 `chowdsp_dsp_utils` off the link line; taking the umbrella would undo WP1 |
 | **xsimd** | `14.3.0`, vendored | BSD-3 | Vendored header-only; CPM fallback | `J37Tanh` in `HotPathMath.h`, default via `J37_USE_SIMD_TANH` | **No.** One SIMD layer, one wrapper call site; a second SIMD abstraction (Highway) is a rejected duplicate |
 | **RTNeural** | `95c3c0f9`, vendored | BSD-3 | Vendored header-only; CPM fallback, `RTNEURAL_STL` | `NeuralStage.h`, the LSTM `.nam` path | **No.** Vendored is right for an ABI-adjacent model format; keep it behind the stage seam |
@@ -196,7 +196,8 @@ might one day choose, a source to read or lift from, or a backend that a
 | **OpenGL** | Through `juce::juce_opengl` and JUCE's GL context | OS/driver-owned | **No.** Already one layer down |
 
 JUCE's own tree also bundles third-party code - Oboe for Android audio, the
-FLAC/Ogg/Opus codecs, `box2d` - inside the submodule. Those are covered by
+FLAC/Ogg/Opus codecs, `box2d` (bundled with the submodule, not linked by this
+plugin since the deck's particles became its own code) - inside the submodule. Those are covered by
 JUCE's pin and licence rather than by separate rows here; they are not fetched
 or vendored by this repository and have no independent upgrade path.
 
