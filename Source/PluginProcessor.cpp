@@ -1379,6 +1379,15 @@ void FirstAudioProcessor::setOversamplingFactor (OversamplingFactor factor, int 
     else
         oversamplingRateFactor = 1.0f;
 
+    // Re-time Auto Glue's share smoother for the new engine rate: it advances
+    // once per engine sample, so a factor change (1x -> 8x) must not leave the
+    // 20 ms ramp sized for the old rate. Preserve the current value so the
+    // switch does not step the gain.
+    const float currentGlueShare = glueShareSmoothed.getCurrentValue();
+    glueShareSmoothed.reset (sampleRate * static_cast<double> (oversamplingRateFactor),
+                             0.02);
+    glueShareSmoothed.setCurrentAndTargetValue (currentGlueShare);
+
     // Select the PREPARED slot. prepareToPlay has already called prepare() on the
     // corrector, IR, trackers and repitch stage for every factor, so nothing here
     // allocates and nothing here may call prepare(): this function also runs from

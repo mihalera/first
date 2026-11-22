@@ -159,7 +159,7 @@ Bytes makeWav (int bitsPerSample, int channels, std::size_t frames, int flavour)
     return file;
 }
 
-std::vector<Bytes> seeds()
+[[maybe_unused]] std::vector<Bytes> seeds()
 {
     return { makeWav (16, 2, 512, 0), makeWav (24, 1, 256, 1), makeWav (32, 2, 512, 2) };
 }
@@ -229,7 +229,7 @@ void exercise (const Bytes& bytes, Stats& stats)
 //==============================================================================
 /** The fixed sweep. Every mutation here is reproducible: a failure names the
     index that produced it, so the bytes can be rebuilt by hand. */
-void sweep (const Bytes& seed, Stats& stats)
+[[maybe_unused]] void sweep (const Bytes& seed, Stats& stats)
 {
     exercise (seed, stats);
 
@@ -306,7 +306,7 @@ void sweep (const Bytes& seed, Stats& stats)
 
 /** Buffers with no structure whatsoever, from a fixed linear congruential
     generator - the addresses a fuzzer would otherwise only reach by luck. */
-void randomBuffers (Stats& stats)
+[[maybe_unused]] void randomBuffers (Stats& stats)
 {
     for (const std::size_t length : { std::size_t (0), std::size_t (1), std::size_t (4),
                                       std::size_t (12), std::size_t (44), std::size_t (45),
@@ -325,7 +325,7 @@ void randomBuffers (Stats& stats)
     }
 }
 
-void report (const Stats& stats)
+[[maybe_unused]] void report (const Stats& stats)
 {
     std::printf ("  ok   %zu inputs: %zu decoded, %zu refused, %zu distinct reasons\n",
                  stats.runs, stats.accepted, stats.refused, stats.reasons.size());
