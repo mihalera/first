@@ -1561,16 +1561,12 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     constexpr int headerColumns = headerColumnCount;
     constexpr int headerGap = headerColumnGap;
     const auto switchHeight = headerSwitchHeight;
-    const auto statusHeight = headerStatusHeight;
     const auto headerColumnWidth = headerColumnWidthFor (header.getWidth());
     const auto headerGridWidth = headerColumns * headerColumnWidth
                                + (headerColumns - 1) * headerGap;
     const auto headerRowOneY = header.getY() + headerRowOneOffset;
     const auto headerRowTwoY = header.getY() + headerRowTwoOffset;
-    const auto statusRowY = header.getY() + headerStatusOffset;
     const auto headerGridLeft = headerRight - headerGridWidth;
-    const auto statusLeft = headerGridLeft;
-    const auto statusWidth = headerGridWidth - 18;
 
     // No default argument on height: a lambda's default argument may not name
     // a local variable (the exact "local variable may not appear in this
@@ -1613,23 +1609,45 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
                              header.getY() + 8, rendererCaptionWidth, 12);
     rendererLabel.setJustificationType (juce::Justification::centredRight);
 
-    // The status readout gets its own full-width band below the switches - and it
-    // ends INSIDE the header's own rectangle. The band used to be drawn on a pill
-    // that was expanded six pixels past the label, which put its bottom edge two
-    // pixels below the header panel at every size: the STEREO / REAL TIME badge
-    // hung off the frame it belongs to. The pill is now the label's own rectangle
-    // plus two pixels, and the hairline under the header is drawn before it (see
-    // paint()), so nothing cuts through it either.
-    //  Centred between SYMMETRIC margins rather than pushed off the lamp by a
-    //  left-only border. The badge spans a third of the header, and a caption that
-    //  starts 26 px in and then ends in air reads as a crooked line rather than as
-    //  a centred state. The lamp sits at pill.x + 15, so 26 px on both sides clears
-    //  it and puts the text's own centre back on the pill's.
-    statusLabel.setBounds (statusLeft + 26, statusRowY, juce::jmax (1, statusWidth - 52),
-                           statusHeight);
-    statusLabel.setJustificationType (juce::Justification::centred);
+    //  The machine-state badge rides the header's SECOND row now, starting where
+    //  LEVELS ON/OFF ends: a lamp and its caption on the panel's own metal, with no
+    //  plate behind them. It used to be a band of its own under the switches, and the
+    //  plate there was a third of the header wide whatever the caption said - "the
+    //  sign is crooked" was a caption on a plate much bigger than the caption. See
+    //  placeStatusBadge() for the width, and GUI/StatusBadge.h for the lamp's reach.
+    statusLabel.setJustificationType (juce::Justification::centredLeft);
     statusLabel.setFont (statusLabel.getFont().withHeight (uiFontSize (9.5f)));
     statusLabel.setBorderSize (juce::BorderSize<int> (0));
+    placeStatusBadge();
+}
+
+void FirstAudioProcessorEditor::placeStatusBadge()
+{
+    // The phone deck keeps the caption it was given: its second row is transport
+    // keys, and the badge is a desktop arrangement with a lamp beside it.
+    if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
+        return;
+
+    if (levelsButton.getWidth() <= 0)
+        return;
+
+    const auto layout = getEditorLayout();
+    const auto captionLeft =
+        levelsButton.getRight() + headerColumnGap + j37panel::badge::lampReach;
+    const auto room = layout.header.getRight() - 6 - captionLeft;
+
+    if (room <= 0)
+        return;
+
+    // Measured, not given: the badge is as wide as its words. The +1 is the pixel
+    // drawFittedText keeps for the last glyph's bearing, so the final letter is not
+    // squeezed to fit a box measured exactly to the text.
+    const auto measured = juce::roundToInt (
+        juce::GlyphArrangement::getStringWidth (statusLabel.getFont(), statusLabel.getText())
+        + 1.0f);
+
+    statusLabel.setBounds (captionLeft, levelsButton.getY(), juce::jlimit (1, room, measured),
+                           levelsButton.getHeight());
 }
 
 //==============================================================================
@@ -2257,8 +2275,16 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     //  each one invalidates only its own footprint (repaintDeckParticles), so the
     //  wider corridor costs six small rectangles per animated frame instead of a
     //  repaint of the deck and every caption on it.
-    deckParticleCorridorX = { deck.getX() + 10, deck.getRight() - 10 };
-    deckParticleCorridorY = { deck.getY() + 6, deck.getBottom() - 6 };
+    //  The inset itself is stated once, in GUI/DeckDust.h, because the mapping that
+    //  turns a world position into a pixel has to be measured against the same
+    //  corridor - and that header is what the harness steps frame by frame.
+    const auto dustCorridor = j37panel::dust::corridorForDeck (
+        static_cast<float> (deck.getX()), static_cast<float> (deck.getY()),
+        static_cast<float> (deck.getWidth()), static_cast<float> (deck.getHeight()));
+    deckParticleCorridorX = {juce::roundToInt (dustCorridor.left),
+                             juce::roundToInt (dustCorridor.right)};
+    deckParticleCorridorY = {juce::roundToInt (dustCorridor.top),
+                             juce::roundToInt (dustCorridor.bottom)};
 }
 
 //==============================================================================
@@ -2941,6 +2967,10 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
     oversamplingBox.setVisible (geometry.settingsTab);
     languageLabel.setVisible (geometry.settingsTab);
     languageBox.setVisible (geometry.settingsTab);
+    //  The state badge shares the header's second row with that pair, and there is
+    //  room on that row for one of them: the badge stands down while SETTINGS is up.
+    if (! j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
+        statusLabel.setVisible (! geometry.settingsTab);
     for (std::size_t i = 0; i < autoTuneControls.size(); ++i)
     {
         autoTuneControls[i].setVisible (geometry.autotuneTab);

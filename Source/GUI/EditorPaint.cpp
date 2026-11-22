@@ -399,22 +399,32 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
                          static_cast<float>(layout.header.getX() + 18),
                          static_cast<float>(layout.header.getRight() - 18));
 
-    // The machine-state badge wraps the statusLabel in the header's final row.
-    // statusPillBounds() is shared with the timer's invalidation region so the
-    // animated lamp and its background are redrawn together.
-    const auto statusPill = statusPillBounds().toFloat();
-    g.setColour(palette.raised.darker(0.16f));
-    g.fillRoundedRectangle(statusPill, 4.0f);
+    //  The machine-state badge: a lamp and its caption on the panel's own metal.
+    //  There is no plate behind it any more - the pill WAS the problem, being wider
+    //  than the caption by however much of the row was left over - so this draws the
+    //  lamp and nothing else, and statusBadgeBounds() is the caption plus the lamp's
+    //  reach (shared with the timer's invalidation region).
+    if (! j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight())
+        && statusLabel.isVisible())
+    {
+        const auto badgeRect = statusBadgeBounds();
+        const auto lampCentre =
+            juce::Point<float> (static_cast<float> (j37panel::badge::lampCentreX (
+                                    {badgeRect.getX(), badgeRect.getY(), badgeRect.getWidth(),
+                                     badgeRect.getHeight()})),
+                                static_cast<float> (badgeRect.getCentreY()));
 
-    // Status lamp: pulses with the compressor, so the panel shows that the
-    // plugin is alive and working even when no gain reduction is happening.
-    const auto lampCentre = juce::Point<float>(statusPill.getX() + 15.0f, statusPill.getCentreY());
-    const auto lampPulse = 4.5f + 2.5f * glowAmount;
-    g.setColour(palette.status.withAlpha(0.12f + 0.30f * glowAmount));
-    g.fillEllipse(lampCentre.x - lampPulse * 2.2f, lampCentre.y - lampPulse * 2.2f,
-                  lampPulse * 4.4f, lampPulse * 4.4f);
-    g.setColour(palette.status);
-    g.fillEllipse(lampCentre.x - 3.5f, lampCentre.y - 3.5f, 7.0f, 7.0f);
+        // Status lamp: pulses with the compressor, so the panel shows that the
+        // plugin is alive and working even when no gain reduction is happening. The
+        // bloom is kept inside the lamp's reach, so it never spills onto the words.
+        const auto lampBloom = static_cast<float> (j37panel::badge::lampRadius)
+                             + 2.0f * glowAmount;
+        g.setColour(palette.status.withAlpha(0.10f + 0.26f * glowAmount));
+        g.fillEllipse(lampCentre.x - lampBloom, lampCentre.y - lampBloom, lampBloom * 2.0f,
+                      lampBloom * 2.0f);
+        g.setColour(palette.status);
+        g.fillEllipse(lampCentre.x - 3.5f, lampCentre.y - 3.5f, 7.0f, 7.0f);
+    }
 
     //  The MODELS page's band: TWO IDENTICAL CARDS, then the tape spectrum across
     //  the two columns that are left.
@@ -703,13 +713,18 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     if (deckParticleCorridorX.getLength() < 20)
         return;
 
+    const j37panel::dust::Corridor corridor {
+        static_cast<float> (deckParticleCorridorX.getStart()),
+        static_cast<float> (deckParticleCorridorY.getStart()),
+        static_cast<float> (deckParticleCorridorX.getEnd()),
+        static_cast<float> (deckParticleCorridorY.getEnd())};
+
     for (const auto &orb : orbsToDraw) {
-        // The same mapping the invalidator uses, so the rectangle the timer dirties is
-        // the rectangle this loop draws into.
-        const auto centre = deckOrbScreenPosition (orb.position);
-        const auto x = centre.x;
-        const auto y = centre.y;
-        const auto radius = deckOrbScreenRadius (orb.radius);
+        // The same mapping the invalidator uses (GUI/DeckDust.h), so the rectangle the
+        // timer dirties is the rectangle this loop draws into, halo included.
+        const auto x = j37panel::dust::screenX (corridor, orb.position.x);
+        const auto y = j37panel::dust::screenY (corridor, orb.position.y);
+        const auto radius = j37panel::dust::screenRadius (orb.radius);
 
         // Halos breathe so the orbs read as particles rather than static dots.
         const auto haloScale = 1.8f + 0.6f * std::sin(glowPhase + orb.position.x * 6.0f);

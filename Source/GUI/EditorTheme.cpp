@@ -68,12 +68,12 @@ void FirstAudioProcessorEditor::applyTheme() {
     tapeScene.setPalette(palette.panel, palette.raised, palette.accent,
                          palette.knobFace.brighter(0.28f).withSaturation(0.55f));
     {
+        //  The motes' positions and radii belong to j37panel::dust::World; the colour
+        //  is the panel's, and it is the one thing a theme switch has to re-ink.
         const juce::SpinLock::ScopedLockType lock(renderOrbsLock);
-        for (std::size_t i = 0; i < decorativeOrbCount; ++i) {
-            const auto orbColour = palette.accent.withAlpha(0.25f + static_cast<float>(i) * 0.04f);
-            physicsOrbs[i].colour = orbColour;
-            renderOrbs[i].colour = orbColour;
-        }
+        for (std::size_t i = 0; i < decorativeOrbCount; ++i)
+            renderOrbs[i].colour =
+                palette.accent.withAlpha(0.25f + static_cast<float>(i) * 0.04f);
     }
 
     brandLabel.setColour(juce::Label::textColourId, palette.accent);

@@ -17,7 +17,8 @@ benchmarks.
 ```bash
 tests/dsp/run.sh          # subharmonics (SUBFUND), the loudness meter, the shaper's tanh seam, and the noise decoder
 tests/fx/run.sh           # the creative effects rack: 25 stages, the multiband compressor, and every rack CONTROL swept one at a time
-tests/layout/run.sh       # knob geometry on every page, at four panel sizes
+tests/layout/run.sh       # knob geometry on every page at four panel sizes, the page chips'
+                          # captions, and the deck's dust and state badge run frame by frame
 tests/tooltip/run.sh      # the tooltip dwell, at exact millisecond boundaries
 tests/state/run.sh        # session state round trip, and older state files
 tests/parameters/run.sh   # every parameter ID, type, range, default, choice, and legal value, plus one unique pinned test per parameter

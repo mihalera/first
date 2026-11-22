@@ -784,7 +784,6 @@ target_include_directories(first PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated"
 #    dsp               Oversampling, AudioBlock (used by processTapeEngine)
 #    gui_extra         drawing extras used by the editor
 #    opengl            OpenGLContext, a best-effort accelerator for the panel
-#    box2d             the decorative physics particles on the tape deck
 #
 #  audio_devices and cryptography are not used by this plugin directly. They are
 #  listed because foleys_gui_magic DECLARES them as module dependencies in its
@@ -833,7 +832,6 @@ target_link_libraries(first
         juce::juce_dsp
         juce::juce_gui_extra
         juce::juce_opengl
-        juce::juce_box2d
         chowdsp::chowdsp_math
         chowdsp::chowdsp_simd
         melatonin_inspector

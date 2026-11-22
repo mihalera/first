@@ -32,7 +32,7 @@ build-time and reach no shipped binary.
 
 | Component | Pin / version | Licence | Called from | Verdict |
 | --- | --- | --- | --- | --- |
-| **JUCE** | `9.0.5` submodule | AGPLv3 or commercial | the whole plugin | **Keep.** `audio_processors`, `audio_utils`, `audio_devices`, `cryptography`, `dsp`, `gui_extra`, `opengl` and `box2d` are linked; `juce_dsp` carries the oversamplers and the IR convolver, `box2d` the deck's drifting particles |
+| **JUCE** | `9.0.5` submodule | AGPLv3 or commercial | the whole plugin | **Keep.** `audio_processors`, `audio_utils`, `audio_devices`, `cryptography`, `dsp`, `gui_extra` and `opengl` are linked; `juce_dsp` carries the oversamplers and the IR convolver. The deck's drifting particles are the plugin's own (`Source/GUI/DeckDust.h`), so `juce_box2d` is not linked |
 | **RTNeural** | `95c3c0f9` | BSD-3 | `Source/DSP/NeuralStage.h` | **Keep.** The LSTM `.nam` engine; compiled with `RTNEURAL_STL` and without `-mavx2`, so the binary still runs on pre-AVX2 machines |
 | **NeuralAmpModelerCore** | `v0.6.0` (`0b3d3c97`) | MIT | `Source/DSP/NamBackend.h` | **Keep, on by default behind `J37_NAMCORE`.** WaveNet/ConvNet/Linear/Sequential `.nam`; the fixtures compare it to the reference player, and the default rests on the measurement rather than on the assumption: `tests/neural/run_bench.sh` reads 14.5 % of one 48 kHz core per channel. `-DJ37_NAMCORE=OFF` restores the LSTM-only build |
 | **Eigen** | `3.5.0` (`bc3b3987`) | MPL-2.0 | NAM Core's linear algebra | **Keep.** Header-only, vendored at the commit NAM Core's own submodule pins; file-level copyleft only |

@@ -227,19 +227,16 @@ int FirstAudioProcessorEditor::currentTransportState() const {
 }
 
 //==============================================================================
-juce::Rectangle<int> FirstAudioProcessorEditor::statusPillBounds() const {
-    const auto layout = getEditorLayout();
-    const auto headerColumnWidth = headerColumnWidthFor (layout.header.getWidth());
-    const auto headerGridWidth =
-        headerColumnCount * headerColumnWidth + (headerColumnCount - 1) * headerColumnGap;
-    const auto statusWidth = headerGridWidth - 18;
-    const auto statusX = layout.header.getRight() - 6 - headerGridWidth;
-    // The same status band placeHeader puts the label in, expanded by the pill's
-    // own two pixels a side, so the pill stays inside the header panel.
-    const juce::Rectangle<int> pill(statusX,
-                                    layout.header.getY() + headerStatusOffset,
-                                    statusWidth, headerStatusHeight);
-    return pill.expanded(2, 2);
+juce::Rectangle<int> FirstAudioProcessorEditor::statusBadgeBounds() const {
+    const auto caption = statusLabel.getBounds();
+    if (caption.isEmpty())
+        return {};
+
+    //  The caption's own rectangle plus the lamp's reach to its left, and nothing
+    //  else: the badge has no plate, so there is nothing else to invalidate.
+    const auto box = j37panel::badge::badgeForCaption (caption.getX(), caption.getY(),
+                                                       caption.getWidth(), caption.getHeight());
+    return {box.x, box.y, box.w, box.h};
 }
 
 juce::Rectangle<int> FirstAudioProcessorEditor::deckAnimationBounds() const {
@@ -267,28 +264,16 @@ juce::Rectangle<int> FirstAudioProcessorEditor::deckParticleBounds() const
             deckParticleCorridorX.getLength() + 8, deckParticleCorridorY.getLength() + 8};
 }
 
-juce::Point<float> FirstAudioProcessorEditor::deckOrbScreenPosition (
-    juce::Point<float> worldPosition) const
-{
-    //  The physics world is 1.5 x 1.2 units and the corridor is whatever the deck
-    //  gives it, so the mapping is the only place the two meet.
-    return {juce::jmap (worldPosition.x, 0.0f, 1.5f,
-                       static_cast<float> (deckParticleCorridorX.getStart()) + 6.0f,
-                       static_cast<float> (deckParticleCorridorX.getEnd()) - 6.0f),
-            juce::jmap (worldPosition.y, 0.0f, 1.2f,
-                        static_cast<float> (deckParticleCorridorY.getStart()),
-                        static_cast<float> (deckParticleCorridorY.getEnd()))};
-}
-
-float FirstAudioProcessorEditor::deckOrbScreenRadius (float worldRadius) const
-{
-    return juce::jmap (worldRadius, 0.045f, 0.057f, 2.0f, 3.5f);
-}
-
 void FirstAudioProcessorEditor::repaintDeckParticles()
 {
     if (deckParticleCorridorX.getLength() < 20 || deckParticleCorridorY.isEmpty())
         return;
+
+    const j37panel::dust::Corridor corridor {
+        static_cast<float> (deckParticleCorridorX.getStart()),
+        static_cast<float> (deckParticleCorridorY.getStart()),
+        static_cast<float> (deckParticleCorridorX.getEnd()),
+        static_cast<float> (deckParticleCorridorY.getEnd())};
 
     std::array<RenderOrb, decorativeOrbCount> orbs;
     {
@@ -296,16 +281,18 @@ void FirstAudioProcessorEditor::repaintDeckParticles()
         orbs = renderOrbs;
     }
 
-    //  Each mote invalidates only its own footprint, halo included. The dust used to
-    //  live in one narrow strip, where repainting the corridor was cheap; it crosses
-    //  the whole deck now, and that rectangle would repaint every caption and control
-    //  the deck owns on every animated frame.
+    //  Each mote invalidates only its own footprint, halo included, and the rectangle
+    //  is the one j37panel::dust::orbInvalidation hands the paint routine - so what is
+    //  dirtied is what is drawn, and the halo cannot be clipped by its own invalidator.
+    //  The dust used to live in one narrow strip, where repainting the corridor was
+    //  cheap; it crosses the whole deck now, and that rectangle would repaint every
+    //  caption and control the deck owns on every animated frame.
     for (const auto &orb : orbs)
     {
-        const auto centre = deckOrbScreenPosition (orb.position);
-        const auto reach = deckOrbScreenRadius (orb.radius) * 2.6f;
-        repaint (juce::Rectangle<float> (centre.x - reach, centre.y - reach, reach * 2.0f,
-                                         reach * 2.0f)
+        const auto rect = j37panel::dust::orbInvalidation (
+            corridor, {orb.position.x, orb.position.y, 0.0f, 0.0f, orb.radius});
+        repaint (juce::Rectangle<float> (rect.left, rect.top, rect.right - rect.left,
+                                         rect.bottom - rect.top)
                      .getSmallestIntegerContainer());
     }
 }
@@ -339,7 +326,7 @@ void FirstAudioProcessorEditor::repaintAnimatedSurfaces() {
 
     // The status lamp and the deck's own transport, both drawn by paint().
     if (!j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
-        repaint(statusPillBounds());
+        repaint(statusBadgeBounds());
 
     if (!j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
     {
@@ -664,8 +651,17 @@ void FirstAudioProcessorEditor::timerCallback() {
     // for a bypass toggle to change the state first.
     const auto bypassed = telemetry.bypassActive;
     currentBypassDisplay = bypassed;
-    statusLabel.setText(bypassed ? xlat("BYPASSED / DRY") : xlat("STEREO / REAL TIME"),
-                        juce::dontSendNotification);
+    const auto statusText = bypassed ? xlat("BYPASSED / DRY") : xlat("STEREO / REAL TIME");
+    statusLabel.setText (statusText, juce::dontSendNotification);
+
+    //  The badge is as wide as its words, so a bypass toggle or a language switch
+    //  re-measures it instead of leaving the previous caption's width behind.
+    if (statusText != lastShownStatusText)
+    {
+        lastShownStatusText = statusText;
+        placeStatusBadge();
+    }
+
     statusLabel.setColour(juce::Label::textColourId, bypassed ? paletteFor(darkTheme).secondary
                                                               : paletteFor(darkTheme).status);
 
@@ -934,46 +930,20 @@ void FirstAudioProcessorEditor::timerCallback() {
         audioProcessor.updateActiveCompareSlot();
     }
 
-    if (physicsWorld == nullptr)
-        return;
+        //  The dust. Its world, its walls and its step live in GUI/DeckDust.h, where a
+    //  harness with no JUCE can run them; the paint routine reads this array under
+    //  the lock and maps the positions with the same header.
+    dustWorld.step (1.0f / static_cast<float> (j37panel::editorTimerHz));
 
-    physicsWorld->Step (1.0f / static_cast<float> (j37panel::editorTimerHz), 6, 2);
-
-    // Dust does not settle. Box2D's restitution is below one, so energy leaves at
-    // every bounce, and six bodies left alone would eventually come to rest in a
-    // corner - which is what the drifting dots looked like. The speed is
-    // re-normalised here rather than tuned in the bodies: a mote that has fallen
-    // below the drift speed is pushed back up to it, so the motion is constant for
-    // as long as the panel is open, and no bounce can quietly stop it.
     {
-        constexpr float driftSpeed = 0.045f;
+        const juce::SpinLock::ScopedLockType lock (renderOrbsLock);
+        const auto &dustOrbs = dustWorld.orbs();
 
-        for (auto& orb : physicsOrbs)
+        for (std::size_t i = 0; i < decorativeOrbCount; ++i)
         {
-            if (orb.body == nullptr)
-                continue;
-
-            auto velocity = orb.body->GetLinearVelocity();
-            const auto speed = velocity.Length();
-
-            if (speed > 1.0e-5f && speed < driftSpeed)
-                // float * b2Vec2 is the operator Box2D defines; the other order
-                // does not exist, and the failure is a missing operator* rather
-                // than anything to do with the motion.
-                orb.body->SetLinearVelocity((driftSpeed / speed) * velocity);
+            renderOrbs[i].position = {dustOrbs[i].x, dustOrbs[i].y};
+            renderOrbs[i].radius = dustOrbs[i].radius;
         }
-    }
-
-    std::array<RenderOrb, decorativeOrbCount> nextFrame;
-    for (std::size_t i = 0; i < decorativeOrbCount; ++i) {
-        const auto position = physicsOrbs[i].body->GetPosition();
-        nextFrame[i] = {juce::Point<float>(position.x, position.y), physicsOrbs[i].radius,
-                        physicsOrbs[i].colour};
-    }
-
-    {
-        const juce::SpinLock::ScopedLockType lock(renderOrbsLock);
-        renderOrbs = nextFrame;
     }
 
     // Finally, the 3D transport. It is fed last so every number it sees is the

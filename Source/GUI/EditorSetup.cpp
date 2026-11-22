@@ -2603,68 +2603,21 @@ void FirstAudioProcessorEditor::finishConstruction() {
 }
 
 void FirstAudioProcessorEditor::createDecorativePhysics() {
-    physicsWorld = std::make_unique<b2World>(b2Vec2(0.0f, 0.0f));
+    //  The dust's world, its walls and its step live in GUI/DeckDust.h. They were
+    //  Box2D bodies here, and JUCE's Box2D allocates through juce_core - which put
+    //  the only animated thing on the panel out of reach of a harness that has no
+    //  JUCE, so "the motes cross the deck" was a claim nobody could measure. The
+    //  six bodies are a page of arithmetic in that header now, and
+    //  tests/layout/deck_dust_test.cpp steps THEM, frame by frame.
+    dustWorld.reset();
 
-    b2BodyDef boundaryDefinition;
-    auto *boundaryBody = physicsWorld->CreateBody(&boundaryDefinition);
-
-    const auto addWall = [boundaryBody](float centreX, float centreY, float halfWidth,
-                                        float halfHeight) {
-        b2PolygonShape wallShape;
-        wallShape.SetAsBox(halfWidth, halfHeight, b2Vec2(centreX, centreY), 0.0f);
-
-        b2FixtureDef wallFixture;
-        wallFixture.shape = &wallShape;
-        wallFixture.friction = 0.05f;
-        wallFixture.restitution = 0.82f;
-        boundaryBody->CreateFixture(&wallFixture);
-    };
-
-    addWall(0.75f, 0.0f, 0.75f, 0.02f);
-    addWall(0.75f, 1.2f, 0.75f, 0.02f);
-    addWall(0.0f, 0.6f, 0.02f, 0.6f);
-    addWall(1.5f, 0.6f, 0.02f, 0.6f);
-
-    // The motes drift along the deck's foot now (see placeDeck): a strip about a
-    // thousand pixels wide and a dozen tall, which is a very different world
-    // from the fifty-pixel row gap they used to be confined to. Their speed is
-    // in WORLD units per second, so 0.34 - the old value - would cross the whole
-    // band in four seconds and read as a scrolling ticker. 0.045 crosses in
-    // about half a minute, which is dust settling on a machine rather than a
-    // list scrolling past. The vertical component is deliberately tiny: the
-    // band is twelve pixels tall, so any real vertical motion is a flicker.
+    //  The colours are the editor's: the header owns positions and radii, because
+    //  those are what the layout arithmetic is measured against, and it owns no
+    //  palette. One colour per mote, brighter down the row, so the six read as six.
+    const auto &orbs = dustWorld.orbs();
     for (std::size_t i = 0; i < decorativeOrbCount; ++i) {
-        const auto index = static_cast<int>(i);
-        const auto radius = 0.045f + static_cast<float>(index % 2) * 0.012f;
-        const auto position = b2Vec2(0.30f + static_cast<float>(index) * 0.18f,
-                                     0.28f + static_cast<float>(index % 3) * 0.16f);
-
-        b2BodyDef bodyDefinition;
-        bodyDefinition.type = b2_dynamicBody;
-        bodyDefinition.position = position;
-        bodyDefinition.linearVelocity.Set((index % 2 == 0 ? 1.0f : -1.0f) * 0.045f,
-                                          (index % 3 == 0 ? 0.5f : -0.35f) * 0.006f);
-        // No damping. The motes are a slow drift, not a thrown object: linear
-        // damping is exponential, so the old 0.04 left them at nine percent of
-        // their speed after a minute - which is the "the dots barely move" half
-        // of the report. The timer re-normalises the speed as well, so a bounce
-        // can never quietly stop one either.
-        bodyDefinition.linearDamping = 0.0f;
-        auto *body = physicsWorld->CreateBody(&bodyDefinition);
-
-        b2CircleShape circleShape;
-        circleShape.m_radius = radius;
-
-        b2FixtureDef orbFixture;
-        orbFixture.shape = &circleShape;
-        orbFixture.density = 0.7f;
-        orbFixture.friction = 0.15f;
-        orbFixture.restitution = 0.82f;
-        body->CreateFixture(&orbFixture);
-
-        const auto colour =
-            paletteFor(false).accent.withAlpha(0.25f + static_cast<float>(index) * 0.04f);
-        physicsOrbs[i] = {body, radius, colour};
-        renderOrbs[i] = {juce::Point<float>(position.x, position.y), radius, colour};
+        const auto index = static_cast<float>(i);
+        renderOrbs[i] = {{orbs[i].x, orbs[i].y}, orbs[i].radius,
+                         paletteFor(false).accent.withAlpha(0.25f + index * 0.04f)};
     }
 }

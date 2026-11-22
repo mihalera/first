@@ -17,8 +17,8 @@ was measured, and the command that measures it is in
 processor owns a parameter tree of **147** parameters, a tape-machine signal path
 that runs entirely on the audio thread, and a saved state of its own format with
 a migration path. The editor owns a panel of **97** widgets, three themes, two
-renderers (OpenGL through JUCE, or a software path), a decorative 3D tape deck in
-box2d, and meters. Nothing in the audio path allocates, locks or touches the
+renderers (OpenGL through JUCE, or a software path), a decorative 3D tape deck with
+a dust simulation of its own (`Source/GUI/DeckDust.h`), and meters. Nothing in the audio path allocates, locks or touches the
 editor; the editor reads published numbers.
 
 ## Entry points
