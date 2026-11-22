@@ -888,6 +888,15 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
         one rectangle and invalidated on another. */
     juce::Rectangle<int> statusBadgeBounds() const;
 
+    /** The header's offscreen render harness (tests/header_render.cpp) paints this
+        editor into a juce::Image and measures the badge on the pixels: the box, the
+        LEVELS switch it follows, the caption's own text and the page on screen.
+        Those are facts this panel already holds, and a render test that re-derived
+        them could agree with itself while disagreeing with the paint routine it is
+        checking - so the harness reads them here instead. A friend rather than more
+        public surface: nothing outside a render test needs to reach the label. */
+    friend struct J37HeaderRenderProbe;
+
     /** Sizes the caption to its own words, in the header's second row where LEVELS
         ON/OFF ends. It reads STEREO / REAL TIME or BYPASSED / DRY and a language
         switch changes both, so the badge is re-measured rather than handed the rest
