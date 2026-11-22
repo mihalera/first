@@ -11,6 +11,13 @@ size, the code that reads it) is `Assets/README.md` and the single source of tru
 behind both is `Source/GUI/PanelAssetSlots.h`. What follows is ordered by what a
 user sees first, so a free afternoon has an obvious starting point.
 
+## Status
+
+All 15 declared slots are now filled and `python tests/assets/check_assets.py`
+reports `ASSET CHECK PASSED` (15 slots, 15 files). The remaining work is the
+proposed slots in the last table, which need a row in `PanelAssetSlots.h`, a
+call at the draw site and a file.
+
 ## How to add a drawing
 
 1. Drop the file into `Assets/` under the name in the slot table.

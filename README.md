@@ -1,5 +1,7 @@
 # MiBoX
 
+> **Alpha version.** The plugin is in active development: breaking changes to parameters, presets and saved state are acceptable, so changes can be risked.
+
 **A JUCE 9.0.5 saturation plugin built around a nonlinear magnetic tape machine** - nine saturation principles you can blend, a transport you can start and stop, and a mastering-grade output chain around it. Repository: <https://github.com/mihalera/first>
 
 | | |
@@ -25,7 +27,7 @@
 | know what the code is actually like | [docs/plugin-analysis.md](docs/plugin-analysis.md) - the review, with the numbers |
 | know what to do next | [docs/plugin-improvement-plan.md](docs/plugin-improvement-plan.md) |
 | add or adopt a library | [docs/library-candidates.md](docs/library-candidates.md) - every library in the build, the ones fetched but unused, and outside candidates with an adopt/reject verdict; [docs/library-integration-plan.md](docs/library-integration-plan.md) - the gate a dependency passes and the order to do the work in |
-| know how far the long files can be split | [SPLITTING-BIG-FILES.md](SPLITTING-BIG-FILES.md) |
+| know how far the long files can be split | [docs/SPLITTING-BIG-FILES.md](docs/SPLITTING-BIG-FILES.md) |
 | know whose code this is | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) |
 
 ### Contents
@@ -1976,7 +1978,7 @@ ThirdParty/      the vendored libraries, at the versions CMake would otherwise f
 .github/         CI: the harnesses, and builds for Windows, macOS, Linux and Android
 tests/           what checks what, and what it does not - see tests/README.md
 docs/            architecture, the signal path, the preset guide, the code analysis, saturation notes
-SPLITTING-BIG-FILES.md   how far the long files can be split, and what it costs
+docs/SPLITTING-BIG-FILES.md   how far the long files can be split, and what it costs
 THIRD_PARTY_NOTICES.md   every component the build uses, and its licence
 ```
 
@@ -2053,6 +2055,6 @@ tracks the work needed before distribution.
 changed; a change that moves code belongs with a green
 `tests/editor/check_editor_juce.sh`.
 - **The long files have a recipe**, and it is
-[SPLITTING-BIG-FILES.md](SPLITTING-BIG-FILES.md): move text without editing it,
+[docs/SPLITTING-BIG-FILES.md](docs/SPLITTING-BIG-FILES.md): move text without editing it,
 name what the move needed, and let the checks that read by anchor fail loudly if
 something was left behind.
