@@ -161,9 +161,12 @@ none picks its own `-std=` or `-Wall`.
 `tests/dependencies/check_markdown_links.py` covers the other half of the same
 question for documentation: a relative link is resolved against the file that
 wrote it, so a document that moves into a subdirectory cannot keep five paths
-written from the repository root. It skips the submodules, the build trees and
-the generated graph, strips fenced and inline code so examples are not links,
-and leaves anchors alone - a link to a file that does not exist is the subject.
+written from the repository root. Both spellings count - the target of an inline
+`[text](path)` and the destination of a reference definition `[label]: path`,
+where the path of a `[text][label]` link actually lives, which is exactly the
+form a broken one hides in. It skips the submodules, the build trees and the
+generated graph, strips fenced and inline code so examples are not links, and
+leaves anchors alone - a link to a file that does not exist is the subject.
 
 ## What each harness compiles
 
