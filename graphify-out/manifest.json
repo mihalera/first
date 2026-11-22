@@ -669,9 +669,9 @@
     "semantic_hash": ""
   },
   "Source/GUI/EditorPaint.cpp": {
-    "mtime": 1795268517.112116,
-    "seen": 1795359787.926083,
-    "ast_hash": "f76768843e6d9bcb298f70867c38decb",
+    "mtime": 1795363099.969029,
+    "seen": 1795363237.903139,
+    "ast_hash": "1dcb78b0a752acf6af1cea62986ef3c1",
     "semantic_hash": ""
   },
   "Source/GUI/EditorPreferences.h": {
@@ -694,9 +694,9 @@
     "semantic_hash": ""
   },
   "Source/GUI/EditorTimer.cpp": {
-    "mtime": 1795297647.2797132,
-    "seen": 1795359787.9261045,
-    "ast_hash": "e9d10155a3aa70da49f82fa217f1aba5",
+    "mtime": 1795363095.0547366,
+    "seen": 1795363237.9031656,
+    "ast_hash": "3962db32b2d6a4e2b6e6d2575be2e9be",
     "semantic_hash": ""
   },
   "Source/GUI/J37LookAndFeel.cpp": {
@@ -1029,15 +1029,15 @@
     "semantic_hash": ""
   },
   "Source/PluginEditor.cpp": {
-    "mtime": 1795288882.83538,
-    "seen": 1795359787.92639,
-    "ast_hash": "6268ac0448fcd0011632034f18e210d9",
+    "mtime": 1795363122.2933,
+    "seen": 1795363237.9035013,
+    "ast_hash": "f98354063beadb72f36df19f7c35e609",
     "semantic_hash": ""
   },
   "Source/PluginEditor.h": {
-    "mtime": 1795281799.893328,
-    "seen": 1795359787.9263952,
-    "ast_hash": "0d74b3abba8a8b58fbec9abb24581b38",
+    "mtime": 1795363087.58121,
+    "seen": 1795363237.9035072,
+    "ast_hash": "8294981ba1414cbaedc27ff31217971f",
     "semantic_hash": "",
     "language": "language=.cpp"
   },

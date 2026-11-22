@@ -892,8 +892,18 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     /** The software reel's top-right corner while the 3D scene is not live. */
     juce::Rectangle<int> deckAnimationBounds() const;
 
-    /** The particle strip along the deck's foot, repainted separately from the reel. */
+    /** The rectangle the drifting dust is mapped into, repainted separately from the reel. */
     juce::Rectangle<int> deckParticleBounds() const;
+
+    /** Where one mote lands on screen, and how big it is drawn: paint() and the
+        invalidator share these, so a mote cannot be drawn on one rectangle and
+        invalidated on another. */
+    juce::Point<float> deckOrbScreenPosition (juce::Point<float> worldPosition) const;
+    float deckOrbScreenRadius (float worldRadius) const;
+
+    /** Invalidates every mote's own footprint. The dust crosses the whole deck now,
+        so its corridor is no longer a cheap strip to repaint. */
+    void repaintDeckParticles();
 
     // Shared by the constructor and by resized(): the knob-grid section captions
     // are created while laying out, so a constructor-local helper was out of scope

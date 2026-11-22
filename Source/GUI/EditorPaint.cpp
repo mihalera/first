@@ -704,13 +704,12 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
         return;
 
     for (const auto &orb : orbsToDraw) {
-        const auto x = juce::jmap(orb.position.x, 0.0f, 1.5f,
-                                  static_cast<float>(deckParticleCorridorX.getStart()) + 6.0f,
-                                  static_cast<float>(deckParticleCorridorX.getEnd()) - 6.0f);
-        const auto y = juce::jmap(orb.position.y, 0.0f, 1.2f,
-                                  static_cast<float>(deckParticleCorridorY.getStart()),
-                                  static_cast<float>(deckParticleCorridorY.getEnd()));
-        const auto radius = juce::jmap(orb.radius, 0.045f, 0.057f, 2.0f, 3.5f);
+        // The same mapping the invalidator uses, so the rectangle the timer dirties is
+        // the rectangle this loop draws into.
+        const auto centre = deckOrbScreenPosition (orb.position);
+        const auto x = centre.x;
+        const auto y = centre.y;
+        const auto radius = deckOrbScreenRadius (orb.radius);
 
         // Halos breathe so the orbs read as particles rather than static dots.
         const auto haloScale = 1.8f + 0.6f * std::sin(glowPhase + orb.position.x * 6.0f);

@@ -267,6 +267,49 @@ juce::Rectangle<int> FirstAudioProcessorEditor::deckParticleBounds() const
             deckParticleCorridorX.getLength() + 8, deckParticleCorridorY.getLength() + 8};
 }
 
+juce::Point<float> FirstAudioProcessorEditor::deckOrbScreenPosition (
+    juce::Point<float> worldPosition) const
+{
+    //  The physics world is 1.5 x 1.2 units and the corridor is whatever the deck
+    //  gives it, so the mapping is the only place the two meet.
+    return {juce::jmap (worldPosition.x, 0.0f, 1.5f,
+                       static_cast<float> (deckParticleCorridorX.getStart()) + 6.0f,
+                       static_cast<float> (deckParticleCorridorX.getEnd()) - 6.0f),
+            juce::jmap (worldPosition.y, 0.0f, 1.2f,
+                        static_cast<float> (deckParticleCorridorY.getStart()),
+                        static_cast<float> (deckParticleCorridorY.getEnd()))};
+}
+
+float FirstAudioProcessorEditor::deckOrbScreenRadius (float worldRadius) const
+{
+    return juce::jmap (worldRadius, 0.045f, 0.057f, 2.0f, 3.5f);
+}
+
+void FirstAudioProcessorEditor::repaintDeckParticles()
+{
+    if (deckParticleCorridorX.getLength() < 20 || deckParticleCorridorY.isEmpty())
+        return;
+
+    std::array<RenderOrb, decorativeOrbCount> orbs;
+    {
+        const juce::SpinLock::ScopedLockType lock (renderOrbsLock);
+        orbs = renderOrbs;
+    }
+
+    //  Each mote invalidates only its own footprint, halo included. The dust used to
+    //  live in one narrow strip, where repainting the corridor was cheap; it crosses
+    //  the whole deck now, and that rectangle would repaint every caption and control
+    //  the deck owns on every animated frame.
+    for (const auto &orb : orbs)
+    {
+        const auto centre = deckOrbScreenPosition (orb.position);
+        const auto reach = deckOrbScreenRadius (orb.radius) * 2.6f;
+        repaint (juce::Rectangle<float> (centre.x - reach, centre.y - reach, reach * 2.0f,
+                                         reach * 2.0f)
+                     .getSmallestIntegerContainer());
+    }
+}
+
 void FirstAudioProcessorEditor::repaintAnimatedSurfaces() {
     // A defensive second gate: the timer already skips this call while the sheet
     // covers the panel, but a future caller must not be able to invalidate the
@@ -302,7 +345,7 @@ void FirstAudioProcessorEditor::repaintAnimatedSurfaces() {
     {
         if (!tapeScene.isSceneLive())
             repaint(deckAnimationBounds());
-        repaint(deckParticleBounds());
+        repaintDeckParticles();
     }
 }
 

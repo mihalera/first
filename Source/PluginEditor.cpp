@@ -1620,10 +1620,16 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     // hung off the frame it belongs to. The pill is now the label's own rectangle
     // plus two pixels, and the hairline under the header is drawn before it (see
     // paint()), so nothing cuts through it either.
-    statusLabel.setBounds (statusLeft, statusRowY, statusWidth, statusHeight);
-    statusLabel.setJustificationType (juce::Justification::centredLeft);
+    //  Centred between SYMMETRIC margins rather than pushed off the lamp by a
+    //  left-only border. The badge spans a third of the header, and a caption that
+    //  starts 26 px in and then ends in air reads as a crooked line rather than as
+    //  a centred state. The lamp sits at pill.x + 15, so 26 px on both sides clears
+    //  it and puts the text's own centre back on the pill's.
+    statusLabel.setBounds (statusLeft + 26, statusRowY, juce::jmax (1, statusWidth - 52),
+                           statusHeight);
+    statusLabel.setJustificationType (juce::Justification::centred);
     statusLabel.setFont (statusLabel.getFont().withHeight (uiFontSize (9.5f)));
-    statusLabel.setBorderSize (juce::BorderSize<int> (0, 26, 0, 0));
+    statusLabel.setBorderSize (juce::BorderSize<int> (0));
 }
 
 //==============================================================================
@@ -2242,10 +2248,17 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     //  length test in the paint routine hides the motes rather than crowding the
     //  text they were hurt by.
     // ------------------------------------------------------------------
-    deckParticleCorridorX = { deck.getRight() - 110, deck.getRight() - 24 };
-    deckParticleCorridorY = { deckTop (j37panel::DeckBands::badge) + 1,
-                              deckTop (j37panel::DeckBands::badge)
-                                  + deckBandHeight (j37panel::DeckBands::badge) - 1 };
+    //  Where the drifting dust lives: the whole deck.
+    //
+    //  It has been in the switches row's leftover gap, and then at the right end of
+    //  the badge line - a strip 86 px wide. Both read as "a few dots stuck in a
+    //  corner", because they were: the deck's own face is the only area big enough
+    //  for dust to read as motion. The motes are mapped across all of it now, and
+    //  each one invalidates only its own footprint (repaintDeckParticles), so the
+    //  wider corridor costs six small rectangles per animated frame instead of a
+    //  repaint of the deck and every caption on it.
+    deckParticleCorridorX = { deck.getX() + 10, deck.getRight() - 10 };
+    deckParticleCorridorY = { deck.getY() + 6, deck.getBottom() - 6 };
 }
 
 //==============================================================================
