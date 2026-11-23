@@ -628,21 +628,35 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     // (The hairline under the header was drawn above, before this badge, so it
     // cannot be painted across the pill's rounded bottom.)
 
+    // Four countersunk corner screws on each panel card, establishing a consistent
+    // industrial rack hardware aesthetic across HEADER, DECK, CONTROLS and METERS.
     // getX()/getRight() return int, so the 9.0f insets are added *after* the cast.
-    // `getX() + 9.0f` promotes the int to float implicitly, which is exactly what
-    // the int-to-float conversion warnings on macOS flag. Reading the edges into
-    // float locals once also keeps the four screw positions consistent with each
-    // other instead of each one repeating its own mixed int/float arithmetic.
-    const auto headerX = static_cast<float>(layout.header.getX());
-    const auto headerRight = static_cast<float>(layout.header.getRight());
-    const auto headerY = static_cast<float>(layout.header.getY());
-    const auto headerBottom = static_cast<float>(layout.header.getBottom());
+    // Reading the edges into float locals keeps the four screw positions consistent
+    // and avoids mixed int/float conversion warnings.
+    const auto drawPanelScrews = [&g, &palette, &inClip] (juce::Rectangle<int> panelRect) {
+        if (! inClip (panelRect))
+            return;
 
-    for (const auto point : {juce::Point<float>(headerX + 9.0f, headerY + 9.0f),
-                             juce::Point<float>(headerRight - 9.0f, headerY + 9.0f),
-                             juce::Point<float>(headerX + 9.0f, headerBottom - 9.0f),
-                             juce::Point<float>(headerRight - 9.0f, headerBottom - 9.0f)})
-        drawScrew(g, point.x, point.y, palette);
+        const auto px = static_cast<float> (panelRect.getX());
+        const auto pr = static_cast<float> (panelRect.getRight());
+        const auto py = static_cast<float> (panelRect.getY());
+        const auto pb = static_cast<float> (panelRect.getBottom());
+
+        for (const auto point : { juce::Point<float> (px + 9.0f, py + 9.0f),
+                                  juce::Point<float> (pr - 9.0f, py + 9.0f),
+                                  juce::Point<float> (px + 9.0f, pb - 9.0f),
+                                  juce::Point<float> (pr - 9.0f, pb - 9.0f) })
+            drawScrew (g, point.x, point.y, palette);
+    };
+
+    drawPanelScrews (layout.header);
+    drawPanelScrews (layout.deck);
+    drawPanelScrews (layout.controls);
+    if (levelsVisible
+        && ! j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
+    {
+        drawPanelScrews (layout.meters);
+    }
 
     // The reel, the spokes, the tape ribbon and the orbs are the deck's, and they
     // are the most expensive thing in here: six spokes' worth of cos/sin, a path

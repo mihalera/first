@@ -3430,12 +3430,12 @@ void FirstAudioProcessorEditor::placeDeckSwitch (const ControlGeometry& geometry
 //==============================================================================
 void FirstAudioProcessorEditor::placeMeters (const EditorLayout& layout)
 {
-    metersHeadingLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 8, 130, 18);
-    metersHintLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 27, 150, 14);
+    metersHeadingLabel.setBounds (layout.meters.getX() + 18, layout.meters.getY() + 8, 130, 18);
+    metersHintLabel.setBounds (layout.meters.getX() + 18, layout.meters.getY() + 27, 150, 14);
     const auto compressorLabelWidth = 120;
-    compressorLabel.setBounds (layout.meters.getRight() - compressorLabelWidth - 14,
+    compressorLabel.setBounds (layout.meters.getRight() - compressorLabelWidth - 18,
                                layout.meters.getY() + 8, compressorLabelWidth, 18);
-    compressorReadout.setBounds (layout.meters.getRight() - compressorLabelWidth - 14,
+    compressorReadout.setBounds (layout.meters.getRight() - compressorLabelWidth - 18,
                                  layout.meters.getY() + 27, compressorLabelWidth, 14);
 
     // Four meters in a 2 x 2 grid inside the meters panel:
@@ -3443,9 +3443,9 @@ void FirstAudioProcessorEditor::placeMeters (const EditorLayout& layout)
     //   row 2 - COMP IN and COMP OUT gain-reduction meters
     // The rows share the available height evenly, so the arrangement (and the
     // input-left / output-right reading order) holds at any panel size.
-    auto meterArea = layout.meters.reduced (12, 0);
+    auto meterArea = layout.meters.reduced (14, 0);
     meterArea.removeFromTop (46);           // heading + hint labels, with 4 px clearance
-    meterArea.removeFromBottom (8);
+    meterArea.removeFromBottom (12);
 
     const auto columnGap = 8;
     const auto rowGap = 8;
