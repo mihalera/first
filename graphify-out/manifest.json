@@ -663,21 +663,21 @@
     "language": "language=.cpp"
   },
   "Source/GUI/EditorMeters.cpp": {
-    "mtime": 1795451952.6718085,
-    "seen": 1795452563.0662403,
-    "ast_hash": "8bcc61d0017700aebac3f6379a64563b",
+    "mtime": 1795462440.661404,
+    "seen": 1795462490.2759435,
+    "ast_hash": "1447751e73dbef6c3a1fd980938a99cc",
     "semantic_hash": ""
   },
   "Source/GUI/EditorPaint.cpp": {
-    "mtime": 1795452316.2532754,
-    "seen": 1795452563.0662496,
-    "ast_hash": "00348692abdccd5521a26621073e4219",
+    "mtime": 1795452650.8480515,
+    "seen": 1795462490.2759516,
+    "ast_hash": "581e186c3a3e213793a818ad073213fb",
     "semantic_hash": ""
   },
   "Source/GUI/EditorPreferences.h": {
-    "mtime": 1795451500.9029675,
-    "seen": 1795452563.0662591,
-    "ast_hash": "559f3eaebceaf5233a7edddb0793620a",
+    "mtime": 1795452650.6091444,
+    "seen": 1795462490.2759588,
+    "ast_hash": "a1f61681368fe9de0ec5807899fb40a6",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
@@ -688,9 +688,9 @@
     "semantic_hash": ""
   },
   "Source/GUI/EditorTheme.cpp": {
-    "mtime": 1795451592.7326992,
-    "seen": 1795452563.0662906,
-    "ast_hash": "38db0e273c3979a51afd72ea38aecd61",
+    "mtime": 1795452651.2575088,
+    "seen": 1795462490.275974,
+    "ast_hash": "0972c16f08ec9cdb3364024d1e196175",
     "semantic_hash": ""
   },
   "Source/GUI/EditorTimer.cpp": {
@@ -700,9 +700,9 @@
     "semantic_hash": ""
   },
   "Source/GUI/J37LookAndFeel.cpp": {
-    "mtime": 1795452246.2458615,
-    "seen": 1795452563.06631,
-    "ast_hash": "b059e68445f35569e01e604cad03f328",
+    "mtime": 1795452651.3975856,
+    "seen": 1795462490.2759888,
+    "ast_hash": "7d396004ff53532b01f8f33261129a9b",
     "semantic_hash": ""
   },
   "Source/GUI/KnobMetrics.h": {
@@ -825,9 +825,9 @@
     "language": "language=.cpp"
   },
   "Source/GUI/PanelAssetSlots.h": {
-    "mtime": 1795452063.9207764,
-    "seen": 1795452563.0664902,
-    "ast_hash": "8d7f4adf023886bc669ee690d4202fb2",
+    "mtime": 1795452650.506299,
+    "seen": 1795462490.27613,
+    "ast_hash": "0dd682dbb29fa234a71b90984ceecf31",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
@@ -988,9 +988,9 @@
     "semantic_hash": "65848bf02e08486cfb8ce84e6021fced"
   },
   "Source/GUI/UserThemeWindow.h": {
-    "mtime": 1795452246.5555327,
-    "seen": 1795452563.06668,
-    "ast_hash": "1d2bb2f178a5771e9d94a14476dbfce4",
+    "mtime": 1795452650.729214,
+    "seen": 1795462490.2763155,
+    "ast_hash": "8f121988d0d759dba57c362da602936a",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
@@ -1029,15 +1029,15 @@
     "semantic_hash": ""
   },
   "Source/PluginEditor.cpp": {
-    "mtime": 1795451501.151705,
-    "seen": 1795452563.0667384,
-    "ast_hash": "440f5356debfda9cadfe9706cb1f1de2",
+    "mtime": 1795452651.550757,
+    "seen": 1795462490.276393,
+    "ast_hash": "bd6e7358a4b57fca112c94ea82fab8a3",
     "semantic_hash": ""
   },
   "Source/PluginEditor.h": {
-    "mtime": 1795451344.5922246,
-    "seen": 1795452563.0667484,
-    "ast_hash": "07f26a67e8a3bc641e9ef971433c0259",
+    "mtime": 1795452730.5453637,
+    "seen": 1795462490.2764108,
+    "ast_hash": "951a9e0fd14a45a45e2664f4fbf4f4c0",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
@@ -1048,9 +1048,9 @@
     "semantic_hash": ""
   },
   "Source/PluginProcessor.h": {
-    "mtime": 1795430464.5293555,
-    "seen": 1795430621.228321,
-    "ast_hash": "2fdc5f5d4970654ae50ab9c66e6a0837",
+    "mtime": 1795461571.3618066,
+    "seen": 1795462490.276433,
+    "ast_hash": "1ccaaf8c13f14ad50c5e11cb412baca7",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
@@ -1278,9 +1278,9 @@
     "language": "language=.cpp"
   },
   "Source/ProcessorSignalPath.cpp": {
-    "mtime": 1795304213.872204,
-    "seen": 1795359787.926663,
-    "ast_hash": "e0169aec4154a12df69998557086f230",
+    "mtime": 1795462324.4614997,
+    "seen": 1795462490.2767203,
+    "ast_hash": "4432f9b3d06042f3a2e33521f4762593",
     "semantic_hash": ""
   },
   "Source/ProcessorStateFormat.h": {
@@ -1455,11 +1455,10 @@
     "semantic_hash": "25f2bf421acfc48c8f6ca6b3b3089bdd"
   },
   "skills-lock.json": {
-    "mtime": 1794237380.5820227,
-    "seen": 1794648118.5909855,
-    "ast_hash": "a36df804aadfe88ade2335df19266eea",
-    "semantic_hash": "a36df804aadfe88ade2335df19266eea",
-    "ast_empty": true
+    "mtime": 1795462399.8311715,
+    "seen": 1795462490.276955,
+    "ast_hash": "2eeca0217a3eee22eeb66452e2d18641",
+    "semantic_hash": ""
   },
   "tests/android/check_android_apk.py": {
     "mtime": 1793809201.551275,
@@ -1474,9 +1473,9 @@
     "semantic_hash": "dc19334db0b821ffed94737d38f3b138"
   },
   "tests/assets/check_assets.py": {
-    "mtime": 1795451721.9004068,
-    "seen": 1795452563.0674388,
-    "ast_hash": "8c134ae5df5a2cf6bf699d0e5854f95a",
+    "mtime": 1795452842.0864482,
+    "seen": 1795462490.2769816,
+    "ast_hash": "ffeea73f3ba2c044195408c4f1d66f0f",
     "semantic_hash": ""
   },
   "tests/definitions/check_definitions.py": {
@@ -3230,6 +3229,618 @@
     "mtime": 1795452536.5858762,
     "seen": 1795452563.070026,
     "ast_hash": "a4f75e1e76a67731ccbc05a46fa498a7",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/scripts/analyze.py": {
+    "mtime": 1795462347.3548346,
+    "seen": 1795462490.2747228,
+    "ast_hash": "fabbc8b10b3b061b5637aad144a90e8d",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/scripts/arrange.py": {
+    "mtime": 1795462347.3558333,
+    "seen": 1795462490.2747335,
+    "ast_hash": "75ea6e99b539309c3c2b297ed2336b58",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/scripts/audit.py": {
+    "mtime": 1795462347.3563344,
+    "seen": 1795462490.274744,
+    "ast_hash": "a00af0b8ac9289a1b46cb9a65a4ec313",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/scripts/credits.py": {
+    "mtime": 1795462347.3568327,
+    "seen": 1795462490.2747529,
+    "ast_hash": "024e09b09a6ea9c527910369665d1b7f",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/scripts/licences.py": {
+    "mtime": 1795462347.3568327,
+    "seen": 1795462490.2747605,
+    "ast_hash": "4d0db49ece4695282df4733995282d17",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/scripts/master.py": {
+    "mtime": 1795462347.3578362,
+    "seen": 1795462490.2747684,
+    "ast_hash": "d5f75065cbab035466a4396ac09999a9",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/scripts/mix.py": {
+    "mtime": 1795462347.3588421,
+    "seen": 1795462490.2747772,
+    "ast_hash": "25e2993179cbb46de1634d81dbfb275b",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/scripts/mux.mjs": {
+    "mtime": 1795462347.3593411,
+    "seen": 1795462490.2747874,
+    "ast_hash": "186a675afc202036f081bcec4a227a6a",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/scripts/qa.py": {
+    "mtime": 1795462347.3593411,
+    "seen": 1795462490.274795,
+    "ast_hash": "6f57ee211c2b4184f78f2a617b8d3a84",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/scripts/variant.py": {
+    "mtime": 1795462347.3603442,
+    "seen": 1795462490.2748032,
+    "ast_hash": "73e78e362edef08fde5ac30424c8667a",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/templates/arc.json": {
+    "mtime": 1795462347.3623507,
+    "seen": 1795462490.274812,
+    "ast_hash": "1d7725f518ce10c62b70504e3600a730",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/templates/audit_entry.json": {
+    "mtime": 1795462347.3628573,
+    "seen": 1795462490.27482,
+    "ast_hash": "df393c690c76b9b1edd402f04ccd859e",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/templates/cues.json": {
+    "mtime": 1795462347.3633552,
+    "seen": 1795462490.2748282,
+    "ast_hash": "627055e98afa5c4990124384e4c0d02e",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/templates/design_fragment.json": {
+    "mtime": 1795462347.3643558,
+    "seen": 1795462490.274835,
+    "ast_hash": "e0ebb9e4b5e9c0390a1f99f1b3194b1d",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/templates/manifest_entry.json": {
+    "mtime": 1795462347.3648555,
+    "seen": 1795462490.274843,
+    "ast_hash": "5fec064a44b7913c32210fbbea2f644d",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/templates/sounddesign.json": {
+    "mtime": 1795462347.3714414,
+    "seen": 1795462490.274851,
+    "ast_hash": "b829d538a613dbd2a4cff7be1cd90d8c",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/scripts/analyze.py": {
+    "mtime": 1795462347.3548346,
+    "seen": 1795462490.2748702,
+    "ast_hash": "fabbc8b10b3b061b5637aad144a90e8d",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/scripts/arrange.py": {
+    "mtime": 1795462347.3558333,
+    "seen": 1795462490.2748775,
+    "ast_hash": "75ea6e99b539309c3c2b297ed2336b58",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/scripts/audit.py": {
+    "mtime": 1795462347.3563344,
+    "seen": 1795462490.2748854,
+    "ast_hash": "a00af0b8ac9289a1b46cb9a65a4ec313",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/scripts/credits.py": {
+    "mtime": 1795462347.3568327,
+    "seen": 1795462490.274893,
+    "ast_hash": "024e09b09a6ea9c527910369665d1b7f",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/scripts/licences.py": {
+    "mtime": 1795462347.3568327,
+    "seen": 1795462490.2749,
+    "ast_hash": "4d0db49ece4695282df4733995282d17",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/scripts/master.py": {
+    "mtime": 1795462347.3578362,
+    "seen": 1795462490.2749078,
+    "ast_hash": "d5f75065cbab035466a4396ac09999a9",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/scripts/mix.py": {
+    "mtime": 1795462347.3588421,
+    "seen": 1795462490.2749162,
+    "ast_hash": "25e2993179cbb46de1634d81dbfb275b",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/scripts/mux.mjs": {
+    "mtime": 1795462347.3593411,
+    "seen": 1795462490.2749228,
+    "ast_hash": "186a675afc202036f081bcec4a227a6a",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/scripts/qa.py": {
+    "mtime": 1795462347.3593411,
+    "seen": 1795462490.27493,
+    "ast_hash": "6f57ee211c2b4184f78f2a617b8d3a84",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/scripts/variant.py": {
+    "mtime": 1795462347.3603442,
+    "seen": 1795462490.2749376,
+    "ast_hash": "73e78e362edef08fde5ac30424c8667a",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/templates/arc.json": {
+    "mtime": 1795462347.3623507,
+    "seen": 1795462490.2749453,
+    "ast_hash": "1d7725f518ce10c62b70504e3600a730",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/templates/audit_entry.json": {
+    "mtime": 1795462347.3628573,
+    "seen": 1795462490.2749531,
+    "ast_hash": "df393c690c76b9b1edd402f04ccd859e",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/templates/cues.json": {
+    "mtime": 1795462347.3633552,
+    "seen": 1795462490.2749615,
+    "ast_hash": "627055e98afa5c4990124384e4c0d02e",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/templates/design_fragment.json": {
+    "mtime": 1795462347.3643558,
+    "seen": 1795462490.274969,
+    "ast_hash": "e0ebb9e4b5e9c0390a1f99f1b3194b1d",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/templates/manifest_entry.json": {
+    "mtime": 1795462347.3648555,
+    "seen": 1795462490.274977,
+    "ast_hash": "5fec064a44b7913c32210fbbea2f644d",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/templates/sounddesign.json": {
+    "mtime": 1795462347.3714414,
+    "seen": 1795462490.2749844,
+    "ast_hash": "b829d538a613dbd2a4cff7be1cd90d8c",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/scripts/analyze.py": {
+    "mtime": 1795462347.3548346,
+    "seen": 1795462490.274993,
+    "ast_hash": "fabbc8b10b3b061b5637aad144a90e8d",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/scripts/arrange.py": {
+    "mtime": 1795462347.3558333,
+    "seen": 1795462490.275,
+    "ast_hash": "75ea6e99b539309c3c2b297ed2336b58",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/scripts/audit.py": {
+    "mtime": 1795462347.3563344,
+    "seen": 1795462490.275007,
+    "ast_hash": "a00af0b8ac9289a1b46cb9a65a4ec313",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/scripts/credits.py": {
+    "mtime": 1795462347.3568327,
+    "seen": 1795462490.2750142,
+    "ast_hash": "024e09b09a6ea9c527910369665d1b7f",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/scripts/licences.py": {
+    "mtime": 1795462347.3568327,
+    "seen": 1795462490.2750218,
+    "ast_hash": "4d0db49ece4695282df4733995282d17",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/scripts/master.py": {
+    "mtime": 1795462347.3578362,
+    "seen": 1795462490.27503,
+    "ast_hash": "d5f75065cbab035466a4396ac09999a9",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/scripts/mix.py": {
+    "mtime": 1795462347.3588421,
+    "seen": 1795462490.2750378,
+    "ast_hash": "25e2993179cbb46de1634d81dbfb275b",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/scripts/mux.mjs": {
+    "mtime": 1795462347.3593411,
+    "seen": 1795462490.2750452,
+    "ast_hash": "186a675afc202036f081bcec4a227a6a",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/scripts/qa.py": {
+    "mtime": 1795462347.3593411,
+    "seen": 1795462490.2750533,
+    "ast_hash": "6f57ee211c2b4184f78f2a617b8d3a84",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/scripts/variant.py": {
+    "mtime": 1795462347.3603442,
+    "seen": 1795462490.275061,
+    "ast_hash": "73e78e362edef08fde5ac30424c8667a",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/templates/arc.json": {
+    "mtime": 1795462347.3623507,
+    "seen": 1795462490.2750688,
+    "ast_hash": "1d7725f518ce10c62b70504e3600a730",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/templates/audit_entry.json": {
+    "mtime": 1795462347.3628573,
+    "seen": 1795462490.2750766,
+    "ast_hash": "df393c690c76b9b1edd402f04ccd859e",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/templates/cues.json": {
+    "mtime": 1795462347.3633552,
+    "seen": 1795462490.2750843,
+    "ast_hash": "627055e98afa5c4990124384e4c0d02e",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/templates/design_fragment.json": {
+    "mtime": 1795462347.3643558,
+    "seen": 1795462490.275092,
+    "ast_hash": "e0ebb9e4b5e9c0390a1f99f1b3194b1d",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/templates/manifest_entry.json": {
+    "mtime": 1795462347.3648555,
+    "seen": 1795462490.2750993,
+    "ast_hash": "5fec064a44b7913c32210fbbea2f644d",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/templates/sounddesign.json": {
+    "mtime": 1795462347.3714414,
+    "seen": 1795462490.275107,
+    "ast_hash": "b829d538a613dbd2a4cff7be1cd90d8c",
+    "semantic_hash": ""
+  },
+  ".agents/skills/earshot/SKILL.md": {
+    "mtime": 1795462347.3492506,
+    "seen": 1795462490.2779803,
+    "ast_hash": "82409f2f47a3c2cbc0e0484909d3ec3d",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/SKILL.md": {
+    "mtime": 1795462347.350254,
+    "seen": 1795462490.278434,
+    "ast_hash": "b216f6357e962b5abfb89cff626d9a62",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/references/design-format.md": {
+    "mtime": 1795462347.351818,
+    "seen": 1795462490.278442,
+    "ast_hash": "cff8687749e02e6dde154911cf9d5005",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/references/licences.md": {
+    "mtime": 1795462347.3523202,
+    "seen": 1795462490.2784488,
+    "ast_hash": "78b33b4aa2865fc7bd1da3a5c6abd7ed",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/references/process.md": {
+    "mtime": 1795462347.352824,
+    "seen": 1795462490.2784557,
+    "ast_hash": "6072d8afda6f344dd5bd0daf33ee32b8",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/references/sound-design.md": {
+    "mtime": 1795462347.3533292,
+    "seen": 1795462490.2784626,
+    "ast_hash": "f278771a8857c493a693355f96f26884",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/references/troubleshooting.md": {
+    "mtime": 1795462347.3543348,
+    "seen": 1795462490.2784696,
+    "ast_hash": "89ac847306bac89c69ee560a7212d423",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/templates/SOUND_BRIEF.md": {
+    "mtime": 1795462347.36185,
+    "seen": 1795462490.278478,
+    "ast_hash": "0d0138378b6b77d029b1b8e0bca4c690",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/templates/prompts/critic_director.md": {
+    "mtime": 1795462347.3653545,
+    "seen": 1795462490.2784855,
+    "ast_hash": "cd11857b3a3b6fa1ce092700537efc36",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/templates/prompts/critic_edges.md": {
+    "mtime": 1795462347.366359,
+    "seen": 1795462490.2784927,
+    "ast_hash": "49366dfdbb8c1c345060f96ca8559160",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/templates/prompts/critic_masking.md": {
+    "mtime": 1795462347.3668647,
+    "seen": 1795462490.2785003,
+    "ast_hash": "e8357cb926cd59ec778522e665851f85",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/templates/prompts/critic_sync.md": {
+    "mtime": 1795462347.367364,
+    "seen": 1795462490.2785077,
+    "ast_hash": "9229867a2c1a0e708f7ceb77332ec09c",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/templates/prompts/critic_tonal.md": {
+    "mtime": 1795462347.367869,
+    "seen": 1795462490.2785144,
+    "ast_hash": "abcf5ae0c7b816591744350f61d4318d",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/templates/prompts/designer.md": {
+    "mtime": 1795462347.3683686,
+    "seen": 1795462490.2785218,
+    "ast_hash": "d14d49db8c32361480902f57bb1ea88d",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/templates/prompts/fixer.md": {
+    "mtime": 1795462347.3688688,
+    "seen": 1795462490.2785292,
+    "ast_hash": "b0683b666e4cbdfcf6f616a719cae347",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/templates/prompts/licence_audit.md": {
+    "mtime": 1795462347.3693705,
+    "seen": 1795462490.2785373,
+    "ast_hash": "1fcfded7e2bdf60fc5e50f213e657edc",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/templates/prompts/music_supervisor.md": {
+    "mtime": 1795462347.3693705,
+    "seen": 1795462490.2785447,
+    "ast_hash": "44a9e1c650abe81ebe924fbfb7d27d3e",
+    "semantic_hash": ""
+  },
+  ".agents/skills/real-sound/templates/prompts/sourcing.md": {
+    "mtime": 1795462347.3703787,
+    "seen": 1795462490.2785525,
+    "ast_hash": "397857254c38b0323a828502976e9b0f",
+    "semantic_hash": ""
+  },
+  ".claude/skills/earshot/SKILL.md": {
+    "mtime": 1795462347.3492506,
+    "seen": 1795462490.2786875,
+    "ast_hash": "82409f2f47a3c2cbc0e0484909d3ec3d",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/SKILL.md": {
+    "mtime": 1795462347.350254,
+    "seen": 1795462490.2787583,
+    "ast_hash": "b216f6357e962b5abfb89cff626d9a62",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/references/design-format.md": {
+    "mtime": 1795462347.351818,
+    "seen": 1795462490.2787664,
+    "ast_hash": "cff8687749e02e6dde154911cf9d5005",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/references/licences.md": {
+    "mtime": 1795462347.3523202,
+    "seen": 1795462490.2787735,
+    "ast_hash": "78b33b4aa2865fc7bd1da3a5c6abd7ed",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/references/process.md": {
+    "mtime": 1795462347.352824,
+    "seen": 1795462490.2787807,
+    "ast_hash": "6072d8afda6f344dd5bd0daf33ee32b8",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/references/sound-design.md": {
+    "mtime": 1795462347.3533292,
+    "seen": 1795462490.278788,
+    "ast_hash": "f278771a8857c493a693355f96f26884",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/references/troubleshooting.md": {
+    "mtime": 1795462347.3543348,
+    "seen": 1795462490.278795,
+    "ast_hash": "89ac847306bac89c69ee560a7212d423",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/templates/SOUND_BRIEF.md": {
+    "mtime": 1795462347.36185,
+    "seen": 1795462490.2788022,
+    "ast_hash": "0d0138378b6b77d029b1b8e0bca4c690",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/templates/prompts/critic_director.md": {
+    "mtime": 1795462347.3653545,
+    "seen": 1795462490.278809,
+    "ast_hash": "cd11857b3a3b6fa1ce092700537efc36",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/templates/prompts/critic_edges.md": {
+    "mtime": 1795462347.366359,
+    "seen": 1795462490.278816,
+    "ast_hash": "49366dfdbb8c1c345060f96ca8559160",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/templates/prompts/critic_masking.md": {
+    "mtime": 1795462347.3668647,
+    "seen": 1795462490.2788231,
+    "ast_hash": "e8357cb926cd59ec778522e665851f85",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/templates/prompts/critic_sync.md": {
+    "mtime": 1795462347.367364,
+    "seen": 1795462490.27883,
+    "ast_hash": "9229867a2c1a0e708f7ceb77332ec09c",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/templates/prompts/critic_tonal.md": {
+    "mtime": 1795462347.367869,
+    "seen": 1795462490.2788374,
+    "ast_hash": "abcf5ae0c7b816591744350f61d4318d",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/templates/prompts/designer.md": {
+    "mtime": 1795462347.3683686,
+    "seen": 1795462490.2788448,
+    "ast_hash": "d14d49db8c32361480902f57bb1ea88d",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/templates/prompts/fixer.md": {
+    "mtime": 1795462347.3688688,
+    "seen": 1795462490.2788515,
+    "ast_hash": "b0683b666e4cbdfcf6f616a719cae347",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/templates/prompts/licence_audit.md": {
+    "mtime": 1795462347.3693705,
+    "seen": 1795462490.278859,
+    "ast_hash": "1fcfded7e2bdf60fc5e50f213e657edc",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/templates/prompts/music_supervisor.md": {
+    "mtime": 1795462347.3693705,
+    "seen": 1795462490.2788658,
+    "ast_hash": "44a9e1c650abe81ebe924fbfb7d27d3e",
+    "semantic_hash": ""
+  },
+  ".claude/skills/real-sound/templates/prompts/sourcing.md": {
+    "mtime": 1795462347.3703787,
+    "seen": 1795462490.2788732,
+    "ast_hash": "397857254c38b0323a828502976e9b0f",
+    "semantic_hash": ""
+  },
+  ".continue/skills/earshot/SKILL.md": {
+    "mtime": 1795462347.3492506,
+    "seen": 1795462490.2790527,
+    "ast_hash": "82409f2f47a3c2cbc0e0484909d3ec3d",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/SKILL.md": {
+    "mtime": 1795462347.350254,
+    "seen": 1795462490.2791045,
+    "ast_hash": "b216f6357e962b5abfb89cff626d9a62",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/references/design-format.md": {
+    "mtime": 1795462347.351818,
+    "seen": 1795462490.2791133,
+    "ast_hash": "cff8687749e02e6dde154911cf9d5005",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/references/licences.md": {
+    "mtime": 1795462347.3523202,
+    "seen": 1795462490.2791226,
+    "ast_hash": "78b33b4aa2865fc7bd1da3a5c6abd7ed",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/references/process.md": {
+    "mtime": 1795462347.352824,
+    "seen": 1795462490.2791314,
+    "ast_hash": "6072d8afda6f344dd5bd0daf33ee32b8",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/references/sound-design.md": {
+    "mtime": 1795462347.3533292,
+    "seen": 1795462490.27914,
+    "ast_hash": "f278771a8857c493a693355f96f26884",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/references/troubleshooting.md": {
+    "mtime": 1795462347.3543348,
+    "seen": 1795462490.2791483,
+    "ast_hash": "89ac847306bac89c69ee560a7212d423",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/templates/SOUND_BRIEF.md": {
+    "mtime": 1795462347.36185,
+    "seen": 1795462490.2791564,
+    "ast_hash": "0d0138378b6b77d029b1b8e0bca4c690",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/templates/prompts/critic_director.md": {
+    "mtime": 1795462347.3653545,
+    "seen": 1795462490.2791643,
+    "ast_hash": "cd11857b3a3b6fa1ce092700537efc36",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/templates/prompts/critic_edges.md": {
+    "mtime": 1795462347.366359,
+    "seen": 1795462490.279173,
+    "ast_hash": "49366dfdbb8c1c345060f96ca8559160",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/templates/prompts/critic_masking.md": {
+    "mtime": 1795462347.3668647,
+    "seen": 1795462490.2791812,
+    "ast_hash": "e8357cb926cd59ec778522e665851f85",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/templates/prompts/critic_sync.md": {
+    "mtime": 1795462347.367364,
+    "seen": 1795462490.27919,
+    "ast_hash": "9229867a2c1a0e708f7ceb77332ec09c",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/templates/prompts/critic_tonal.md": {
+    "mtime": 1795462347.367869,
+    "seen": 1795462490.2791977,
+    "ast_hash": "abcf5ae0c7b816591744350f61d4318d",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/templates/prompts/designer.md": {
+    "mtime": 1795462347.3683686,
+    "seen": 1795462490.2792056,
+    "ast_hash": "d14d49db8c32361480902f57bb1ea88d",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/templates/prompts/fixer.md": {
+    "mtime": 1795462347.3688688,
+    "seen": 1795462490.2792137,
+    "ast_hash": "b0683b666e4cbdfcf6f616a719cae347",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/templates/prompts/licence_audit.md": {
+    "mtime": 1795462347.3693705,
+    "seen": 1795462490.279221,
+    "ast_hash": "1fcfded7e2bdf60fc5e50f213e657edc",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/templates/prompts/music_supervisor.md": {
+    "mtime": 1795462347.3693705,
+    "seen": 1795462490.2792292,
+    "ast_hash": "44a9e1c650abe81ebe924fbfb7d27d3e",
+    "semantic_hash": ""
+  },
+  ".continue/skills/real-sound/templates/prompts/sourcing.md": {
+    "mtime": 1795462347.3703787,
+    "seen": 1795462490.2792368,
+    "ast_hash": "397857254c38b0323a828502976e9b0f",
     "semantic_hash": ""
   }
 }

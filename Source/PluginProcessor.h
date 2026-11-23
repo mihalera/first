@@ -1129,6 +1129,8 @@ private:
 
     /** Rebuilds rate-dependent block coefficients from the current engine rate. */
     void configureBlockRateCoefficients (float engineSampleRate, float cabinetAmount);
+    void publishTelemetryFrame (float inputPeakReductionDb, float peakReductionDb,
+                                float inputEnvelopeActivity, float driveInto);
 
     /** Selects the prepared oversampling slot for the requested factor and reports
         latency. Allocation-free: all slots were prepared in prepareToPlay, so this

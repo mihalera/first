@@ -956,81 +956,66 @@ void FirstAudioProcessor::publishBlockTelemetry (const BlockContext& context,
                           std::memory_order_relaxed);
     harmonicCharacter.store (driveInto, std::memory_order_relaxed);
 
-    // -------------------------------------------------------------------------
-    //  Publish one complete telemetry frame.
-    //
-    //  This is the LAST thing the block does, so every value in the frame is the
-    //  final value for this block - the meters, the drift, the harmonics, the
-    //  subfund tracker and the anti-phase guard have all finished writing. With
-    //  the lock-free queue present, this ONE push is what the editor reads: the
-    //  fields cannot be read half-updated, because they are pushed together.
-    //
-    //  The individual atomics are still written, because the editor falls back to
-    //  them when the queue is not compiled in and because they are what the DSP
-    //  harness and any future non-UI consumer read. Keeping both costs a handful of
-    //  relaxed stores per block and means neither path can be the stale one.
-    // -------------------------------------------------------------------------
-    {
-        TelemetryFrame frame;
-        frame.inputPeakDb = inputPeakDb.load (std::memory_order_relaxed);
-        frame.inputRmsDb = inputRmsDb.load (std::memory_order_relaxed);
-        frame.inputLufs = inputLufs.load (std::memory_order_relaxed);
-        frame.inputVuDb = inputVuDb.load (std::memory_order_relaxed);
-        frame.inputCombinedDb = inputCombinedDb.load (std::memory_order_relaxed);
-        frame.inputClipping = inputClipping.load (std::memory_order_relaxed);
+    // Publish the complete frame last, after every block value and mirror is final.
+    publishTelemetryFrame (inputPeakReductionDb, peakReductionDb,
+                           inputEnvelopeActivity, driveInto);
+}
 
-        frame.outputPeakDb = outputPeakDb.load (std::memory_order_relaxed);
-        frame.outputRmsDb = outputRmsDb.load (std::memory_order_relaxed);
-        frame.outputLufs = outputLufs.load (std::memory_order_relaxed);
-        frame.outputVuDb = outputVuDb.load (std::memory_order_relaxed);
-        frame.outputCombinedDb = outputCombinedDb.load (std::memory_order_relaxed);
-        frame.outputClipping = outputClipping.load (std::memory_order_relaxed);
+void FirstAudioProcessor::publishTelemetryFrame (float inputPeakReductionDb,
+                                                 float peakReductionDb,
+                                                 float inputEnvelopeActivity,
+                                                 float driveInto)
+{
+    // Assemble and publish the complete frame, preserving enqueue-then-mirror order.
+    TelemetryFrame frame;
+    frame.inputPeakDb = inputPeakDb.load (std::memory_order_relaxed);
+    frame.inputRmsDb = inputRmsDb.load (std::memory_order_relaxed);
+    frame.inputLufs = inputLufs.load (std::memory_order_relaxed);
+    frame.inputVuDb = inputVuDb.load (std::memory_order_relaxed);
+    frame.inputCombinedDb = inputCombinedDb.load (std::memory_order_relaxed);
+    frame.inputClipping = inputClipping.load (std::memory_order_relaxed);
 
-        frame.inputGainReductionDb = inputPeakReductionDb;
-        frame.outputGainReductionDb = peakReductionDb;
-        frame.inputCompressorActivity = inputEnvelopeActivity;
-        frame.outputCompressorActivity = outputCompressor.getEnvelopeActivity();
-        frame.compressorActivity = juce::jmax (inputEnvelopeActivity,
-                                               outputCompressor.getEnvelopeActivity());
+    frame.outputPeakDb = outputPeakDb.load (std::memory_order_relaxed);
+    frame.outputRmsDb = outputRmsDb.load (std::memory_order_relaxed);
+    frame.outputLufs = outputLufs.load (std::memory_order_relaxed);
+    frame.outputVuDb = outputVuDb.load (std::memory_order_relaxed);
+    frame.outputCombinedDb = outputCombinedDb.load (std::memory_order_relaxed);
+    frame.outputClipping = outputClipping.load (std::memory_order_relaxed);
 
-        frame.transportDrift = transportDrift.load (std::memory_order_relaxed);
-        frame.harmonicCharacter = driveInto;
-        frame.evenHarmonicRatio = evenHarmonicRatio.load (std::memory_order_relaxed);
-        frame.oddHarmonicRatio = oddHarmonicRatio.load (std::memory_order_relaxed);
+    frame.inputGainReductionDb = inputPeakReductionDb;
+    frame.outputGainReductionDb = peakReductionDb;
+    frame.inputCompressorActivity = inputEnvelopeActivity;
+    frame.outputCompressorActivity = outputCompressor.getEnvelopeActivity();
+    frame.compressorActivity = juce::jmax (inputEnvelopeActivity,
+                                           outputCompressor.getEnvelopeActivity());
 
-        // The spectrum, read straight off the analyser. It is deliberately the ONE
-        // field in this frame that has no mirror atomic: this function runs on the
-        // audio thread at the end of the block, the frame is the channel the
-        // editor reads, and twenty-four per-band atomics would be state nothing
-        // consults. A build without the queue therefore shows a flat curve rather
-        // than a stale one - getTelemetry()'s atomic fallback leaves these bands at
-        // the floor, which is the honest reading of "this build carries no
-        // frames" rather than a curve frozen at whatever the last block said.
-        frame.spectrumBandsDb = spectrumAnalyser.bands();
-        frame.subfundTrackedHz = subfundTrackedHz.load (std::memory_order_relaxed);
-        frame.subfundConfidence = subfundConfidence.load (std::memory_order_relaxed);
-        frame.antiPhaseAmount = antiPhaseCorrection;
-        frame.transportRamp = transportRampPublished.load (std::memory_order_relaxed);
-        frame.spindownRamp = spindownRampPublished.load (std::memory_order_relaxed);
-        frame.bypassActive = bypassActive.load (std::memory_order_relaxed);
+    frame.transportDrift = transportDrift.load (std::memory_order_relaxed);
+    frame.harmonicCharacter = driveInto;
+    frame.evenHarmonicRatio = evenHarmonicRatio.load (std::memory_order_relaxed);
+    frame.oddHarmonicRatio = oddHarmonicRatio.load (std::memory_order_relaxed);
+
+    // The spectrum has no mirror atomic, so builds without the queue show a flat
+    // curve rather than a stale one.
+    frame.spectrumBandsDb = spectrumAnalyser.bands();
+    frame.subfundTrackedHz = subfundTrackedHz.load (std::memory_order_relaxed);
+    frame.subfundConfidence = subfundConfidence.load (std::memory_order_relaxed);
+    frame.antiPhaseAmount = antiPhaseCorrection;
+    frame.transportRamp = transportRampPublished.load (std::memory_order_relaxed);
+    frame.spindownRamp = spindownRampPublished.load (std::memory_order_relaxed);
+    frame.bypassActive = bypassActive.load (std::memory_order_relaxed);
 
 #if J37_HAS_RWQ
-        // The editor is the queue's sole consumer. The audio thread is only the
-        // producer, so a full ring drops this newest frame instead of waiting or
-        // dequeuing on the producer side; the atomic telemetry mirror below still
-        // publishes the latest meter values regardless of queue capacity.
-        juce::ignoreUnused (telemetryQueue.try_enqueue (frame));
+    // The editor is the queue's sole consumer. A full ring drops this newest frame
+    // rather than waiting; atomic mirrors still publish the latest values.
+    juce::ignoreUnused (telemetryQueue.try_enqueue (frame));
 #endif
 
-        // The always-present mirror. These are the three the editor needs even when
-        // the queue is absent, and the values a host-side meter would read.
-        telemetryInputPeakDb.store (frame.inputPeakDb, std::memory_order_relaxed);
-        telemetryOutputPeakDb.store (frame.outputPeakDb, std::memory_order_relaxed);
-        telemetryInputRmsDb.store (frame.inputRmsDb, std::memory_order_relaxed);
-        telemetryOutputRmsDb.store (frame.outputRmsDb, std::memory_order_relaxed);
-        telemetryAntiPhase.store (frame.antiPhaseAmount, std::memory_order_relaxed);
-        telemetryPlatter.store (frame.transportRamp, std::memory_order_relaxed);
-    }
+    telemetryInputPeakDb.store (frame.inputPeakDb, std::memory_order_relaxed);
+    telemetryOutputPeakDb.store (frame.outputPeakDb, std::memory_order_relaxed);
+    telemetryInputRmsDb.store (frame.inputRmsDb, std::memory_order_relaxed);
+    telemetryOutputRmsDb.store (frame.outputRmsDb, std::memory_order_relaxed);
+    telemetryAntiPhase.store (frame.antiPhaseAmount, std::memory_order_relaxed);
+    telemetryPlatter.store (frame.transportRamp, std::memory_order_relaxed);
 }
 
 void FirstAudioProcessor::configureBlockRateCoefficients (float engineSampleRate, float cabinetAmount)

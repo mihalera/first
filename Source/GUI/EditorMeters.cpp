@@ -286,9 +286,12 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     if (hasScaleImage) {
         // The scale's arc endpoints sit at source y=251. Offset its destination
         // six pixels upward so those endpoints meet the AVG needle's pivot at
-        // centreY rather than the dial rectangle's lower padding.
-        g.drawImage(scaleImage, dial.getX(), centreY - radius - 16.0f, dial.getWidth(),
-                    dial.getHeight(), 0, 0, 512, 256, true);
+        // centreY rather than the dial rectangle's lower padding. drawImage's
+        // destination overload takes integer coordinates, so round explicitly.
+        g.drawImage(scaleImage, juce::roundToInt (dial.getX()),
+                    juce::roundToInt (centreY - radius - 16.0f),
+                    juce::roundToInt (dial.getWidth()), juce::roundToInt (dial.getHeight()),
+                    0, 0, 512, 256, true);
     } else {
         juce::Path scaleArc;
         scaleArc.addCentredArc(centreX, centreY, radius, radius, 0.0f,
