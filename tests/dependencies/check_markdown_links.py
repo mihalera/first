@@ -13,11 +13,16 @@ notice that cites them. Codex caught it in review, the fix was five paths, and
 nothing in the build would have noticed either the breakage or the fix.
 
 A path in a document is the one thing a compiler never sees, so it is checked
-here: every `[...](target)` in the repository's own markdown, resolved against
-the file that wrote it. Links into JUCE, ThirdParty, the build trees and the
+here: every path in the repository's own markdown - the target of an inline
+`[...](path)` and the destination of a reference definition `[label]: path`,
+which is where the path of a `[text][label]` link actually lives - resolved
+against the file that wrote it. Links into JUCE, ThirdParty, the build trees and the
 generated graph are not this repository's to police, and anchors are left alone
 because GitHub's slug rules are not this check's subject - a link to a file that
 does not exist is.
+
+Both spellings matter: a reference definition is exactly the form a broken path
+hides in, because the link that uses it carries no path at all.
 
 Fenced code blocks and inline code are stripped first: examples of links are
 not links, and the harnesses here document paths in both.
@@ -49,7 +54,16 @@ SKIPPED_DIRECTORIES = {
 
 FENCE = re.compile(r"^```.*?^```", re.M | re.S)
 INLINE_CODE = re.compile(r"`[^`\n]*`")
-LINK = re.compile(r"\]\(([^)\s]+)\)")
+
+#  An inline link: `](target)` or `](target "title")`, with the target optionally
+#  wrapped in angle brackets.
+LINK = re.compile(r"\]\(\s*(<[^>\n]+>|[^)\s]+)")
+
+#  A reference definition: `[label]: target`, at most three spaces of indent, the
+#  target optionally in angle brackets and optionally followed by a title. The
+#  link that uses it (`[text][label]`, `[label][]` or `[label]`) carries no path of
+#  its own - the definition does - so both forms have to be resolved.
+REFERENCE = re.compile(r"^ {0,3}\[([^\]\n]+)\]:[ \t]*(<[^>\n]*>|[^\s]+)", re.M)
 
 
 def documents():
@@ -60,6 +74,16 @@ def documents():
         if top in SKIPPED_DIRECTORIES:
             continue
         yield relative
+
+
+def target_of(raw):
+    """The path part of a link target: angle brackets removed, fragment dropped."""
+    target = raw.strip()
+
+    if target.startswith("<") and target.endswith(">"):
+        target = target[1:-1].strip()
+
+    return target.split("#", 1)[0]
 
 
 problems = []
@@ -73,11 +97,17 @@ for relative in sorted(documents()):
     text = FENCE.sub("", text)
     text = INLINE_CODE.sub("", text)
 
-    for target in LINK.findall(text):
+    #  Inline links, and the destinations of reference definitions, in one pass:
+    #  a document may spell a path either way, and both are paths.
+    targets = [(target, target) for target in LINK.findall(text)]
+    targets += [("[%s]: %s" % (label, target), target)
+                for label, target in REFERENCE.findall(text)]
+
+    for shown, target in targets:
         if target.startswith(("http://", "https://", "mailto:", "#")):
             continue
 
-        path = target.split("#", 1)[0]
+        path = target_of(target)
 
         if not path:
             continue
@@ -87,7 +117,7 @@ for relative in sorted(documents()):
 
         if not os.path.exists(os.path.join(ROOT, resolved)):
             problems.append("%s -> %s (resolves to %s, which does not exist)"
-                            % (relative, target, resolved))
+                            % (relative, shown, resolved))
 
 print("check_markdown_links: %d document(s), %d relative link(s)" % (checked_documents,
                                                                    checked_links))
