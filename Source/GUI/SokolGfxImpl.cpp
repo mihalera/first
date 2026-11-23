@@ -31,6 +31,12 @@
  //  bumped for a frame nobody asked about.
  #define SOKOL_TRACE_HOOKS
  #include <sokol_gfx.h>
+
+ //  sokol_gfx declares the logging callback's type but does not include the
+ //  default logger. sokol_log.h's implementation is emitted here, in the one
+ //  SOKOL_IMPL translation unit (it derives SOKOL_LOG_IMPL from it), because the
+ //  adapter calls slog_func directly - see NativeRenderer_Sokol.cpp.
+ #include <sokol_log.h>
 #else
 //  ...but not to NOTHING. The file is in target_sources on every platform, and
 //  macOS's libtool warns about an object with no symbols ("has no symbols") for

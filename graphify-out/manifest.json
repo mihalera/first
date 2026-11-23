@@ -785,9 +785,9 @@
     "semantic_hash": "dd9d77c77147f4a4624d360eaa005d4e"
   },
   "Source/GUI/NativeRenderer_Sokol.cpp": {
-    "mtime": 1795440439.997154,
-    "seen": 1795440456.2762542,
-    "ast_hash": "924da39a179a824bae229d675a15a42b",
+    "mtime": 1795443193.052974,
+    "seen": 1795443333.6414564,
+    "ast_hash": "dfe978ca9fdd8ea4bd5eac1fd7bb5c47",
     "semantic_hash": ""
   },
   "Source/GUI/NativeRenderer_Sokol.h": {
@@ -922,9 +922,9 @@
     "language": "language=.cpp"
   },
   "Source/GUI/SokolGfxImpl.cpp": {
-    "mtime": 1795440439.9976642,
-    "seen": 1795440456.2763867,
-    "ast_hash": "3e68729f35ff1c09353381a4f135536b",
+    "mtime": 1795443303.332815,
+    "seen": 1795443333.6416674,
+    "ast_hash": "583f030b6c4dfee24abf2614f16973e5",
     "semantic_hash": ""
   },
   "Source/GUI/SpectrumMetrics.h": {
@@ -1845,9 +1845,9 @@
     "semantic_hash": "42afb586e24ab38ddd8f73335a3f0e94"
   },
   "tests/render_backend/check_render_backend.py": {
-    "mtime": 1795440440.0347772,
-    "seen": 1795440456.2774563,
-    "ast_hash": "60439fca31749133a5a1c66522cbd800",
+    "mtime": 1795443306.467669,
+    "seen": 1795443333.643007,
+    "ast_hash": "4590bda632859473f860c9d29b4d9b8c",
     "semantic_hash": ""
   },
   "tests/render_backend/juce_stub/JuceHeader.h": {
