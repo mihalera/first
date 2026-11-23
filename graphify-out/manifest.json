@@ -1029,8 +1029,8 @@
     "semantic_hash": ""
   },
   "Source/PluginEditor.cpp": {
-    "mtime": 1795432760.8676221,
-    "seen": 1795432948.8612175,
+    "mtime": 1795434023.574254,
+    "seen": 1795434169.3397243,
     "ast_hash": "32411aab4f3762b2ceaa7b4765a1ee44",
     "semantic_hash": ""
   },
@@ -2906,8 +2906,8 @@
     "semantic_hash": ""
   },
   "tests/README.md": {
-    "mtime": 1795432768.5339067,
-    "seen": 1795432948.8638196,
+    "mtime": 1795434023.6117082,
+    "seen": 1795434169.3417907,
     "ast_hash": "53cac8d13bbcfa10e93ce706f95ce7e1",
     "semantic_hash": ""
   },
@@ -3155,8 +3155,8 @@
     "semantic_hash": ""
   },
   "tests/header_render.cpp": {
-    "mtime": 1795432767.6222744,
-    "seen": 1795432948.861985,
+    "mtime": 1795434023.6127157,
+    "seen": 1795434169.340381,
     "ast_hash": "53dd54e3723d8381251132a71b53def4",
     "semantic_hash": ""
   },
@@ -3173,9 +3173,9 @@
     "semantic_hash": ""
   },
   "docs/THIRD_PARTY_NOTICES.md": {
-    "mtime": 1795425912.4942384,
-    "seen": 1795425960.7666347,
-    "ast_hash": "0cf7755e37b1f6abae28c8ab213db5ed",
+    "mtime": 1795434149.2382164,
+    "seen": 1795434169.3416889,
+    "ast_hash": "7af97c4f9b8bdc34c2030a1e09ee2332",
     "semantic_hash": ""
   }
 }
