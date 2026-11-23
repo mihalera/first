@@ -158,6 +158,18 @@ require("sg_query_features()" in sokol and "sg_query_limits()" in sokol,
 require("sokolTrace::reset();" in sokol,
         "the hooks belong to one device and must be reset when it goes away")
 
+# sokol's messages: the header's own callback owns the platform sink and the
+# spelling of the level, and the diagnostic trace gets the copy a support report
+# can actually carry.
+require("#include <sokol_log.h>" in sokol and "slog_func (tag, logLevel, logItemId" in sokol,
+        "Sokol's messages must go through sokol_log.h's own slog_func")
+require("#include <sokol_log.h>" in sokol_impl and "SOKOL_IMPL" in sokol_impl,
+        "slog_func is emitted in the SOKOL_IMPL unit and must be included there, "
+        "otherwise the plugin fails to link on an undefined slog_func")
+require("if (! j37diag::enabled())" in sokol
+        and "j37diag::note (text.toStdString());" in sokol,
+        "Sokol's log must also reach the diagnostic trace, and only when it is on")
+
 shader_sources = {}
 for name in ("vertex", "fragment"):
     match = re.search(

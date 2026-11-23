@@ -11,7 +11,11 @@
  // sokol_gfx is a command recorder here, not a windowing layer: the surface this
  // adapter draws into is JUCE's OpenGLContext, attached to the scene component.
 // sokol_app.h is deliberately NOT used - it is sokol's own window and event
- // system, and JUCE already is one.
+ // system, and JUCE already is one. For the same reason the util/ headers that
+ // build on it are not compiled in either: sokol_imgui.h and sokol_gfx_imgui.h
+ // are Dear ImGui front-ends and this project vendors no Dear ImGui, and
+ // sokol_framebuffer.h is a C99 CPU pixel canvas whose 2D primitives this 3D
+ // scene never draws.
  // The diagnostic switch and its sink. JUCE-free and header-only, so the trace the
  // hooks below write goes to the same file the shutdown watchdog writes to.
  #include "Diagnostics/DiagCore.h"
@@ -19,6 +23,9 @@
  #include "SceneUniforms.h"
  #include "SokolBackend.h"
  #include <sokol_gfx.h>
+ //  sokol_gfx includes sokol_log.h already; naming it here says which header the
+ //  logger below belongs to.
+ #include <sokol_log.h>
 
  #include <algorithm>
  #include <atomic>
@@ -154,30 +161,41 @@ void reset() noexcept
     Sokol reports through this callback and through nothing else: a validation
     failure logs its reason here and then panics, so with no logger installed the
     reason is discarded and the process dies in abort() with only the CRT's
-    dialog to show for it. Routing the message into JUCE's logger puts it where
-    this project's diagnostics already go (the debugger's output window in a
-    debug build, the host's log in a shipping one), and the level is carried
-    through so a warning is not dressed up as a panic. */
+    dialog to show for it.
+
+    The message goes to two places, and they are not the same place:
+
+    - sokol_log.h's own slog_func writes to the platform's logging system - stderr
+      plus OutputDebugStringA() on Windows, logcat on Android, syslog on Apple -
+      which is what a debugger or a device log shows. It also owns the spelling of
+      the level and the item id, so this file does not carry a second copy of that
+      table to keep in step with the header.
+    - the diagnostic trace gets a copy when the switch is on. A host's stderr is
+      not the file a support report carries: it goes wherever the host sends it,
+      which for a plugin is usually nowhere, and the validation layer's own words
+      are the one thing worth having when a renderer dies on someone else's
+      machine. */
 void sokolLog (const char* tag, uint32_t logLevel, uint32_t logItemId,
                const char* messageOrNull, uint32_t lineNr,
-               const char* fileNameOrNull, void*)
+               const char* fileNameOrNull, void* userData)
 {
-    const char* level = logLevel == 0 ? "panic" : logLevel == 1 ? "error"
-                        : logLevel == 2 ? "warning"
-                                       : "info";
+    slog_func (tag, logLevel, logItemId, messageOrNull, lineNr, fileNameOrNull, userData);
+
+    if (! j37diag::enabled())
+        return;
 
     juce::String text;
-    text << "sokol_gfx " << tag << ' ' << level << " (" << static_cast<int> (logItemId);
+    text << "sokol_gfx " << tag;
 
     if (messageOrNull != nullptr)
         text << ": " << messageOrNull;
 
-    text << ")";
+    text << " (id " << static_cast<int> (logItemId) << ')';
 
     if (fileNameOrNull != nullptr)
         text << " at " << fileNameOrNull << ':' << static_cast<int> (lineNr);
 
-    juce::Logger::writeToLog (text);
+    j37diag::note (text.toStdString());
 }
 
 #if defined (SOKOL_GLES3)
