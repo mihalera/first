@@ -785,9 +785,9 @@
     "semantic_hash": "dd9d77c77147f4a4624d360eaa005d4e"
   },
   "Source/GUI/NativeRenderer_Sokol.cpp": {
-    "mtime": 1795432732.757697,
-    "seen": 1795432948.8609204,
-    "ast_hash": "9a481be3ebe9c9de2c95e8b1f16a52d7",
+    "mtime": 1795440439.997154,
+    "seen": 1795440456.2762542,
+    "ast_hash": "924da39a179a824bae229d675a15a42b",
     "semantic_hash": ""
   },
   "Source/GUI/NativeRenderer_Sokol.h": {
@@ -922,10 +922,10 @@
     "language": "language=.cpp"
   },
   "Source/GUI/SokolGfxImpl.cpp": {
-    "mtime": 1793089008.6210365,
-    "seen": 1794648118.5835333,
-    "ast_hash": "85d2dbd2a6ca464993cf488ea482568f",
-    "semantic_hash": "85d2dbd2a6ca464993cf488ea482568f"
+    "mtime": 1795440439.9976642,
+    "seen": 1795440456.2763867,
+    "ast_hash": "3e68729f35ff1c09353381a4f135536b",
+    "semantic_hash": ""
   },
   "Source/GUI/SpectrumMetrics.h": {
     "mtime": 1792836337.482191,
@@ -1845,9 +1845,9 @@
     "semantic_hash": "42afb586e24ab38ddd8f73335a3f0e94"
   },
   "tests/render_backend/check_render_backend.py": {
-    "mtime": 1795432732.7987835,
-    "seen": 1795432948.862386,
-    "ast_hash": "4af20bbc3f0400a7a3c9b0d386dd141d",
+    "mtime": 1795440440.0347772,
+    "seen": 1795440456.2774563,
+    "ast_hash": "60439fca31749133a5a1c66522cbd800",
     "semantic_hash": ""
   },
   "tests/render_backend/juce_stub/JuceHeader.h": {
@@ -3173,8 +3173,8 @@
     "semantic_hash": ""
   },
   "docs/THIRD_PARTY_NOTICES.md": {
-    "mtime": 1795434149.2382164,
-    "seen": 1795434169.3416889,
+    "mtime": 1795440441.0473232,
+    "seen": 1795440456.2784936,
     "ast_hash": "7af97c4f9b8bdc34c2030a1e09ee2332",
     "semantic_hash": ""
   }

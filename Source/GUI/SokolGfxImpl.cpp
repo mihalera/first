@@ -22,6 +22,14 @@
 
 #if defined (J37_NATIVE_SOKOL)
  #define SOKOL_IMPL
+
+ //  Trace hooks and the per-frame statistics are COMPILE-TIME features: without
+ //  this define sg_install_trace_hooks() only logs TRACE_HOOKS_NOT_ENABLED and
+ //  sg_query_stats() reports zeroes. The adapter installs neither unless the
+ //  diagnostic switch is on (see NativeRenderer_Sokol.cpp), so a shipping build
+ //  pays code size only - no hook exists until one is installed, and no counter is
+ //  bumped for a frame nobody asked about.
+ #define SOKOL_TRACE_HOOKS
  #include <sokol_gfx.h>
 #else
 //  ...but not to NOTHING. The file is in target_sources on every platform, and

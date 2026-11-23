@@ -12,6 +12,10 @@
  // adapter draws into is JUCE's OpenGLContext, attached to the scene component.
 // sokol_app.h is deliberately NOT used - it is sokol's own window and event
  // system, and JUCE already is one.
+ // The diagnostic switch and its sink. JUCE-free and header-only, so the trace the
+ // hooks below write goes to the same file the shutdown watchdog writes to.
+ #include "Diagnostics/DiagCore.h"
+
  #include "SceneUniforms.h"
  #include "SokolBackend.h"
  #include <sokol_gfx.h>
@@ -31,6 +35,119 @@ namespace j37::render
 namespace
 {
 std::atomic<bool> sokolContextClaimed { false };
+
+//==============================================================================
+//  sokol's introspection surfaces: the trace hooks, the frame statistics and the
+//  feature and limit queries.
+//
+//  All three are in the pinned header and none of them was used, which is why a
+//  report of "the scene draws wrong on this machine" had nothing to say about what
+//  that machine CAN do. They are installed only when the diagnostic switch is on
+//  (MIBOX_DIAG=1): a shipping build installs no hook at all, so the per-call
+//  callback cost does not exist and nothing is written to the trace file.
+//==============================================================================
+namespace sokolTrace
+{
+bool installed = false;
+int commitsSinceReport = 0;
+
+/** One line into the diagnostic sink. `note` copies, so a temporary String is
+    safe here - and this only ever runs with the switch on. */
+void line (const juce::String& text) noexcept
+{
+    j37diag::note (text.toStdString());
+}
+
+void failBufferHook (sg_buffer, void*) noexcept
+{
+    line ("sokol: buffer creation failed");
+}
+
+void failShaderHook (sg_shader, void*) noexcept
+{
+    line ("sokol: shader creation failed");
+}
+
+void failPipelineHook (sg_pipeline, void*) noexcept
+{
+    line ("sokol: pipeline creation failed");
+}
+
+/** One line per sixty committed frames. The counters come from sokol's own
+    per-frame statistics rather than from a second set of counters kept in the
+    hooks: the library already counts what it was asked to do, and two tallies of
+    the same thing could only disagree. */
+void commitHook (void*) noexcept
+{
+    if (++commitsSinceReport < 60)
+        return;
+
+    commitsSinceReport = 0;
+
+    const auto& frame = sg_query_stats().cur_frame;
+
+    line (juce::String ("sokol: frame ") + juce::String (static_cast<int> (frame.frame_index))
+          + " passes=" + juce::String (static_cast<int> (frame.num_passes))
+          + " pipelines=" + juce::String (static_cast<int> (frame.num_apply_pipeline))
+          + " bindings=" + juce::String (static_cast<int> (frame.num_apply_bindings))
+          + " uniform_blocks=" + juce::String (static_cast<int> (frame.num_apply_uniforms))
+          + " draws=" + juce::String (static_cast<int> (frame.num_draw)));
+}
+
+/** What this device is and what it can do, once per context. */
+void reportCapabilities (const char* backend) noexcept
+{
+    if (! j37diag::enabled())
+        return;
+
+    const auto features = sg_query_features();
+    const auto limits = sg_query_limits();
+    const auto yesNo = [] (bool on) { return on ? "yes" : "no"; };
+
+    line (juce::String ("sokol: backend ") + backend
+          + " origin_top_left=" + yesNo (features.origin_top_left)
+          + " clamp_to_border=" + yesNo (features.image_clamp_to_border)
+          + " mrt=" + yesNo (features.mrt_independent_blend_state)
+          + " compute=" + yesNo (features.compute)
+          + " msaa_texture_bindings=" + yesNo (features.msaa_texture_bindings));
+
+    line (juce::String ("sokol: limits max_image_2d=")
+          + juce::String (limits.max_image_size_2d)
+          + " max_vertex_attrs=" + juce::String (limits.max_vertex_attrs)
+          + " max_color_attachments=" + juce::String (limits.max_color_attachments)
+          + " max_texture_bindings=" + juce::String (limits.max_texture_bindings_per_stage));
+}
+
+/** Installs the hooks and turns the statistics on - once per device, and only
+    with the switch on. */
+void install() noexcept
+{
+    if (! j37diag::enabled() || installed)
+        return;
+
+    sg_trace_hooks hooks {};
+    hooks.fail_buffer = failBufferHook;
+    hooks.fail_shader = failShaderHook;
+    hooks.fail_pipeline = failPipelineHook;
+    hooks.commit = commitHook;
+
+    sg_install_trace_hooks (&hooks);
+    sg_enable_stats();
+
+    installed = true;
+    commitsSinceReport = 0;
+    line ("sokol: trace hooks and frame statistics installed");
+}
+
+/** The device is gone, so the hooks installed on it are gone too: the next
+    context must install its own. */
+void reset() noexcept
+{
+    installed = false;
+    commitsSinceReport = 0;
+}
+
+} // namespace sokolTrace
 
 /** sokol_gfx's log sink.
 
@@ -608,6 +725,11 @@ private:
         sceneSampleCount.store (colourInfo.msaa && depthInfo.msaa ? sceneMsaaSamples : 1,
                                 std::memory_order_relaxed);
 
+        //  What this device can do goes into the trace first, then the hooks that
+        //  make the per-frame numbers exist. Both are no-ops without the switch.
+        sokolTrace::reportCapabilities (backendName());
+        sokolTrace::install();
+
         // Every handle below belonged to the previous context. GL objects die
         // with it, so the cached ids must not outlive them.
         shader = {};
@@ -659,6 +781,8 @@ private:
             // editor restore the CPU paint path. drawFailure keeps the reason.
             if (sg_isvalid())
                 sg_shutdown();
+
+            sokolTrace::reset();
 
             deviceReady.store (false, std::memory_order_release);
             deviceSetupFailed.store (true, std::memory_order_release);
@@ -724,6 +848,10 @@ private:
 
         if (deviceReady.exchange (false, std::memory_order_acq_rel) && sg_isvalid())
             sg_shutdown();
+
+        //  The hooks were installed on the device that has just gone: the next
+        //  context installs its own, and the statistics start again from zero.
+        sokolTrace::reset();
 
         releaseSokolContextLease();
     }

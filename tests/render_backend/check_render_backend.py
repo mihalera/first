@@ -143,6 +143,21 @@ require("swapchain.sample_count = sceneSampleCount.load (std::memory_order_relax
 require("colourInfo.msaa && depthInfo.msaa ? sceneMsaaSamples : 1" in sokol,
         "Sokol must fall back to one sample when either scene format cannot multisample")
 
+# sokol's introspection surfaces: the hooks and the statistics are compile-time
+# features, and all three are installed only behind the diagnostic switch.
+require("#define SOKOL_TRACE_HOOKS" in sokol_impl,
+        "sokol_gfx's implementation must be compiled with trace hooks so its "
+        "statistics and hook API exist at all")
+require("sg_install_trace_hooks" in sokol and "sg_enable_stats()" in sokol
+        and "sg_query_stats()" in sokol,
+        "Sokol must install its trace hooks and turn the frame statistics on")
+require("if (! j37diag::enabled() || installed)" in sokol,
+        "Sokol's hooks and statistics must be inert unless the diagnostic switch is on")
+require("sg_query_features()" in sokol and "sg_query_limits()" in sokol,
+        "Sokol must log the device's own feature and limit report")
+require("sokolTrace::reset();" in sokol,
+        "the hooks belong to one device and must be reset when it goes away")
+
 shader_sources = {}
 for name in ("vertex", "fragment"):
     match = re.search(
