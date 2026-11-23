@@ -280,40 +280,47 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     // the black half-circle that hung below the meter and ran through the readout rows.
     // 3/2*pi -> 5/2*pi traces the same left -> top -> right path that the ticks and the
     // needle describe with (cos a, sin a) over pi..2*pi, so all three agree exactly.
-    juce::Path scaleArc;
-    scaleArc.addCentredArc (centreX, centreY, radius, radius, 0.0f,
-                            juce::MathConstants<float>::pi * 1.5f,
-                            juce::MathConstants<float>::pi * 2.5f,
-                            true);
-    g.setColour (palette.gaugeInk.withAlpha (0.8f));
-    g.strokePath (scaleArc, juce::PathStrokeType (1.1f));
+    const auto &scaleImage = j37panel::assets::cachedImage("level_scale_png");
+    const auto hasScaleImage =
+        scaleImage.isValid() && scaleImage.getWidth() >= 512 && scaleImage.getHeight() >= 256;
+    if (hasScaleImage) {
+        // The scale's arc endpoints sit at source y=251. Offset its destination
+        // six pixels upward so those endpoints meet the AVG needle's pivot at
+        // centreY rather than the dial rectangle's lower padding.
+        g.drawImage(scaleImage, dial.getX(), centreY - radius - 16.0f, dial.getWidth(),
+                    dial.getHeight(), 0, 0, 512, 256, true);
+    } else {
+        juce::Path scaleArc;
+        scaleArc.addCentredArc(centreX, centreY, radius, radius, 0.0f,
+                               juce::MathConstants<float>::pi * 1.5f,
+                               juce::MathConstants<float>::pi * 2.5f, true);
+        g.setColour(palette.gaugeInk.withAlpha(0.8f));
+        g.strokePath(scaleArc, juce::PathStrokeType(1.1f));
 
-    for (int tick = 0; tick <= tickCount; ++tick)
-    {
-        const auto fraction = static_cast<float> (tick) / static_cast<float> (tickCount);
-        const auto angle = juce::jmap (fraction, startAngle, endAngle);
-        const auto major = tick % 2 == 0;
-        const auto outerRadius = radius - 1.0f;
-        const auto innerRadius = radius - (major ? 8.0f : 4.0f);
-        const auto outer = juce::Point<float> (centreX + std::cos (angle) * outerRadius,
-                                               centreY + std::sin (angle) * outerRadius);
-        const auto inner = juce::Point<float> (centreX + std::cos (angle) * innerRadius,
-                                               centreY + std::sin (angle) * innerRadius);
-        g.setColour (palette.gaugeInk);
-        g.drawLine (inner.x, inner.y, outer.x, outer.y, major ? 1.1f : 0.7f);
+        for (int tick = 0; tick <= tickCount; ++tick) {
+            const auto fraction = static_cast<float>(tick) / static_cast<float>(tickCount);
+            const auto angle = juce::jmap(fraction, startAngle, endAngle);
+            const auto major = tick % 2 == 0;
+            const auto outerRadius = radius - 1.0f;
+            const auto innerRadius = radius - (major ? 8.0f : 4.0f);
+            const auto outer = juce::Point<float>(centreX + std::cos(angle) * outerRadius,
+                                                  centreY + std::sin(angle) * outerRadius);
+            const auto inner = juce::Point<float>(centreX + std::cos(angle) * innerRadius,
+                                                  centreY + std::sin(angle) * innerRadius);
+            g.setColour(palette.gaugeInk);
+            g.drawLine(inner.x, inner.y, outer.x, outer.y, major ? 1.1f : 0.7f);
 
-        if (major)
-        {
-            const auto db = -20 + juce::roundToInt (fraction * 23.0f);
-            const auto labelRadius = juce::jmax (4.0f, radius - 18.0f);
-            const auto labelPoint = juce::Point<float> (
-                centreX + std::cos (angle) * labelRadius,
-                centreY + std::sin (angle) * labelRadius);
-            g.setFont (j37panel::panelFont (9.0f * textScale));
-            g.drawText (juce::String (db > 0 ? "+" : "") + juce::String (db),
-                        juce::Rectangle<int> (juce::roundToInt (labelPoint.x - 10.0f),
-                                              juce::roundToInt (labelPoint.y - 5.0f), 20, 11),
-                        juce::Justification::centred, false);
+            if (major) {
+                const auto db = -20 + juce::roundToInt(fraction * 23.0f);
+                const auto labelRadius = juce::jmax(4.0f, radius - 18.0f);
+                const auto labelPoint = juce::Point<float>(centreX + std::cos(angle) * labelRadius,
+                                                           centreY + std::sin(angle) * labelRadius);
+                g.setFont(j37panel::panelFont(9.0f * textScale));
+                g.drawText(juce::String(db > 0 ? "+" : "") + juce::String(db),
+                           juce::Rectangle<int>(juce::roundToInt(labelPoint.x - 10.0f),
+                                                juce::roundToInt(labelPoint.y - 5.0f), 20, 11),
+                           juce::Justification::centred, false);
+            }
         }
     }
 
@@ -326,13 +333,26 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     const auto needleFraction = (needleDb + 20.0f) / 23.0f;
     const auto needleAngle = juce::jmap (needleFraction, startAngle, endAngle);
     const auto needleLength = juce::jmax (4.0f, radius - 13.0f);
-    const auto needleEnd = juce::Point<float> (
-        centreX + std::cos (needleAngle) * needleLength,
-        centreY + std::sin (needleAngle) * needleLength);
-    g.setColour (palette.needle.withAlpha (0.9f));
-    g.drawLine (centreX + 0.8f, centreY + 0.8f, needleEnd.x + 0.8f, needleEnd.y + 0.8f, 2.0f);
-    g.setColour (palette.needle);
-    g.drawLine (centreX, centreY, needleEnd.x, needleEnd.y, 1.5f);
+    const auto &needleImage = j37panel::assets::cachedImage("vu_needle_profile_png");
+    if (needleImage.isValid() && needleImage.getWidth() >= 256 && needleImage.getHeight() >= 64) {
+        constexpr float pivotX = 15.0f;
+        constexpr float pivotY = 32.0f;
+        constexpr float sourceLength = 235.0f;
+        const auto scale = needleLength / sourceLength;
+        const auto cosine = std::cos(needleAngle);
+        const auto sine = std::sin(needleAngle);
+        const juce::AffineTransform needleTransform(
+            scale * cosine, -scale * sine, centreX - scale * (cosine * pivotX - sine * pivotY),
+            scale * sine, scale * cosine, centreY - scale * (sine * pivotX + cosine * pivotY));
+        g.drawImageTransformed(needleImage, needleTransform, true);
+    } else {
+        const auto needleEnd = juce::Point<float>(centreX + std::cos(needleAngle) * needleLength,
+                                                  centreY + std::sin(needleAngle) * needleLength);
+        g.setColour(palette.needle.withAlpha(0.9f));
+        g.drawLine(centreX + 0.8f, centreY + 0.8f, needleEnd.x + 0.8f, needleEnd.y + 0.8f, 2.0f);
+        g.setColour(palette.needle);
+        g.drawLine(centreX, centreY, needleEnd.x, needleEnd.y, 1.5f);
+    }
     g.setColour (palette.accent);
     g.fillEllipse (centreX - 4.0f, centreY - 4.0f, 8.0f, 8.0f);
     g.restoreState();   // end of the dial clip - the readout rows below draw unclipped

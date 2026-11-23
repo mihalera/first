@@ -85,6 +85,7 @@ class J37LookAndFeel final : public juce::LookAndFeel_V4 {
 
     void setTheme(j37panel::ThemeChoice newTheme) noexcept { theme = newTheme; }
     j37panel::ThemeChoice getTheme() const noexcept { return theme; }
+    void setCurrentTab(int newTab) noexcept { currentTab = newTab; }
 
     /** True when the selected palette is a dark one. Used by every drawing routine,
         which only ever needs to know dark-or-light rather than which dark.
@@ -167,6 +168,15 @@ class J37LookAndFeel final : public juce::LookAndFeel_V4 {
 
     void drawRotarySlider(
         juce::Graphics &, int, int, int, int, float, float, float, juce::Slider &) override;
+    void drawComboBox(juce::Graphics &,
+                      int width,
+                      int height,
+                      bool isButtonDown,
+                      int buttonX,
+                      int buttonY,
+                      int buttonW,
+                      int buttonH,
+                      juce::ComboBox &) override;
 
     /** Hardware rocker-switch drawing for the panel's on/off toggles. */
     void drawToggleButton(juce::Graphics &, juce::ToggleButton &, bool, bool) override;
@@ -250,6 +260,7 @@ class J37LookAndFeel final : public juce::LookAndFeel_V4 {
     static juce::Point<float> offsetToTopLevel(const juce::Component &component) noexcept;
 
     j37panel::ThemeChoice theme = j37panel::ThemeChoice::ivory;
+    int currentTab = 0;
     float activity = 0.0f;              ///< Compressor activity, drives the glow around the knobs.
     juce::Rectangle<float> cameraPanel; ///< The panel, in its top-level component's space.
     const juce::Component *cameraRoot =

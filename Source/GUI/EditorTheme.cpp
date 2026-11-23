@@ -603,7 +603,8 @@ void FirstAudioProcessorEditor::updateWorkflowButtons() {
 void FirstAudioProcessorEditor::openUserThemeWindow() {
     if (userThemeWindow == nullptr) {
         userThemeWindow = std::make_unique<j37panel::UserThemeWindow>(
-            j37panel::userPalette, j37panel::assets::activeBackground);
+            j37panel::userPalette, j37panel::assets::activeBackground,
+            j37panel::activePatinaEnabled);
 
         // ONE edit is ONE applyTheme. The order is load-bearing: the palette first,
         // because applyTheme() derives darkTheme FROM the palette (a user who picks a
@@ -635,6 +636,12 @@ void FirstAudioProcessorEditor::openUserThemeWindow() {
             repaint();
         };
 
+        userThemeWindow->onPatinaChanged = [this](bool enabled) {
+            j37panel::activePatinaEnabled = enabled;
+            j37panel::rememberPatinaEnabled(enabled);
+            repaint();
+        };
+
         // Placed over the editor ONCE, at construction, and left where it is dragged
         // afterwards: a window that re-centred on every press would jump out from under
         // the pointer that pressed the key. The POSITION comes before the first show,
@@ -657,5 +664,6 @@ void FirstAudioProcessorEditor::openUserThemeWindow() {
     // was replaced) would otherwise display colours the panel is not painted from.
     userThemeWindow->setPalette(j37panel::userPalette);
     userThemeWindow->setBackground(j37panel::assets::activeBackground);
+    userThemeWindow->setPatinaEnabled(j37panel::activePatinaEnabled);
     userThemeWindow->show();
 }

@@ -13,6 +13,7 @@
 // The panel vocabulary this file reads through, from the headers that hold
 // it - the paint kit, the page table and the knob table.
 #include "GUI/DeckBands.h"
+#include "GUI/EditorPreferences.h"
 #include "GUI/PanelAssetSlots.h"
 #include "GUI/PanelAssets.h"
 #include "GUI/PanelPaint.h"
@@ -338,6 +339,58 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
                               the image is the final dose, re-multiplying it with
                               a brush would double the ink */);
         g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+    }
+
+    if (inClip(layout.deck)) {
+        const auto &plate = j37panel::assets::cachedImage("deck_plate_png");
+        if (plate.isValid()) {
+            g.saveState();
+            g.reduceClipRegion(layout.deck);
+            g.setOpacity(0.78f);
+            g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
+            g.drawImage(plate, layout.deck.getX(), layout.deck.getY(), layout.deck.getWidth(),
+                        layout.deck.getHeight(), 0, 0, 2048, 512, true);
+            g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+            g.restoreState();
+        }
+    }
+
+    int rackPageIndex = -1;
+    if (juce::isPositiveAndBelow(currentTab, static_cast<int>(j37panel::tabSpecs.size()))) {
+        const auto &tab = j37panel::tabSpecs[static_cast<std::size_t>(currentTab)];
+        if (tab.family == 2) {
+            if (std::strcmp(tab.name, "DRIVE") == 0)
+                rackPageIndex = 0;
+            else if (std::strcmp(tab.name, "SHAPE") == 0)
+                rackPageIndex = 1;
+            else if (std::strcmp(tab.name, "MOTION") == 0)
+                rackPageIndex = 2;
+            else if (std::strcmp(tab.name, "PITCH") == 0)
+                rackPageIndex = 3;
+        }
+    }
+    if (rackPageIndex >= 0 && inClip(layout.controls)) {
+        const auto &pedals = j37panel::assets::cachedImage("rack_pedals_png");
+        if (pedals.isValid() && pedals.getWidth() >= 2048 && pedals.getHeight() >= 512) {
+            g.saveState();
+            g.reduceClipRegion(layout.controls);
+            g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
+            g.drawImage(pedals, layout.controls.getX(), layout.controls.getY(),
+                        layout.controls.getWidth(), layout.controls.getHeight(),
+                        rackPageIndex * 512, 0, 512, 512, true);
+            g.setImageResamplingQuality(juce::Graphics::lowResamplingQuality);
+            g.restoreState();
+        }
+    }
+
+    if (j37panel::activePatinaEnabled) {
+        const auto &patina = j37panel::assets::cachedImage("wear_and_patina_png");
+        if (patina.isValid()) {
+            g.saveState();
+            g.setTiledImageFill(patina, 0, 0, 0.08f);
+            g.fillRect(getLocalBounds());
+            g.restoreState();
+        }
     }
 
     if (panelTextureWeights.shimmer > 0.0f) {
@@ -687,6 +740,17 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
         const auto reelCentre = juce::Point<float>(static_cast<float>(layout.deck.getRight() - 42),
                                                    static_cast<float>(layout.deck.getY() + 20));
         const auto platterNow = juce::jlimit(0.0f, 1.0f, smoothedMachineSpeed);
+        if (platterNow > 0.01f) {
+            const auto &blur = j37panel::assets::cachedImage("spindown_blur_png");
+            if (blur.isValid()) {
+                g.saveState();
+                g.setOpacity(0.28f * platterNow);
+                g.drawImageWithin(blur, juce::roundToInt(reelCentre.x - 18.0f),
+                                  juce::roundToInt(reelCentre.y - 18.0f), 36, 36,
+                                  juce::RectanglePlacement::centred, false);
+                g.restoreState();
+            }
+        }
         g.setColour(palette.accent.withAlpha(0.10f + 0.30f * platterNow));
         for (const auto radius : {11.0f, 7.0f, 2.0f})
             g.drawEllipse(reelCentre.x - radius, reelCentre.y - radius, radius * 2.0f,

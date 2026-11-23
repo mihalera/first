@@ -223,4 +223,18 @@ inline void rememberBackground (const juce::String& name)
     editorPreferences().saveIfNeeded();
 }
 
+constexpr const char *panelPatinaKey = "panel_patina";
+
+inline bool rememberedPatinaEnabled() {
+    return editorPreferences().getBoolValue(panelPatinaKey, false);
+}
+
+inline void rememberPatinaEnabled(bool enabled) {
+    editorPreferences().setValue(panelPatinaKey, enabled);
+    editorPreferences().saveIfNeeded();
+}
+
+/** The live editor copy, loaded once during construction and changed by the theme pane. */
+inline bool activePatinaEnabled = false;
+
 } // namespace j37panel

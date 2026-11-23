@@ -1,5 +1,5 @@
 {
-  "about": "Generated MiBoX visual library. Sprite keys and indices are stable within each atlas; white glyph atlases are tintable for normal, active, disabled and high-contrast states.",
+  "about": "Generated MiBoX visual library. Sprite keys and indices follow the live plugin tables where their order affects behaviour; all artwork is optional and has a procedural fallback.",
   "generator": "Assets/generate_asset_pack.py (Pillow required)",
   "atlases": [
     {
@@ -2610,6 +2610,308 @@
           "key": "help.load_model",
           "label": "Load a model or impulse response",
           "tile": 3
+        }
+      ],
+      "tintable": false
+    },
+    {
+      "file": "knob_caps.png",
+      "columns": 4,
+      "rows": 2,
+      "tile_size": 128,
+      "width": 512,
+      "height": 256,
+      "items": [
+        {
+          "key": "knob.bakelite",
+          "label": "Fluted bakelite",
+          "tile": 0
+        },
+        {
+          "key": "knob.knurled_aluminium",
+          "label": "Diamond knurl",
+          "tile": 1
+        },
+        {
+          "key": "knob.aged_ivory",
+          "label": "Aged ivory",
+          "tile": 2
+        },
+        {
+          "key": "knob.rubber",
+          "label": "Soft rubber",
+          "tile": 3
+        },
+        {
+          "key": "knob.chrome",
+          "label": "Chrome skirt",
+          "tile": 4
+        },
+        {
+          "key": "knob.oxblood_pedal",
+          "label": "Oxblood pedal",
+          "tile": 5
+        },
+        {
+          "key": "knob.cast_steel",
+          "label": "Cast steel",
+          "tile": 6
+        },
+        {
+          "key": "knob.clear_acrylic",
+          "label": "Clear acrylic",
+          "tile": 7
+        }
+      ],
+      "tintable": false
+    },
+    {
+      "file": "level_scale.png",
+      "columns": 1,
+      "rows": 1,
+      "tile_size": [
+        512,
+        256
+      ],
+      "width": 512,
+      "height": 256,
+      "items": [
+        {
+          "key": "meter.avg_vu_scale",
+          "label": "AVG / VU scale",
+          "tile": 0
+        }
+      ],
+      "tintable": false
+    },
+    {
+      "file": "deck_plate.png",
+      "columns": 1,
+      "rows": 1,
+      "tile_size": [
+        2048,
+        512
+      ],
+      "width": 2048,
+      "height": 512,
+      "items": [
+        {
+          "key": "deck.calibration_plate",
+          "label": "Deck calibration plate",
+          "tile": 0
+        }
+      ],
+      "tintable": false
+    },
+    {
+      "file": "rack_pedals.png",
+      "columns": 4,
+      "rows": 1,
+      "tile_size": [
+        512,
+        512
+      ],
+      "width": 2048,
+      "height": 512,
+      "items": [
+        {
+          "key": "rack.drive",
+          "label": "DRIVE",
+          "tile": 0
+        },
+        {
+          "key": "rack.shape",
+          "label": "SHAPE",
+          "tile": 1
+        },
+        {
+          "key": "rack.motion",
+          "label": "MOTION",
+          "tile": 2
+        },
+        {
+          "key": "rack.pitch",
+          "label": "PITCH",
+          "tile": 3
+        }
+      ],
+      "tintable": false
+    },
+    {
+      "file": "tape_stock_swatches.png",
+      "columns": 13,
+      "rows": 1,
+      "tile_size": [
+        78,
+        128
+      ],
+      "width": 1014,
+      "height": 128,
+      "items": [
+        {
+          "key": "tape_stock.j37",
+          "label": "J37",
+          "tile": 0
+        },
+        {
+          "key": "tape_stock.ampex_456",
+          "label": "Ampex 456",
+          "tile": 1
+        },
+        {
+          "key": "tape_stock.studer_a800",
+          "label": "Studer A800",
+          "tile": 2
+        },
+        {
+          "key": "tape_stock.chrome",
+          "label": "Chrome",
+          "tile": 3
+        },
+        {
+          "key": "tape_stock.type_111",
+          "label": "Type 111",
+          "tile": 4
+        },
+        {
+          "key": "tape_stock.gp9",
+          "label": "GP9",
+          "tile": 5
+        },
+        {
+          "key": "tape_stock.quantegy_499",
+          "label": "Quantegy 499",
+          "tile": 6
+        },
+        {
+          "key": "tape_stock.rtm_sm911",
+          "label": "RTM SM911",
+          "tile": 7
+        },
+        {
+          "key": "tape_stock.sm_468",
+          "label": "SM 468",
+          "tile": 8
+        },
+        {
+          "key": "tape_stock.888",
+          "label": "888",
+          "tile": 9
+        },
+        {
+          "key": "tape_stock.815",
+          "label": "815",
+          "tile": 10
+        },
+        {
+          "key": "tape_stock.811",
+          "label": "811",
+          "tile": 11
+        },
+        {
+          "key": "tape_stock.off",
+          "label": "Off",
+          "tile": 12
+        }
+      ],
+      "tintable": false,
+      "tile_order": [
+        "J37",
+        "Ampex 456",
+        "Studer A800",
+        "Chrome",
+        "Type 111",
+        "GP9",
+        "Quantegy 499",
+        "RTM SM911",
+        "SM 468",
+        "888",
+        "815",
+        "811",
+        "Off"
+      ]
+    },
+    {
+      "file": "tube_glow_maps.png",
+      "columns": 4,
+      "rows": 1,
+      "tile_size": [
+        128,
+        256
+      ],
+      "width": 512,
+      "height": 256,
+      "items": [
+        {
+          "key": "tube.12ax7_ecc83",
+          "label": "12AX7 / ECC83",
+          "tile": 0
+        },
+        {
+          "key": "tube.el34",
+          "label": "EL34",
+          "tile": 1
+        },
+        {
+          "key": "tube.6l6gc",
+          "label": "6L6GC",
+          "tile": 2
+        },
+        {
+          "key": "tube.6ak5_ef95",
+          "label": "6AK5 / EF95",
+          "tile": 3
+        }
+      ],
+      "tintable": false
+    },
+    {
+      "file": "vu_needle_profile.png",
+      "columns": 1,
+      "rows": 1,
+      "tile_size": [
+        256,
+        64
+      ],
+      "width": 256,
+      "height": 64,
+      "items": [
+        {
+          "key": "meter.needle_profile",
+          "label": "Moving meter needle",
+          "tile": 0
+        }
+      ],
+      "tintable": false
+    },
+    {
+      "file": "wear_and_patina.png",
+      "columns": 1,
+      "rows": 1,
+      "tile_size": 1024,
+      "width": 1024,
+      "height": 1024,
+      "items": [
+        {
+          "key": "surface.wear_and_patina",
+          "label": "Fine wear and patina",
+          "tile": 0
+        }
+      ],
+      "tintable": false
+    },
+    {
+      "file": "spindown_blur.png",
+      "columns": 1,
+      "rows": 1,
+      "tile_size": 256,
+      "width": 256,
+      "height": 256,
+      "items": [
+        {
+          "key": "transport.spindown_blur",
+          "label": "Transport motion blur",
+          "tile": 0
         }
       ],
       "tintable": false

@@ -737,6 +737,7 @@ void FirstAudioProcessorEditor::setUpControlStrip() {
     for (std::size_t i = 0; i < controlCount; ++i) {
         auto &slider = controls[i];
         slider.setName(controlNames[static_cast<int>(i)]);
+        slider.setComponentID(controlIds[static_cast<int>(i)]);
         slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
         slider.setRotaryParameters(juce::MathConstants<float>::pi * 0.75f,
                                    juce::MathConstants<float>::pi * 2.25f, true);
@@ -919,6 +920,7 @@ void FirstAudioProcessorEditor::setUpDeckSelectors() {
     // drawn, implemented and unreachable. The default row is overwritten by the
     // attachment below, which syncs the box to the parameter.
     tapeTypeBox.addItemList(tapeStockNameList(), 1);
+    tapeTypeBox.setComponentID("mibox.tape_stock");
     valveTypeBox.addItemList(valveTypeNameList(), 1);
     pentodeTypeBox.addItemList(pentodeTypeNameList(), 1);
     triodeTypeBox.addItemList(triodeTypeNameList(), 1);

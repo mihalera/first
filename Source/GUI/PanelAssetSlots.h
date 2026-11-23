@@ -40,64 +40,101 @@ struct Slot
 };
 
 inline constexpr Slot slots[] = {
-    { "panel_texture", "panel_texture.png", "panel_texture_png", 1024, 512,
-      "The generic chassis texture retained as a fallback when the theme-indexed "
-      "panel_materials atlas is absent." },
+    {"panel_texture", "panel_texture.png", "panel_texture_png", 1024, 512,
+     "The generic chassis texture retained as a fallback when the theme-indexed "
+     "panel_materials atlas is absent."},
 
-    { "panel_materials", "panel_materials.png", "panel_materials_png", 3072, 256,
-      "Six 512 px wide theme materials in ThemeChoice order: ivory paper, charcoal "
-      "bakelite, brushed steel, anodized graphite, white enamel, user-neutral fibre." },
+    {"panel_materials", "panel_materials.png", "panel_materials_png", 3072, 256,
+     "Six 512 px wide theme materials in ThemeChoice order: ivory paper, charcoal "
+     "bakelite, brushed steel, anodized graphite, white enamel, user-neutral fibre."},
 
-    { "brand_mark", "brand_mark.png", "brand_mark_png", 256, 256,
-      "The product mark: a reel, a monogram, a drawn logo. Drawn in the USER THEME "
-      "window's header today; it is the one slot meant to be read as a signature." },
+    {"brand_mark", "brand_mark.png", "brand_mark_png", 256, 256,
+     "The product mark: a reel, a monogram, a drawn logo. Drawn in the USER THEME "
+     "window's header today; it is the one slot meant to be read as a signature."},
 
-    { "window_icon", "window_icon.png", "window_icon_png", 64, 64,
-      "The title-bar and taskbar icon of the USER THEME window. Square, and it "
-      "should read at 16 px." },
+    {"window_icon", "window_icon.png", "window_icon_png", 64, 64,
+     "The title-bar and taskbar icon of the USER THEME window. Square, and it "
+     "should read at 16 px."},
 
-    { "principle_icons", "principle_icons.png", "principle_icons_png", 576, 64,
-      "Nine monochrome alpha glyphs for the MIX bar, ordered TAPE, VALVE, "
-      "PENTODE, TRIODE, TRANSISTOR, FOLD, GLASS, TRANSFORMER, DIGITAL. Tinted "
-      "by the active palette." },
+    {"principle_icons", "principle_icons.png", "principle_icons_png", 576, 64,
+     "Nine monochrome alpha glyphs for the MIX bar, ordered TAPE, VALVE, "
+     "PENTODE, TRIODE, TRANSISTOR, FOLD, GLASS, TRANSFORMER, DIGITAL. Tinted "
+     "by the active palette."},
 
-    { "factory_preset_art", "factory_preset_art.png", "factory_preset_art_png", 2240, 64,
-      "Twenty-nine 64 px preset artwork tiles in the exact FACTORY_PRESET_FILES "
-      "order from CMakeLists.txt; selected in the deck's current-preset badge." },
+    {"factory_preset_art", "factory_preset_art.png", "factory_preset_art_png", 2240, 64,
+     "Twenty-nine 64 px preset artwork tiles in the exact FACTORY_PRESET_FILES "
+     "order from CMakeLists.txt; selected in the deck's current-preset badge."},
 
-    { "ui_icons", "ui_icons.png", "ui_icons_png", 512, 832,
-      "Ninety-nine named, alpha-masked navigation, control, workflow, file, "
-      "status, audio and platform glyphs; indices are in asset_catalog.json." },
+    {"ui_icons", "ui_icons.png", "ui_icons_png", 512, 832,
+     "One hundred four named, alpha-masked navigation, control, workflow, file, "
+     "status, audio and platform glyphs; indices are in asset_catalog.json."},
 
-    { "parameter_glyphs", "parameter_glyphs.png", "parameter_glyphs_png", 512, 832,
-      "Ninety-seven alpha glyphs in controlSpecs order, one for every plugin control; "
-      "all are tintable for active, disabled and high-contrast states." },
+    {"parameter_glyphs", "parameter_glyphs.png", "parameter_glyphs_png", 512, 832,
+     "One hundred alpha glyphs in controlSpecs order, one for every plugin control; "
+     "all are tintable for active, disabled and high-contrast states."},
 
-    { "machine_models", "machine_models.png", "machine_models_png", 512, 512,
-      "Fifty-two machine, model and OFF glyphs generated from the processor's "
-      "tape, valve, transformer, digital and vinyl name tables." },
+    {"machine_models", "machine_models.png", "machine_models_png", 512, 512,
+     "Fifty-two machine, model and OFF glyphs generated from the processor's "
+     "tape, valve, transformer, digital and vinyl name tables."},
 
-    { "meter_status", "meter_status.png", "meter_status_png", 512, 256,
-      "Thirty-two meter, signal, phase, frequency-band and health-state glyphs." },
+    {"meter_status", "meter_status.png", "meter_status_png", 512, 256,
+     "Thirty-two meter, signal, phase, frequency-band and health-state glyphs."},
 
-    { "preset_categories", "preset_categories.png", "preset_categories_png", 512, 64,
-      "Eight preset category glyphs: mixing, mastering, drums, vocals, bass, "
-      "guitar, keys and creative." },
+    {"preset_categories", "preset_categories.png", "preset_categories_png", 512, 64,
+     "Eight preset category glyphs: mixing, mastering, drums, vocals, bass, "
+     "guitar, keys and creative."},
 
-    { "hardware_details", "hardware_details.png", "hardware_details_png", 256, 256,
-      "Sixteen panel-detail glyphs for screws, washers, vents, labels, jacks, "
-      "switches, scales, seams, reels and lamps." },
+    {"hardware_details", "hardware_details.png", "hardware_details_png", 256, 256,
+     "Sixteen panel-detail glyphs for screws, washers, vents, labels, jacks, "
+     "switches, scales, seams, reels and lamps."},
 
-    { "brand_lockups", "brand_lockups.png", "brand_lockups_png", 512, 128,
-      "Four 128 px brand variants: square mark, horizontal wordmark, monochrome "
-      "mark and reversed mark." },
+    {"brand_lockups", "brand_lockups.png", "brand_lockups_png", 512, 128,
+     "Four 128 px brand variants: square mark, horizontal wordmark, monochrome "
+     "mark and reversed mark."},
 
-    { "help_illustrations", "help_illustrations.png", "help_illustrations_png", 1024, 576,
-      "Four 512x288 help scenes: signal path, A/B comparison, preset workflow, "
-      "and loading a model or impulse response." },
+    {"help_illustrations", "help_illustrations.png", "help_illustrations_png", 1024, 576,
+     "Four 512x288 help scenes: signal path, A/B comparison, preset workflow, "
+     "and loading a model or impulse response."},
 
-    { "signal_path", "signal_path.png", "signal_path_png", 1600, 500,
-      "Full-width MiBoX signal-flow diagram for the user guide." },
+    {"signal_path", "signal_path.png", "signal_path_png", 1600, 500,
+     "Full-width MiBoX signal-flow diagram for the user guide."},
+
+    {"knob_caps", "knob_caps.png", "knob_caps_png", 512, 256,
+     "Eight 128 px static cap faces: bakelite, knurled aluminium, aged ivory, rubber, "
+     "chrome, oxblood pedal, cast steel and clear acrylic. JUCE keeps the shadow, "
+     "camera transform, scale ticks and moving pointer."},
+
+    {"level_scale", "level_scale.png", "level_scale_png", 512, 256,
+     "One transparent -20 to +3 dB scale for the live AVG-driven VU needle. It does "
+     "not claim to be a second peak scale; PEAK, RMS, LUFS and VU remain separate readouts."},
+
+    {"deck_plate", "deck_plate.png", "deck_plate_png", 2048, 512,
+     "Transparent silkscreen calibration marks and mounting details over the existing "
+     "deck surface; controls and labels stay code-drawn above it."},
+
+    {"rack_pedals", "rack_pedals.png", "rack_pedals_png", 2048, 512,
+     "Four low-contrast, transparent pedal-board treatments in live RACK page order: "
+     "DRIVE, SHAPE, MOTION, PITCH."},
+
+    {"tape_stock_swatches", "tape_stock_swatches.png", "tape_stock_swatches_png", 1014, 128,
+     "Thirteen 78x128 tape-stock label swatches in tapeStockNames order, including "
+     "Off last. The selector ID remains the source of the chosen tile."},
+
+    {"tube_glow_maps", "tube_glow_maps.png", "tube_glow_maps_png", 512, 256,
+     "Four alpha tube-heater drawings for the valve, pentode and triode source knobs; "
+     "their decorative brightness follows the visible UI control amount only."},
+
+    {"vu_needle_profile", "vu_needle_profile.png", "vu_needle_profile_png", 256, 64,
+     "A static side-lit galvanometer needle and shadow sprite, transformed by the "
+     "meter's current AVG value. A vector needle remains the fallback."},
+
+    {"wear_and_patina", "wear_and_patina.png", "wear_and_patina_png", 1024, 1024,
+     "Seamless sparse hairline wear and dust texture, overlaid at low opacity when "
+     "the persisted USER THEME patina preference is enabled."},
+
+    {"spindown_blur", "spindown_blur.png", "spindown_blur_png", 256, 256,
+     "Transparent radial motion streaks over the software reel, faded by the existing "
+     "smoothed transport speed. The native scene renderer remains untouched."},
 };
 
 inline constexpr int slotCount = static_cast<int> (sizeof (slots) / sizeof (slots[0]));

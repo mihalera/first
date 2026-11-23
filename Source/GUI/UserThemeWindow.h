@@ -149,10 +149,15 @@ inline constexpr int userThemeBackdropBandHeight =
     userThemeBackdropLabelHeight
     + userThemeBackdropRows * (userThemeBackdropRowHeight + userThemeBackdropGap) + 4;
 
+inline constexpr int userThemePatinaLabelHeight = 13;
+inline constexpr int userThemePatinaRowHeight = 20;
+inline constexpr int userThemePatinaBandHeight =
+    userThemePatinaLabelHeight + userThemePatinaRowHeight + 8;
+
 /** Where the first colour row starts: below the header, the preset band and the
-    backdrop band. */
-inline constexpr int userThemeRowsTop =
-    userThemeHeaderHeight + userThemePresetBandHeight + userThemeBackdropBandHeight;
+    backdrop and patina bands. */
+inline constexpr int userThemeRowsTop = userThemeHeaderHeight + userThemePresetBandHeight +
+                                        userThemeBackdropBandHeight + userThemePatinaBandHeight;
 
 /** The window's content height, grown from those numbers rather than measured. */
 inline constexpr int userThemePaneHeight =
@@ -188,8 +193,13 @@ class UserThemePane final : public juce::Component {
         window that is only ever one of several ways into the setting. */
     std::function<void(const juce::String&)> onBackgroundChanged;
 
-    explicit UserThemePane(UiPalette initial, juce::String backgroundIn = "THEME")
-        : palette(initial), background(std::move(backgroundIn)) {
+    /** Called when the panel's optional low-opacity patina is toggled. */
+    std::function<void(bool)> onPatinaChanged;
+
+    explicit UserThemePane(UiPalette initial,
+                           juce::String backgroundIn = "THEME",
+                           bool patinaEnabledIn = false) :
+        palette(initial), background(std::move(backgroundIn)), patinaEnabled(patinaEnabledIn) {
         // The pane paints its whole face from the palette (see paint()), so it is
         // opaque - which is what stops the window's own background colour from
         // showing through as a flat card before the first paint, or wherever a
@@ -211,6 +221,11 @@ class UserThemePane final : public juce::Component {
         RESET (or after the settings file was edited) marks the live one. */
     void setBackground(const juce::String &next) {
         background = next;
+        repaint();
+    }
+
+    void setPatinaEnabled(bool enabled) {
+        patinaEnabled = enabled;
         repaint();
     }
 
@@ -274,6 +289,7 @@ class UserThemePane final : public juce::Component {
 
         paintPresets(g);
         paintBackdrop(g);
+        paintPatina(g);
 
         for (int row = 0; row < themeColourFieldCount; ++row) {
             const auto bounds = rowBounds(row);
@@ -319,19 +335,23 @@ class UserThemePane final : public juce::Component {
         const auto row = rowAt(event.y);
         const auto preset = presetAt(event.getPosition());
         const auto backdrop = backdropAt(event.getPosition());
-        if (row != hoveredRow || preset != hoveredPreset || backdrop != hoveredBackdrop) {
+        const auto patina = patinaBounds().contains(event.getPosition());
+        if (row != hoveredRow || preset != hoveredPreset || backdrop != hoveredBackdrop ||
+            patina != hoveredPatina) {
             hoveredRow = row;
             hoveredPreset = preset;
             hoveredBackdrop = backdrop;
+            hoveredPatina = patina;
             repaint();
         }
     }
 
     void mouseExit(const juce::MouseEvent &) override {
-        if (hoveredRow >= 0 || hoveredPreset >= 0 || hoveredBackdrop >= 0) {
+        if (hoveredRow >= 0 || hoveredPreset >= 0 || hoveredBackdrop >= 0 || hoveredPatina) {
             hoveredRow = -1;
             hoveredPreset = -1;
             hoveredBackdrop = -1;
+            hoveredPatina = false;
             repaint();
         }
     }
@@ -345,6 +365,11 @@ class UserThemePane final : public juce::Component {
         if (closeBounds().contains(event.getPosition())) {
             if (onClose != nullptr)
                 onClose();
+            return;
+        }
+
+        if (patinaBounds().contains(event.getPosition())) {
+            applyPatina(!patinaEnabled);
             return;
         }
 
@@ -427,6 +452,12 @@ class UserThemePane final : public juce::Component {
         return -1;
     }
 
+    juce::Rectangle<int> patinaBounds() const {
+        const auto top = userThemeHeaderHeight + userThemePresetBandHeight +
+                         userThemeBackdropBandHeight + userThemePatinaLabelHeight;
+        return {8, top, getWidth() - 16, userThemePatinaRowHeight};
+    }
+
     juce::Rectangle<int> swatchBounds(int row) const {
         // The swatch sits left of the hex text, both right-aligned against the row's
         // end: the eye scans the names down the left and the chips down the right.
@@ -504,6 +535,13 @@ class UserThemePane final : public juce::Component {
             onBackgroundChanged(background);
     }
 
+    void applyPatina(bool enabled) {
+        patinaEnabled = enabled;
+        repaint();
+        if (onPatinaChanged != nullptr)
+            onPatinaChanged(patinaEnabled);
+    }
+
     /** The band: a caption and four keys, the live one filled in the accent. */
     void paintBackdrop(juce::Graphics &g) const {
         const auto label = juce::Rectangle<int>(
@@ -530,6 +568,29 @@ class UserThemePane final : public juce::Component {
             g.setFont (panelFont (9.0f, juce::Font::bold));
             g.drawText(choice.name, bounds, juce::Justification::centred, false);
         }
+    }
+
+    void paintPatina(juce::Graphics &g) const {
+        const auto labelTop =
+            userThemeHeaderHeight + userThemePresetBandHeight + userThemeBackdropBandHeight;
+        g.setColour(palette.secondary);
+        g.setFont(panelFont(9.0f, juce::Font::bold));
+        g.drawText("PANEL PATINA",
+                   juce::Rectangle<int>(14, labelTop, getWidth() - 28, userThemePatinaLabelHeight),
+                   juce::Justification::centredLeft, false);
+
+        const auto bounds = patinaBounds();
+        const auto hovered = hoveredPatina;
+        g.setColour(patinaEnabled ? palette.accent
+                    : hovered     ? palette.raised.brighter(0.10f)
+                                  : palette.raised);
+        g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
+        g.setColour(patinaEnabled ? palette.accent : palette.border);
+        g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 3.0f, 1.0f);
+        g.setColour(patinaEnabled ? palette.readout : palette.text);
+        g.setFont(panelFont(9.0f, juce::Font::bold));
+        g.drawText(patinaEnabled ? "ON  ·  subtle chassis wear" : "OFF  ·  original clean finish",
+                   bounds, juce::Justification::centred, false);
     }
 
     void notify() {
@@ -617,6 +678,8 @@ class UserThemePane final : public juce::Component {
     int hoveredRow = -1;
     int hoveredPreset = -1;
     int hoveredBackdrop = -1;
+    bool patinaEnabled = false;
+    bool hoveredPatina = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UserThemePane)
 };
@@ -684,10 +747,15 @@ class UserThemeWindow final : public juce::DocumentWindow {
     /** "The backdrop changed", with the entry's name - set once by the editor. */
     std::function<void(const juce::String &)> onBackgroundChanged;
 
-    explicit UserThemeWindow(UiPalette start, juce::String background = "THEME")
-        : juce::DocumentWindow("USER THEME", start.background, juce::DocumentWindow::closeButton,
-                               true) {
-        auto content = std::make_unique<UserThemePane>(start, std::move(background));
+    /** "The patina setting changed" - set once by the editor. */
+    std::function<void(bool)> onPatinaChanged;
+
+    explicit UserThemeWindow(UiPalette start,
+                             juce::String background = "THEME",
+                             bool patinaEnabled = false) :
+        juce::DocumentWindow(
+            "USER THEME", start.background, juce::DocumentWindow::closeButton, true) {
+        auto content = std::make_unique<UserThemePane>(start, std::move(background), patinaEnabled);
         pane = content.get();
 
         pane->onPaletteChanged = [this](const UiPalette &edited) {
@@ -697,6 +765,10 @@ class UserThemeWindow final : public juce::DocumentWindow {
         pane->onBackgroundChanged = [this](const juce::String &edited) {
             if (onBackgroundChanged != nullptr)
                 onBackgroundChanged(edited);
+        };
+        pane->onPatinaChanged = [this](bool enabled) {
+            if (onPatinaChanged != nullptr)
+                onPatinaChanged(enabled);
         };
         pane->onClose = [this] { setVisible(false); };
 
@@ -727,6 +799,8 @@ class UserThemeWindow final : public juce::DocumentWindow {
     void setPalette(const UiPalette &next) { pane->setPalette(next); }
 
     void setBackground(const juce::String &next) { pane->setBackground(next); }
+
+    void setPatinaEnabled(bool enabled) { pane->setPatinaEnabled(enabled); }
 
     void show() {
         setVisible(true);

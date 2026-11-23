@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import json
 import math
+import random
 import re
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
 ASSETS = Path(__file__).resolve().parent
@@ -867,6 +868,380 @@ def help_atlas() -> tuple[dict, Image.Image]:
             "items":items,"tintable":False}, image
 
 
+def knob_caps_atlas() -> tuple[dict, Image.Image]:
+    """Eight original top-down cap faces; shadows and moving pointers stay in JUCE."""
+    names = ["bakelite", "knurled_aluminium", "aged_ivory", "rubber",
+             "chrome", "oxblood_pedal", "cast_steel", "clear_acrylic"]
+    labels = ["Fluted bakelite", "Diamond knurl", "Aged ivory", "Soft rubber",
+              "Chrome skirt", "Oxblood pedal", "Cast steel", "Clear acrylic"]
+    bases = [(24, 27, 28), (135, 145, 148), (221, 207, 171), (48, 52, 54),
+             (175, 185, 188), (111, 34, 41), (91, 101, 104), (109, 163, 176)]
+    tile, scale = 128, 3
+    image = Image.new("RGBA", (tile * 4, tile * 2), (0, 0, 0, 0))
+    items = []
+    size = tile * scale
+    cx = cy = (size - 1) * 0.5
+    radius = size * 0.435
+    light_x, light_y = -0.58, -0.82
+
+    for index, (name, label, base) in enumerate(zip(names, labels, bases)):
+        tile_image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        pixels = tile_image.load()
+        for py in range(size):
+            for px in range(size):
+                dx, dy = (px - cx) / radius, (py - cy) / radius
+                distance = math.sqrt(dx * dx + dy * dy)
+                if distance > 1.0:
+                    continue
+                facing = max(-1.0, min(1.0, dx * light_x + dy * light_y))
+                dome = math.sqrt(max(0.0, 1.0 - distance * distance))
+                shade = 0.57 + 0.22 * facing + 0.20 * dome
+                if index == 4:
+                    specular = max(0.0, 1.0 - abs((px + py * 0.55) / size - 0.30))
+                    shade += specular * 0.32
+                if index == 7:
+                    shade = 0.45 + 0.28 * facing + 0.10 * dome
+                color = tuple(max(0, min(255, round(channel * shade))) for channel in base)
+                alpha = 210 if index == 7 else 255
+                pixels[px, py] = (*color, alpha)
+
+        d = ImageDraw.Draw(tile_image)
+        def p(value: float) -> int:
+            return round(value * scale)
+
+        outer = p(tile / 2 - radius / scale)
+        d.ellipse((outer, outer, size - outer - 1, size - outer - 1),
+                  outline=(232, 221, 191, 190), width=scale)
+        # The outer skirt and inner boss are static material details. JUCE supplies
+        # the cast shadow, theme lighting, scale ticks and animated pointer.
+        d.ellipse((p(10), p(10), p(118), p(118)), outline=(15, 18, 19, 220), width=3 * scale)
+        d.ellipse((p(20), p(20), p(108), p(108)), outline=(218, 216, 201, 100), width=scale)
+        d.ellipse((p(44), p(44), p(84), p(84)), fill=(20, 23, 24, 170),
+                  outline=(222, 184, 94, 230), width=2 * scale)
+        d.ellipse((p(49), p(49), p(79), p(79)), fill=(*base, 255),
+                  outline=(245, 236, 213, 120), width=scale)
+
+        if index == 0:  # flutes around the side wall
+            for groove in range(32):
+                angle = groove * math.tau / 32
+                x0, y0 = cx + math.cos(angle) * p(53), cy + math.sin(angle) * p(53)
+                x1, y1 = cx + math.cos(angle) * p(61), cy + math.sin(angle) * p(61)
+                d.line((round(x0), round(y0), round(x1), round(y1)),
+                       fill=(225, 228, 221, 105), width=scale)
+        elif index == 1:  # diagonal cross-hatch grip
+            for offset in range(-45, 50, 8):
+                d.line((p(22 + offset), p(40), p(45 + offset), p(17)),
+                       fill=(245, 246, 237, 75), width=scale)
+                d.line((p(20 + offset), p(82), p(82 + offset), p(20)),
+                       fill=(31, 38, 40, 95), width=scale)
+        elif index == 3:  # soft stipple with no sharp metallic sheen
+            for dot in range(82):
+                angle = dot * 2.399963
+                r = p(19 + (dot % 13) * 2.0)
+                x, y = cx + math.cos(angle) * r, cy + math.sin(angle) * r
+                d.ellipse((round(x - scale), round(y - scale), round(x + scale), round(y + scale)),
+                          fill=(221, 225, 222, 38))
+        elif index == 5:  # compact pedal cap markings
+            d.arc((p(28), p(28), p(100), p(100)), 205, 335,
+                  fill=(245, 226, 184, 210), width=2 * scale)
+            d.line((cx, p(23), cx, p(48)), fill=(247, 231, 193, 220), width=3 * scale)
+        elif index == 6:  # bead-blasted pinpoints
+            for dot in range(96):
+                angle = dot * 2.399963
+                r = p(27 + (dot % 17) * 1.6)
+                x, y = cx + math.cos(angle) * r, cy + math.sin(angle) * r
+                d.ellipse((round(x), round(y), round(x + scale), round(y + scale)),
+                          fill=(220, 227, 225, 44))
+        elif index == 7:  # acrylic catches a cool edge glint
+            d.arc((p(15), p(15), p(113), p(113)), 190, 305,
+                  fill=(197, 238, 246, 190), width=3 * scale)
+            d.arc((p(18), p(18), p(110), p(110)), 10, 115,
+                  fill=(15, 35, 42, 180), width=2 * scale)
+
+        # Keep every decorative stroke inside the circular face. Vector details
+        # are drawn after the radial fill, so an explicit alpha mask prevents
+        # grooves and cross-hatching from escaping into the transparent tile area.
+        face_mask = Image.new("L", (size, size), 0)
+        ImageDraw.Draw(face_mask).ellipse(
+            (round(cx - radius), round(cy - radius), round(cx + radius), round(cy + radius)),
+            fill=255)
+        tile_image.putalpha(ImageChops.multiply(tile_image.getchannel("A"), face_mask))
+
+        tile_image = tile_image.resize((tile, tile), Image.Resampling.LANCZOS)
+        x, y = index % 4 * tile, index // 4 * tile
+        image.alpha_composite(tile_image, (x, y))
+        items.append({"key": f"knob.{name}", "label": label, "tile": index})
+
+    return {"file": "knob_caps.png", "columns": 4, "rows": 2,
+            "tile_size": tile, "width": image.width, "height": image.height,
+            "items": items, "tintable": False}, image
+
+
+def level_scale_atlas() -> tuple[dict, Image.Image]:
+    """One transparent VU/AVG scale whose labels match the live -20..+3 dB needle."""
+    width, height = 512, 256
+    image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    d = ImageDraw.Draw(image)
+    centre = (256, 251)
+    radius = 214
+    ink = (221, 207, 174, 218)
+    d.arc((centre[0] - radius, centre[1] - radius,
+           centre[0] + radius, centre[1] + radius), 180, 360, fill=ink, width=3)
+
+    def point(fraction: float, r: float) -> tuple[int, int]:
+        angle = math.pi + fraction * math.pi
+        return round(centre[0] + math.cos(angle) * r), round(centre[1] + math.sin(angle) * r)
+
+    for tick in range(41):
+        fraction = tick / 40
+        major = tick % 5 == 0 or tick == 40
+        inner = radius - (23 if major else 12)
+        outer_point, inner_point = point(fraction, radius - 2), point(fraction, inner)
+        color = (207, 79, 63, 230) if fraction >= 0.87 else ink
+        d.line((*outer_point, *inner_point), fill=color, width=3 if major else 2)
+
+    for fraction, label in ((0.0, "-20"), (10 / 23, "-10"), (20 / 23, "0"), (1.0, "+3")):
+        x, y = point(fraction, radius - 44)
+        box = d.textbbox((0, 0), label, font=ImageFont.load_default(size=16))
+        d.text((x - (box[2] - box[0]) / 2, y - (box[3] - box[1]) / 2 - 3),
+               label, fill=(235, 222, 194, 235), font=ImageFont.load_default(size=16))
+
+    d.ellipse((centre[0] - 7, centre[1] - 7, centre[0] + 7, centre[1] + 7),
+              fill=(185, 137, 67, 225), outline=(239, 220, 182, 240), width=2)
+    d.ellipse((centre[0] + 62, centre[1] - 110, centre[0] + 78, centre[1] - 94),
+              fill=(52, 57, 57, 180), outline=(224, 209, 179, 210), width=2)
+    return {"file": "level_scale.png", "columns": 1, "rows": 1,
+            "tile_size": [width, height], "width": width, "height": height,
+            "items": [{"key": "meter.avg_vu_scale", "label": "AVG / VU scale", "tile": 0}],
+            "tintable": False}, image
+
+
+def deck_plate_atlas() -> tuple[dict, Image.Image]:
+    """Transparent calibration silkscreen for the existing deck controls."""
+    width, height = 2048, 512
+    image = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    d = ImageDraw.Draw(image)
+    light = (226, 214, 187, 62)
+    shade = (14, 19, 21, 75)
+    d.rounded_rectangle((14, 14, width - 15, height - 15), radius=24,
+                        outline=light, width=2)
+    d.rounded_rectangle((20, 20, width - 21, height - 21), radius=20,
+                        outline=shade, width=2)
+    # Fine calibration runs at the top and bottom leave the centre clear for labels.
+    for x in range(70, width - 60, 16):
+        major = ((x - 70) % 80) == 0
+        length = 16 if major else 8
+        d.line((x, 24, x, 24 + length), fill=light, width=2 if major else 1)
+        d.line((x, height - 25, x, height - 25 - length), fill=shade, width=2 if major else 1)
+    for side in (38, width - 39):
+        d.line((side, 82, side, height - 82), fill=light, width=2)
+        for y in range(94, height - 82, 18):
+            major = (y - 94) % 72 == 0
+            reach = 20 if major else 10
+            direction = 1 if side < width // 2 else -1
+            d.line((side, y, side + direction * reach, y), fill=light, width=2 if major else 1)
+    # The signal route and head-block guides are paired highlights/shadows, not filled panels.
+    for y, color in ((height // 2 - 1, light), (height // 2 + 2, shade)):
+        d.line((100, y, width - 100, y), fill=color, width=2)
+    for centre_x in (width * 0.25, width * 0.5, width * 0.75):
+        x = round(centre_x)
+        d.arc((x - 58, 95, x + 58, 211), 205, 335, fill=light, width=2)
+        d.arc((x - 58, height - 211, x + 58, height - 95), 25, 155, fill=shade, width=2)
+        d.line((x, 65, x, 82), fill=light, width=2)
+        d.line((x, height - 65, x, height - 82), fill=shade, width=2)
+    for x, y in ((36, 36), (width - 36, 36), (36, height - 36), (width - 36, height - 36)):
+        d.ellipse((x - 9, y - 9, x + 9, y + 9), fill=(14, 18, 20, 70),
+                  outline=light, width=2)
+        d.line((x - 5, y + 1, x + 5, y - 1), fill=(236, 226, 205, 85), width=2)
+    return {"file": "deck_plate.png", "columns": 1, "rows": 1,
+            "tile_size": [width, height], "width": width, "height": height,
+            "items": [{"key": "deck.calibration_plate", "label": "Deck calibration plate", "tile": 0}],
+            "tintable": False}, image
+
+
+def rack_pedals_atlas() -> tuple[dict, Image.Image]:
+    pages = tab_names()[-4:]
+    expected = ["DRIVE", "SHAPE", "MOTION", "PITCH"]
+    if pages != expected:
+        raise SystemExit(f"RACK page order changed: expected {expected}, got {pages}")
+    colors = [(201, 97, 50), (111, 121, 124), (66, 157, 145), (132, 94, 166)]
+    image = Image.new("RGBA", (512 * 4, 512), (0, 0, 0, 0))
+    items = []
+    for index, (page, accent) in enumerate(zip(pages, colors)):
+        tile = Image.new("RGBA", (512, 512), (0, 0, 0, 0))
+        d = ImageDraw.Draw(tile)
+        d.rounded_rectangle((14, 14, 498, 498), radius=38,
+                            fill=(*accent, 24), outline=(*accent, 100), width=4)
+        d.rounded_rectangle((24, 24, 488, 488), radius=30,
+                            outline=(232, 221, 196, 56), width=2)
+        d.line((42, 54, 470, 54), fill=(236, 227, 208, 55), width=2)
+        d.line((42, 460, 470, 460), fill=(14, 20, 23, 75), width=3)
+        for x in range(64, 465, 32):
+            d.line((x, 62, x, 74), fill=(*accent, 85), width=2)
+            d.line((x, 440, x, 452), fill=(*accent, 80), width=2)
+        # Low-contrast etched rails frame the controls without imitating a second UI.
+        for row in range(2):
+            y = 166 + row * 184
+            d.rounded_rectangle((43, y, 469, y + 119), radius=18,
+                                outline=(233, 224, 204, 48), width=2)
+            d.line((55, y + 12, 457, y + 12), fill=(*accent, 45), width=2)
+        d.text((34, 32), page, fill=(*accent, 130), font=ImageFont.load_default(size=19))
+        image.alpha_composite(tile, (index * 512, 0))
+        items.append({"key": f"rack.{page.lower()}", "label": page, "tile": index})
+    return {"file": "rack_pedals.png", "columns": 4, "rows": 1,
+            "tile_size": [512, 512], "width": image.width, "height": image.height,
+            "items": items, "tintable": False}, image
+
+
+def tape_stock_swatches_atlas() -> tuple[dict, Image.Image]:
+    names = cpp_names(ROOT / "Source/PluginProcessor.h", "tapeStockNames")
+    if len(names) != 13 or names[-1].lower() != "off":
+        raise SystemExit("tapeStockNames must contain 13 entries with Off last")
+    tile_w, tile_h = 78, 128
+    image = Image.new("RGBA", (tile_w * len(names), tile_h), (0, 0, 0, 0))
+    base_colors = [(127, 88, 42), (176, 137, 53), (104, 105, 100), (83, 111, 133),
+                   (143, 102, 48), (164, 63, 49), (142, 121, 79), (118, 62, 51),
+                   (165, 147, 112), (123, 90, 63), (102, 77, 56), (105, 112, 113),
+                   (87, 94, 95)]
+    items = []
+    for index, (name, base) in enumerate(zip(names, base_colors)):
+        tile = Image.new("RGBA", (tile_w, tile_h), (0, 0, 0, 0))
+        d = ImageDraw.Draw(tile)
+        d.rounded_rectangle((5, 5, 73, 123), radius=7, fill=(*base, 238),
+                            outline=(231, 220, 195, 215), width=2)
+        d.rounded_rectangle((10, 10, 68, 118), radius=5,
+                            outline=(20, 24, 25, 150), width=2)
+        if index == len(names) - 1:
+            d.ellipse((22, 27, 56, 61), outline=(204, 210, 207, 235), width=4)
+            d.ellipse((32, 37, 46, 51), fill=(31, 37, 39, 235))
+        else:
+            d.ellipse((22, 27, 56, 61), fill=(25, 30, 31, 230),
+                      outline=(213, 193, 147, 235), width=3)
+            d.ellipse((32, 37, 46, 51), fill=(183, 142, 68, 245))
+            d.ellipse((36, 41, 42, 47), fill=(22, 26, 27, 255))
+        d.rectangle((11, 68, 67, 71), fill=(241, 225, 184, 195))
+        label = name
+        font = ImageFont.load_default(size=11)
+        words = label.split()
+        lines: list[str] = []
+        line = ""
+        for word in words:
+            candidate = f"{line} {word}".strip()
+            if d.textbbox((0, 0), candidate, font=font)[2] <= 52:
+                line = candidate
+            else:
+                if line:
+                    lines.append(line)
+                line = word
+        if line:
+            lines.append(line)
+        for line_index, text in enumerate(lines[:3]):
+            box = d.textbbox((0, 0), text, font=font)
+            d.text(((tile_w - (box[2] - box[0])) / 2, 82 + line_index * 12), text,
+                   fill=(248, 237, 213, 245), font=font)
+        d.line((17, 112, 61, 112), fill=(24, 29, 30, 115), width=2)
+        image.alpha_composite(tile, (index * tile_w, 0))
+        items.append({"key": f"tape_stock.{slug(name)}", "label": name, "tile": index})
+    return {"file": "tape_stock_swatches.png", "columns": len(names), "rows": 1,
+            "tile_size": [tile_w, tile_h], "width": image.width, "height": image.height,
+            "items": items, "tintable": False, "tile_order": names}, image
+
+
+def tube_glow_maps_atlas() -> tuple[dict, Image.Image]:
+    names = ["12AX7 / ECC83", "EL34", "6L6GC", "6AK5 / EF95"]
+    colors = [(255, 153, 69), (248, 132, 77), (255, 185, 89), (244, 125, 61)]
+    image = Image.new("RGBA", (128 * len(names), 256), (0, 0, 0, 0))
+    for index, (name, color) in enumerate(zip(names, colors)):
+        tile = Image.new("RGBA", (128, 256), (0, 0, 0, 0))
+        pixels = tile.load()
+        for y in range(256):
+            for x in range(128):
+                dx, dy = (x - 64) / 62, (y - 136) / 108
+                dist = dx * dx + dy * dy
+                if dist < 1.0:
+                    alpha = round(60 * (1.0 - dist) ** 2)
+                    pixels[x, y] = (*color, alpha)
+        d = ImageDraw.Draw(tile)
+        d.rounded_rectangle((34, 28, 94, 225), radius=24,
+                            fill=(154, 196, 191, 22), outline=(210, 225, 216, 68), width=2)
+        d.line((64, 68, 64, 197), fill=(*color, 145), width=4)
+        d.line((54, 190, 64, 120, 74, 190), fill=(*color, 210), width=4)
+        d.ellipse((58, 198, 70, 210), fill=(*color, 205))
+        d.line((43, 222, 85, 222), fill=(225, 224, 208, 65), width=2)
+        image.alpha_composite(tile, (index * 128, 0))
+    items = [{"key": f"tube.{slug(name)}", "label": name, "tile": index}
+             for index, name in enumerate(names)]
+    return {"file": "tube_glow_maps.png", "columns": 4, "rows": 1,
+            "tile_size": [128, 256], "width": image.width, "height": image.height,
+            "items": items, "tintable": False}, image
+
+
+def vu_needle_profile_atlas() -> tuple[dict, Image.Image]:
+    image = Image.new("RGBA", (256, 64), (0, 0, 0, 0))
+    d = ImageDraw.Draw(image)
+    d.polygon([(14, 36), (235, 23), (249, 29), (237, 33), (15, 42)],
+              fill=(0, 0, 0, 86))
+    d.ellipse((9, 22, 49, 45), fill=(0, 0, 0, 72))
+    d.polygon([(14, 30), (237, 19), (250, 25), (238, 28), (15, 35)],
+              fill=(205, 211, 206, 248))
+    d.line((20, 31, 235, 21), fill=(67, 74, 75, 255), width=2)
+    d.polygon([(230, 19), (250, 25), (238, 28)], fill=(184, 58, 47, 255))
+    d.ellipse((11, 24, 35, 39), fill=(149, 151, 144, 255),
+              outline=(38, 43, 44, 255), width=2)
+    d.ellipse((19, 27, 30, 36), fill=(222, 184, 91, 255),
+              outline=(35, 39, 40, 255), width=1)
+    return {"file": "vu_needle_profile.png", "columns": 1, "rows": 1,
+            "tile_size": [256, 64], "width": 256, "height": 64,
+            "items": [{"key": "meter.needle_profile", "label": "Moving meter needle", "tile": 0}],
+            "tintable": False}, image
+
+
+def wear_and_patina_tile() -> tuple[dict, Image.Image]:
+    size = 1024
+    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(image)
+    rng = random.Random(37105)
+    # Fine, sparse marks keep the texture neutral across light and dark materials.
+    for _ in range(620):
+        x, y = rng.randrange(32, size - 32), rng.randrange(32, size - 32)
+        length = rng.randrange(4, 32)
+        dx = rng.choice((-1, 0, 1)) * length
+        dy = rng.choice((-1, 0, 1)) * max(1, length // 5)
+        alpha = rng.randrange(64, 145)
+        color = (236, 225, 205, alpha) if rng.random() < 0.52 else (12, 16, 17, alpha)
+        d.line((x, y, x + dx, y + dy), fill=color, width=1)
+    for _ in range(850):
+        x, y = rng.randrange(4, size - 4), rng.randrange(4, size - 4)
+        r = rng.choice((1, 1, 1, 2))
+        alpha = rng.randrange(34, 92)
+        color = (232, 220, 195, alpha) if rng.random() < 0.5 else (10, 14, 16, alpha)
+        d.ellipse((x - r, y - r, x + r, y + r), fill=color)
+    return {"file": "wear_and_patina.png", "columns": 1, "rows": 1,
+            "tile_size": size, "width": size, "height": size,
+            "items": [{"key": "surface.wear_and_patina", "label": "Fine wear and patina", "tile": 0}],
+            "tintable": False}, image
+
+
+def spindown_blur_atlas() -> tuple[dict, Image.Image]:
+    size = 256
+    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(image)
+    centre = (size // 2, size // 2)
+    for ring, alpha in ((42, 22), (38, 28), (24, 18)):
+        d.arc((centre[0] - ring, centre[1] - ring, centre[0] + ring, centre[1] + ring),
+              8, 352, fill=(228, 220, 198, alpha), width=7)
+    for spoke in range(12):
+        angle = spoke * math.tau / 12 + 0.10
+        x0, y0 = centre[0] + math.cos(angle) * 23, centre[1] + math.sin(angle) * 23
+        x1, y1 = centre[0] + math.cos(angle + 0.22) * 48, centre[1] + math.sin(angle + 0.22) * 48
+        d.line((round(x0), round(y0), round(x1), round(y1)),
+               fill=(245, 229, 194, 34), width=5)
+    return {"file": "spindown_blur.png", "columns": 1, "rows": 1,
+            "tile_size": size, "width": size, "height": size,
+            "items": [{"key": "transport.spindown_blur", "label": "Transport motion blur", "tile": 0}],
+            "tintable": False}, image
+
+
 def signal_path_image() -> Image.Image:
     width, height = 1600, 500
     scale = 2
@@ -955,13 +1330,22 @@ def main() -> int:
     help_entry, help_image = help_atlas()
     atlases.append(help_entry)
     output_images[help_entry["file"]] = help_image
+
+    for generate in (knob_caps_atlas, level_scale_atlas, deck_plate_atlas,
+                     rack_pedals_atlas, tape_stock_swatches_atlas,
+                     tube_glow_maps_atlas, vu_needle_profile_atlas,
+                     wear_and_patina_tile, spindown_blur_atlas):
+        atlas, image = generate()
+        atlases.append(atlas)
+        output_images[atlas["file"]] = image
+
     output_images["signal_path.png"] = signal_path_image()
 
     for filename, image in output_images.items():
         image.save(ASSETS / filename, optimize=True)
 
     catalog = {
-        "about": "Generated MiBoX visual library. Sprite keys and indices are stable within each atlas; white glyph atlases are tintable for normal, active, disabled and high-contrast states.",
+        "about": "Generated MiBoX visual library. Sprite keys and indices follow the live plugin tables where their order affects behaviour; all artwork is optional and has a procedural fallback.",
         "generator": "Assets/generate_asset_pack.py (Pillow required)",
         "atlases": atlases,
         "platform_assets": platform_asset_inventory(),

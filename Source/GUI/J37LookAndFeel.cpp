@@ -8,12 +8,13 @@
 //  they were - this file is the half that draws.
 // =============================================================================
 
+#include "GUI/ChipCaption.h"
+#include "GUI/PanelAssets.h"
+#include "GUI/PanelPaint.h"
+#include "GUI/PanelTabs.h"
 #include "PluginEditor.h"
 #include <cmath>
 #include <cstring>
-#include "GUI/ChipCaption.h"
-#include "GUI/PanelPaint.h"
-#include "GUI/PanelAssets.h"
 
 // The knob's radial budget, which drawRotarySlider solves the cap, the groove and
 // the marks inside. It is Source/GUI/KnobMetrics.h: called from here and from the
@@ -469,6 +470,81 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     g.setColour (palette.knobHighlight.withAlpha (0.05f + 0.04f * breath));
     g.fillEllipse (sweepCentre.x - radius * 0.36f, sweepCentre.y - radius * 0.36f,
                    radius * 0.72f, radius * 0.72f);
+
+    // Static cap material is an optional face layer. The skirt, camera, tick ring
+    // and animated pointer above/below it stay vector drawn; if the PNG is absent,
+    // the complete procedural face already painted here remains visible.
+    int capIndex = -1;
+    if (juce::isPositiveAndBelow(currentTab, static_cast<int>(j37panel::tabSpecs.size()))) {
+        const auto &page = j37panel::tabSpecs[static_cast<std::size_t>(currentTab)];
+        if (page.family == 2) {
+            if (std::strcmp(page.name, "DRIVE") == 0)
+                capIndex = 5;
+            else if (std::strcmp(page.name, "SHAPE") == 0)
+                capIndex = 3;
+            else if (std::strcmp(page.name, "MOTION") == 0)
+                capIndex = 1;
+            else if (std::strcmp(page.name, "PITCH") == 0)
+                capIndex = 7;
+        }
+    }
+    if (capIndex < 0) {
+        switch (theme) {
+        case j37panel::ThemeChoice::ivory:
+            capIndex = 2;
+            break;
+        case j37panel::ThemeChoice::charcoal:
+            capIndex = 0;
+            break;
+        case j37panel::ThemeChoice::metal:
+            capIndex = 1;
+            break;
+        case j37panel::ThemeChoice::darkMetal:
+            capIndex = 6;
+            break;
+        case j37panel::ThemeChoice::whiteMonster:
+            capIndex = 4;
+            break;
+        case j37panel::ThemeChoice::user:
+            capIndex = 7;
+            break;
+        }
+    }
+
+    const auto &capAtlas = j37panel::assets::cachedImage("knob_caps_png");
+    if (capAtlas.isValid() && capAtlas.getWidth() >= 512 && capAtlas.getHeight() >= 256) {
+        g.drawImage(capAtlas, juce::roundToInt(centre.x - radius),
+                    juce::roundToInt(centre.y - radius), juce::roundToInt(radius * 2.0f),
+                    juce::roundToInt(radius * 2.0f), (capIndex % 4) * 128, (capIndex / 4) * 128,
+                    128, 128, true);
+    }
+
+    // The valve source knobs get a small heater mark. Its brightness comes only
+    // from the visible source-mix control; the editor never reaches into DSP state.
+    int tubeIndex = -1;
+    const auto controlId = slider.getComponentID();
+    if (controlId == "valve_source")
+        tubeIndex = 0;
+    else if (controlId == "pentode_source")
+        tubeIndex = 1;
+    else if (controlId == "triode_source")
+        tubeIndex = 2;
+    else if (controlId == "drive")
+        tubeIndex = 3;
+    const auto &tubeAtlas = j37panel::assets::cachedImage("tube_glow_maps_png");
+    if (tubeIndex >= 0 && tubeAtlas.isValid() && tubeAtlas.getWidth() >= 512 &&
+        tubeAtlas.getHeight() >= 256) {
+        const auto glow = juce::jlimit(0.0f, 0.34f, sliderPos * 0.34f);
+        if (glow > 0.01f) {
+            g.saveState();
+            g.setOpacity(glow);
+            g.drawImage(tubeAtlas, juce::roundToInt(centre.x - radius * 0.19f),
+                        juce::roundToInt(centre.y - radius * 0.57f),
+                        juce::roundToInt(radius * 0.38f), juce::roundToInt(radius * 0.76f),
+                        tubeIndex * 128, 0, 128, 256, true);
+            g.restoreState();
+        }
+    }
 
     // The indicator: a tapered rib from the hub out across the face, in the
     // knob's own accent, with a dark copy of itself one pixel down and right.
@@ -947,8 +1023,38 @@ void J37LookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& lab
     const auto panelHeight = juce::roundToInt (cameraPanel.getHeight());
     const auto inset = comboTextInset (box.getHeight(), panelHeight);
 
-    label.setBounds (inset, 1, juce::jmax (0, box.getWidth() - 30), box.getHeight() - 2);
+    const auto swatchInset = box.getComponentID() == "mibox.tape_stock" ? 23 : 0;
+    label.setBounds(inset + swatchInset, 1, juce::jmax(0, box.getWidth() - 30 - swatchInset),
+                    box.getHeight() - 2);
     label.setFont (getComboBoxFont (box));
+}
+
+void J37LookAndFeel::drawComboBox(juce::Graphics &g,
+                                  int width,
+                                  int height,
+                                  bool isButtonDown,
+                                  int buttonX,
+                                  int buttonY,
+                                  int buttonW,
+                                  int buttonH,
+                                  juce::ComboBox &box) {
+    juce::LookAndFeel_V4::drawComboBox(g, width, height, isButtonDown, buttonX, buttonY, buttonW,
+                                       buttonH, box);
+
+    if (box.getComponentID() != "mibox.tape_stock")
+        return;
+
+    const auto tile = box.getSelectedId() - 1;
+    const auto &atlas = j37panel::assets::cachedImage("tape_stock_swatches_png");
+    if (!juce::isPositiveAndBelow(tile, 13) || !atlas.isValid() || atlas.getWidth() < 1014 ||
+        atlas.getHeight() < 128)
+        return;
+
+    const auto left = juce::jlimit(2, 8, height / 6);
+    const auto top = juce::jmax(2, height / 8);
+    const auto swatchWidth = juce::jmin(18, juce::jmax(10, height / 2));
+    const auto swatchHeight = juce::jmax(1, height - top * 2);
+    g.drawImage(atlas, left, top, swatchWidth, swatchHeight, tile * 78, 0, 78, 128, true);
 }
 
 //==============================================================================

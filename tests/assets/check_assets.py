@@ -94,6 +94,8 @@ def main() -> int:
     editor_paint = EDITOR_PAINT.read_text()
     editor_meters = EDITOR_METERS.read_text()
     editor_theme = EDITOR_THEME.read_text()
+    editor_preferences = (REPO / "Source" / "GUI" / "EditorPreferences.h").read_text()
+    plugin_editor = (REPO / "Source" / "PluginEditor.cpp").read_text()
     panel_paint = PANEL_PAINT.read_text()
     cmake = CMAKE.read_text()
     panel_tabs = (REPO / "Source" / "GUI" / "PanelTabs.h").read_text()
@@ -289,6 +291,77 @@ def main() -> int:
             problems.append("docs/signal-path.md must display the generated signal path illustration")
         if "FACTORY_PRESET_FILES" not in asset_generator or "controlSpecs" not in asset_generator:
             problems.append("asset generator must derive preset and parameter order from project sources")
+
+        expected_new_atlases = {
+            "knob_caps.png": ((512, 256), 8, 4, 2),
+            "level_scale.png": ((512, 256), 1, 1, 1),
+            "deck_plate.png": ((2048, 512), 1, 1, 1),
+            "rack_pedals.png": ((2048, 512), 4, 4, 1),
+            "tape_stock_swatches.png": ((1014, 128), 13, 13, 1),
+            "tube_glow_maps.png": ((512, 256), 4, 4, 1),
+            "vu_needle_profile.png": ((256, 64), 1, 1, 1),
+            "wear_and_patina.png": ((1024, 1024), 1, 1, 1),
+            "spindown_blur.png": ((256, 256), 1, 1, 1),
+        }
+        for filename, (dimensions, count, columns, atlas_rows) in expected_new_atlases.items():
+            atlas = atlas_by_file.get(filename)
+            if atlas is None:
+                problems.append(f"{filename}: new asset atlas is missing from asset_catalog.json")
+                continue
+            if (atlas.get("width"), atlas.get("height")) != dimensions:
+                problems.append(f"{filename}: catalog dimensions must be {dimensions[0]}x{dimensions[1]}")
+            if (len(atlas.get("items", [])) != count
+                    or atlas.get("columns") != columns or atlas.get("rows") != atlas_rows):
+                problems.append(f"{filename}: atlas grid and named cell count do not match the asset plan")
+            entry = entries.get(pathlib.Path(filename).stem, {})
+            if (entry.get("width"), entry.get("height")) != dimensions:
+                problems.append(f"{filename}: manifest dimensions do not match the authored grid")
+
+        tape_names = cpp_string_array(REPO / "Source" / "PluginProcessor.h", "tapeStockNames")
+        tape_atlas = atlas_by_file.get("tape_stock_swatches.png", {})
+        tape_items = tape_atlas.get("items", [])
+        if (len(tape_names) != 13 or not tape_names or tape_names[-1].lower() != "off"
+                or [item.get("label") for item in tape_items] != tape_names
+                or tape_atlas.get("tile_order") != tape_names):
+            problems.append("tape swatches must follow live tapeStockNames order with Off last")
+        if tape_atlas.get("width") != len(tape_names) * 78:
+            problems.append("tape swatch width must be 78 px per live tape stock")
+
+        rack_names = tab_names[-4:]
+        rack_atlas = atlas_by_file.get("rack_pedals.png", {})
+        if rack_names != ["DRIVE", "SHAPE", "MOTION", "PITCH"]:
+            problems.append("the live RACK page names or order changed; update its asset mapping")
+        if [item.get("label") for item in rack_atlas.get("items", [])] != rack_names:
+            problems.append("rack pedal atlas cells must follow live RACK page order")
+
+        integrations = [
+            (look_and_feel, "knob_caps_png", "knob caps need an optional draw site"),
+            (look_and_feel, "tube_glow_maps_png", "tube glow needs a UI-driven draw site"),
+            (look_and_feel, "tape_stock_swatches_png", "tape selector needs an optional swatch"),
+            (editor_meters, "level_scale_png", "meter scale needs an optional draw site"),
+            (editor_meters, "vu_needle_profile_png", "meter needle needs an optional draw site"),
+            (editor_meters, "drawImageTransformed", "meter needle image must rotate with the reading"),
+            (editor_paint, "deck_plate_png", "deck plate needs a draw site"),
+            (editor_paint, "rack_pedals_png", "RACK backgrounds need a draw site"),
+            (editor_paint, "wear_and_patina_png", "patina needs an optional background draw site"),
+            (editor_paint, "spindown_blur_png", "software transport needs its optional blur overlay"),
+            (editor_paint, "activePatinaEnabled", "patina painting must follow the live preference"),
+            (editor_preferences, "rememberPatinaEnabled", "patina preference must persist locally"),
+            (theme_window, "onPatinaChanged", "theme pane must expose the patina toggle"),
+            (plugin_editor, "setCurrentTab (currentTab)", "knob caps need the active tab for RACK styling"),
+        ]
+        for source, token, message in integrations:
+            if token not in source and "".join(token.split()) not in "".join(source.split()):
+                problems.append(message)
+
+        if "sliderPos * 0.34f" not in look_and_feel:
+            problems.append("tube glow must use the visible slider value, not live DSP state")
+        if "displayedCombined" not in editor_meters or "PEAK dB" not in editor_meters:
+            problems.append("the dial needle and separate peak readout must remain explicit")
+        if "if (hasScaleImage)" not in editor_meters or "else" not in editor_meters:
+            problems.append("the meter scale image must retain the procedural scale fallback")
+        if "rememberedPatinaEnabled" not in plugin_editor:
+            problems.append("patina preference must be loaded when the editor is constructed")
 
         android_assets = [item for item in catalog.get("platform_assets", [])
                           if item.get("platform") == "Android"]

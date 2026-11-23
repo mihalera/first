@@ -347,6 +347,7 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
     // invalidated with the page (see the repaint at the foot of this function).
     const auto previousTab = currentTab;
     currentTab = juce::jlimit (0, numTabs - 1, newTab);
+    customLookAndFeel.setCurrentTab(currentTab);
 
     // Opening another page THAWS the one being left. A frozen page you can no
     // longer see is a trap: the next visit would find a page that ignores every
@@ -947,6 +948,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // The chassis surface is remembered with it, and for the same reason: it is a
     // fact about the desk rather than about the mix, so it outlives the editor.
     j37panel::assets::activeBackground = j37panel::rememberedBackground();
+    j37panel::activePatinaEnabled = j37panel::rememberedPatinaEnabled();
     // A size preference has to exist before setUpWindowAndSize() reads it, and it
     // is a machine preference for the same reason the theme is: a host rebuilds the
     // editor, but the eyes in front of the screen do not change with the session.
