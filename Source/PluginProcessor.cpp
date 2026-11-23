@@ -1535,7 +1535,22 @@ void FirstAudioProcessor::releaseResources()
     // stages are prepared again on the next prepareToPlay - but it is the last
     // message-thread moment before the teardown in some hosts, so it is where the
     // shutdown trace says which of the two it was.
+    //
+    //  IT IS ALSO WATCHED, and that is the CLAP half of the diagnostic. A wrapper
+    //  the host has to unwind the plug-in through - clap-juce-extensions included -
+    //  reaches this call while the project is closing; JUCE then detaches the editor
+    //  and only afterwards runs a destructor. A host that stops HERE therefore hangs
+    //  with the editor gone and no CPU in its message thread, which is exactly the
+    //  shape a "REAPER freezes on the last plug-in window" report has, and the
+    //  teardown trace used to begin one call too late - in a destructor that was
+    //  never reached. Bracketing the call with the watchdog means the dump names this
+    //  phase, and the phase names the host's stop rather than the panel.
+    auto& guard = j37diag::shutdownWatchdog();
+    guard.arm();
+    guard.phase ("releaseResources: the host stopped the stream");
     j37diag::note ("releaseResources: the host stopped the stream");
+    guard.phase ("releaseResources: returned");
+    guard.disarm();
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations

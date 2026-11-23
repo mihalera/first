@@ -68,8 +68,21 @@ void sokolLog (const char* tag, uint32_t logLevel, uint32_t logItemId,
  constexpr auto sceneDepthFormat = SG_PIXELFORMAT_DEPTH;
 #else
  #define J37_SOKOL_SHADER_VERSION "#version 330 core\n"
- constexpr auto sceneDepthFormat = SG_PIXELFORMAT_DEPTH_STENCIL;
+   constexpr auto sceneDepthFormat = SG_PIXELFORMAT_DEPTH_STENCIL;
 #endif
+
+/** The MSAA the adapter asks for when the device can give it. */
+inline constexpr int sceneMsaaSamples = 4;
+
+/** How many samples the scene is actually rendered with.
+
+    Written once, on the GL thread, right after sg_setup() has asked the driver what
+    the formats this adapter already names can do; read by the pass and the pipeline
+    descriptions that follow it on the same thread. A file-scope atomic rather than a
+    member because the pinned sokol_gfx has ONE device per process: two adapters
+    cannot exist, so two copies of this number could only disagree.
+*/
+inline std::atomic<int> sceneSampleCount { sceneMsaaSamples };
 
 //==============================================================================
 //  The deck's shader programs, ported to the Sokol GL dialect.
@@ -513,7 +526,8 @@ public:
         if (drawFailure.isNotEmpty())
             return drawFailure;
 
-        return juce::String ("sokol_gfx on ") + backendName();
+        return juce::String ("sokol_gfx on ") + backendName() + ", "
+             + juce::String (sceneSampleCount.load (std::memory_order_relaxed)) + "x MSAA";
     }
 
 private:
@@ -535,7 +549,7 @@ private:
         sg_desc desc {};
         desc.environment.defaults.color_format = SG_PIXELFORMAT_RGBA8;
         desc.environment.defaults.depth_format = sceneDepthFormat;
-        desc.environment.defaults.sample_count = 4;
+        desc.environment.defaults.sample_count = sceneMsaaSamples;
 
         //  Sokol has NO logger unless this is installed, and it is silent without
         //  one - "sokol-gfx will be completely silent, e.g. it will not report
@@ -570,6 +584,29 @@ private:
             deviceSetupFailed.store (true, std::memory_order_release);
             return;
         }
+
+        //  WHAT THIS DEVICE CAN ACTUALLY RENDER. The pass and the pipelines used to
+        //  ask for 4x MSAA unconditionally, and a driver that cannot multisample the
+        //  scene's depth format answers that with a validation abort rather than a
+        //  picture - the render thread dies and the panel falls back to the CPU paint
+        //  path with no reason recorded anywhere. sg_query_pixelformat() is the
+        //  library's own answer about the two formats this adapter already names, so
+        //  the request is clamped to what the device reports instead of hoped for.
+        const auto colourInfo = sg_query_pixelformat (SG_PIXELFORMAT_RGBA8);
+        const auto depthInfo = sg_query_pixelformat (sceneDepthFormat);
+
+        if (! colourInfo.render || ! depthInfo.render || ! depthInfo.depth)
+        {
+            sg_shutdown();
+            deviceSetupFailed.store (true, std::memory_order_release);
+            const std::lock_guard<std::mutex> lock (frameMutex);
+            drawFailure =
+                "sokol_gfx: the device cannot render the scene's colour and depth formats";
+            return;
+        }
+
+        sceneSampleCount.store (colourInfo.msaa && depthInfo.msaa ? sceneMsaaSamples : 1,
+                                std::memory_order_relaxed);
 
         // Every handle below belonged to the previous context. GL objects die
         // with it, so the cached ids must not outlive them.
@@ -651,7 +688,7 @@ private:
         sg_swapchain swapchain {};
         swapchain.width = framebufferWidth;
         swapchain.height = framebufferHeight;
-        swapchain.sample_count = 4;
+        swapchain.sample_count = sceneSampleCount.load (std::memory_order_relaxed);
         swapchain.color_format = SG_PIXELFORMAT_RGBA8;
         swapchain.depth_format = sceneDepthFormat;
         swapchain.gl.framebuffer = context->getFrameBufferID();
@@ -795,7 +832,7 @@ private:
         desc.depth.compare = SG_COMPAREFUNC_LESS_EQUAL;
         desc.depth.write_enabled = true;
         desc.cull_mode = SG_CULLMODE_NONE;
-        desc.sample_count = 4;
+        desc.sample_count = sceneSampleCount.load (std::memory_order_relaxed);
 
 #if defined (SOKOL_DEBUG)
         desc.label = "tape_scene_main";

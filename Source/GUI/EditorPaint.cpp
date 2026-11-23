@@ -93,16 +93,21 @@ void FirstAudioProcessorEditor::rebuildPanelTextureLayers() {
     // changing themes changes the surface in the same frame as the palette.
     //
     //  WHICH SURFACE IS NOW A CHOICE (see PanelAssets.h and the COLOURS window).
-    //  THEME is everything below and unchanged; a named slot paints the whole face
-    //  from that one image; DRAWN skips the art and keeps the arithmetic grain, so
-    //  the worst case of any choice is the panel this build draws with no Assets/
-    //  directory at all.
+    //
+    //  A stock panel wears ITS OWN material. The chosen entry is the USER panel's
+    //  surface - one of the four stock tiles, one of the two images, or the drawn
+    //  grain - because COLOURS only ever edits USER: an edit switches the panel to
+    //  it, so a setting that also repainted IVORY or CHARCOAL would be changing a
+    //  panel the window is not showing. That is also why the table no longer has a
+    //  "current theme" entry: on USER there is no such material to name.
     const auto &background =
         j37panel::assets::backgroundChoiceFor (j37panel::assets::activeBackground);
+    const auto userPanel = j37panel::liveThemeChoice == j37panel::ThemeChoice::user;
     const auto backgroundIsTheme =
         background.symbol != nullptr && background.symbol[0] == '\0';
 
-    if (background.symbol != nullptr && background.symbol[0] != '\0')
+    //  A named image paints the whole face, and only on the panel the choice is for.
+    if (userPanel && background.symbol != nullptr && background.symbol[0] != '\0')
     {
         if (const auto &chosen = j37panel::assets::cachedImage (background.symbol);
             chosen.isValid())
@@ -112,7 +117,13 @@ void FirstAudioProcessorEditor::rebuildPanelTextureLayers() {
         }
     }
 
-    if (backgroundIsTheme)
+    //  The tile this frame is cut from: a stock panel's own, or the one the USER
+    //  panel was given. -1 means an image or no art at all, which is handled above
+    //  and below by the grain.
+    const auto materialIndex = userPanel ? background.materialIndex
+                                         : static_cast<int> (j37panel::liveThemeChoice);
+
+    if (backgroundIsTheme || ! userPanel)
     {
         // A malformed or absent atlas falls through to the generic texture and
         // then to the arithmetic grain below.
@@ -120,7 +131,6 @@ void FirstAudioProcessorEditor::rebuildPanelTextureLayers() {
             materials.isValid())
         {
             constexpr int materialCount = static_cast<int> (j37panel::ThemeChoice::user) + 1;
-            const auto materialIndex = static_cast<int> (j37panel::liveThemeChoice);
 
             if (materials.getWidth() % materialCount == 0
                 && materialIndex >= 0 && materialIndex < materialCount)

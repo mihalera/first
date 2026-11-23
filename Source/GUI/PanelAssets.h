@@ -79,49 +79,73 @@ inline std::unique_ptr<juce::Drawable> loadDrawable (const char* symbol)
 }
 
 //==============================================================================
-/** Which art slot the chassis surface is painted from.
+/** Which surface the USER panel's chassis is painted from.
 
-    "THEME" is the default and means what the panel always did: the theme-indexed
-    tile out of panel_materials, then the generic texture, then the arithmetic
-    grain. A named slot paints the whole face from that one image. "DRAWN" skips
-    the art entirely and keeps the grain, which is what a build with no Assets/
-    directory shows already - so the list can never offer a choice the panel
-    cannot draw.
+    A STOCK panel is not on this list, deliberately. A stock theme's surface IS the
+    theme - its tile out of panel_materials - so there is nothing to choose while
+    one of them is selected. The COLOURS window only ever edits USER (an edit
+    switches the panel to it), which makes USER the one panel whose face is not
+    already decided by a palette: an entry below is a MATERIAL that panel can be
+    given - one of the four stock themes' tiles, one of the two full-face images,
+    or the arithmetic grain.
 
-    A null `symbol` means "no asset" and an empty one means "the theme's own
-    material": every reader goes through backgroundChoiceFor(), so the COLOURS
-    window that offers the names and the paint path that honours one cannot
-    disagree about what an entry means.
+    That is why there is no "current theme" entry any more. On a stock panel it
+    named the panel the user was already on; on USER there is no theme for it to
+    be the current one of, so the key said nothing and its own name was a second
+    meaning for the word THEME on a panel that already has a THEME key.
+
+    A null `symbol` means "no asset" and an empty one means "a theme material":
+    every reader goes through backgroundChoiceFor(), so the COLOURS window that
+    offers the names and the paint path that honours one cannot disagree about
+    what an entry means.
 */
 struct BackgroundChoice
 {
     const char* name;
     const char* symbol;
+    /** The panel_materials tile this entry asks for, or -1 when it is an image
+        or the drawn grain. Indices are ThemeChoice's own, because the atlas is
+        ordered by it. */
+    int materialIndex;
 };
 
 inline constexpr BackgroundChoice backgroundChoices[] = {
-    { "THEME", "" },
-    { "PANEL", "panel_texture_png" },
-    { "DETAIL", "hardware_details_png" },
-    { "DRAWN", nullptr },
+    { "IVORY",      "",                    0 },
+    { "CHARCOAL",   "",                    1 },
+    { "METAL",      "",                    2 },
+    { "DARK METAL", "",                    3 },
+    { "PANEL",      "panel_texture_png",   -1 },
+    { "DETAIL",     "hardware_details_png", -1 },
+    { "DRAWN",      nullptr,                -1 },
 };
 
 inline constexpr int backgroundChoiceCount =
     static_cast<int> (sizeof (backgroundChoices) / sizeof (backgroundChoices[0]));
 
+/** What a settings file that never stored one yields: the USER seed palette's own
+    material, so a panel that has never been told otherwise is painted in the
+    surface its first palette came from. */
+inline constexpr int defaultBackgroundIndex = 3;
+
 /** The entry with this name; an unknown name - including the empty string a
-    settings file that never stored one yields - means THEME. */
+    settings file that never stored one yields - means the default entry.
+
+    "THEME" is the one name that was REMOVED rather than renamed, and it lands here
+    too: it selected whichever material the live theme happened to have, which on
+    the USER panel meant nothing at all. Falling back to the default instead of
+    guessing a theme is what keeps an old settings file from painting a different
+    surface than the one it now reports. */
 inline const BackgroundChoice& backgroundChoiceFor (const juce::String& name)
 {
     for (const auto& choice : backgroundChoices)
         if (name.equalsIgnoreCase (choice.name))
             return choice;
 
-    return backgroundChoices[0];
+    return backgroundChoices[defaultBackgroundIndex];
 }
 
 /** The live choice. Read by rebuildPanelTextureLayers(); written by the COLOURS
     window through the editor, which also remembers it in the preferences file. */
-inline juce::String activeBackground = "THEME";
+inline juce::String activeBackground = backgroundChoices[defaultBackgroundIndex].name;
 
 } // namespace j37panel::assets
