@@ -134,6 +134,14 @@ require("constexpr auto sceneDepthFormat = SG_PIXELFORMAT_DEPTH;" in sokol
         and "desc.depth.pixel_format = sceneDepthFormat;" in sokol
         and "swapchain.depth_format = sceneDepthFormat;" in sokol,
         "Sokol pipeline and swapchain depth formats must match the platform framebuffer")
+require("sg_query_pixelformat (SG_PIXELFORMAT_RGBA8)" in sokol
+        and "sg_query_pixelformat (sceneDepthFormat)" in sokol,
+        "Sokol must ask the device which formats it can actually render to")
+require("swapchain.sample_count = sceneSampleCount.load (std::memory_order_relaxed);" in sokol
+        and "desc.sample_count = sceneSampleCount.load (std::memory_order_relaxed);" in sokol,
+        "Sokol's MSAA must be clamped to the sample count the device reports")
+require("colourInfo.msaa && depthInfo.msaa ? sceneMsaaSamples : 1" in sokol,
+        "Sokol must fall back to one sample when either scene format cannot multisample")
 
 shader_sources = {}
 for name in ("vertex", "fragment"):

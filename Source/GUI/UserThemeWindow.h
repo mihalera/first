@@ -133,15 +133,21 @@ inline constexpr int userThemePresetRows =
 inline constexpr int userThemePresetBandHeight =
     userThemePresetRows * (userThemePresetRowHeight + userThemePresetGap) + 6;
 
-// The backdrop band: which art slot the chassis is painted from. One named row of
-// four keys under the starting points, in the same four-column rhythm, so the window
-// grows by one band rather than by a fifth row of colour. Four is the length of
-// assets::backgroundChoices, so the band and the table cannot drift apart.
+// The backdrop band: which surface the USER panel is painted from. The table is
+// seven entries now that the four stock materials are keys of their own, so the band
+// wraps at four to a row exactly the way the preset band does - and the row count is
+// derived from assets::backgroundChoices, so an entry added there lengthens the
+// window instead of overflowing the row.
 inline constexpr int userThemeBackdropLabelHeight = 13;
 inline constexpr int userThemeBackdropRowHeight = 20;
 inline constexpr int userThemeBackdropGap = 4;
+inline constexpr int userThemeBackdropColumns = 4;
+inline constexpr int userThemeBackdropRows =
+    (j37panel::assets::backgroundChoiceCount + userThemeBackdropColumns - 1)
+    / userThemeBackdropColumns;
 inline constexpr int userThemeBackdropBandHeight =
-    userThemeBackdropLabelHeight + userThemeBackdropRowHeight + 8;
+    userThemeBackdropLabelHeight
+    + userThemeBackdropRows * (userThemeBackdropRowHeight + userThemeBackdropGap) + 4;
 
 /** Where the first colour row starts: below the header, the preset band and the
     backdrop band. */
@@ -216,17 +222,24 @@ class UserThemePane final : public juce::Component {
         notify();
     }
 
-    /** A STARTING POINT key: adopts that whole palette, then reports it exactly the
-        way an edit does, so the panel switches to USER and repaints on the same
-        frame. The seed is deliberately not moved: RESET means "the seed", not
-        "whatever preset I touched last". */
+    /** A STARTING POINT key: adopts that whole look - the palette AND the surface it
+        was drawn on - then reports both the way an edit does, so the panel switches
+        to USER and changes its chassis on the same frame. The seed is deliberately
+        not moved: RESET means "the seed", not "whatever preset I touched last". */
     void applyPreset(int index) {
         if (index < 0 || index >= userThemePresetCount)
             return;
 
         palette = *userThemePresets[index].palette;
+
+        // The background is part of the preset rather than something it leaves
+        // behind: a brass palette on the charcoal bakelite is half a starting point.
+        background = j37panel::assets::backgroundChoiceFor (userThemePresets[index].background).name;
         repaint();
         notify();
+
+        if (onBackgroundChanged != nullptr)
+            onBackgroundChanged(background);
     }
 
     void paint(juce::Graphics &g) override {
@@ -388,17 +401,20 @@ class UserThemePane final : public juce::Component {
         return -1;
     }
 
-    /** The backdrop key: the band's row of four, one per entry in the table. */
+    /** The backdrop key: four to a row, one per entry in the table. */
     juce::Rectangle<int> backdropBounds(int index) const {
-        const auto columns = j37panel::assets::backgroundChoiceCount;
+        constexpr auto columns = userThemeBackdropColumns;
+        const auto row = index / columns;
+        const auto column = index % columns;
         const auto bandLeft = 8;
         const auto bandWidth = getWidth() - 16;
         const auto backdropKeyWidth =
-            (bandWidth - (columns - 1) * userThemeBackdropGap) / juce::jmax(1, columns);
+            (bandWidth - (columns - 1) * userThemeBackdropGap) / columns;
 
-        return { bandLeft + index * (backdropKeyWidth + userThemeBackdropGap),
+        return { bandLeft + column * (backdropKeyWidth + userThemeBackdropGap),
                  userThemeHeaderHeight + userThemePresetBandHeight
-                     + userThemeBackdropLabelHeight,
+                     + userThemeBackdropLabelHeight
+                     + row * (userThemeBackdropRowHeight + userThemeBackdropGap),
                  backdropKeyWidth, userThemeBackdropRowHeight };
     }
 

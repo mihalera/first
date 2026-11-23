@@ -84,6 +84,47 @@ inline juce::Font panelFont (float height, int style = juce::Font::plain)
 */
 enum class ThemeChoice { ivory = 0, charcoal = 1, metal = 2, darkMetal = 3, whiteMonster = 4, user = 5 };
 
+/** The name a theme is stored and printed by.
+
+    These two live HERE, beside the enum, rather than in the preferences file that
+    happens to persist the answer: a name is a property of the theme - it is the
+    word the panel prints and the settings file keeps - so it belongs with the
+    choices it names. Source/GUI/EditorPreferences.h calls them; nothing in this
+    header reads a file, and nothing else needs to know how a theme is written
+    down in order to ask what the theme is called.
+*/
+inline const char* themeChoiceName (ThemeChoice theme) noexcept
+{
+    switch (theme)
+    {
+        case ThemeChoice::charcoal:     return "CHARCOAL";
+        case ThemeChoice::metal:        return "METAL";
+        case ThemeChoice::darkMetal:    return "DARK METAL";
+        case ThemeChoice::whiteMonster: return "WHITE MONSTER";
+        case ThemeChoice::user:         return "USER";
+        case ThemeChoice::ivory:
+        default:                        return "IVORY";
+    }
+}
+
+inline ThemeChoice themeChoiceFromName (const juce::String& name) noexcept
+{
+    // Nothing stored (a fresh install) and a name this build no longer knows (a theme
+    // removed by a later version) mean the same thing: open on the default panel.
+    for (const auto theme : {ThemeChoice::ivory,
+                             ThemeChoice::charcoal,
+                             ThemeChoice::metal,
+                             ThemeChoice::darkMetal,
+                             ThemeChoice::whiteMonster,
+                             ThemeChoice::user})
+    {
+        if (name.equalsIgnoreCase (themeChoiceName (theme)))
+            return theme;
+    }
+
+    return ThemeChoice::ivory;
+}
+
 // Symmetric decibel range shared by the input and output trims, matching the
 // processor's parameter layout exactly.
 inline constexpr double minStageDb = -32.0;
@@ -389,29 +430,40 @@ inline const UiPalette forestPalette{
     juce::Colour::fromRGB(150, 224, 96)   // status
 };
 
-/** One named starting point for the USER palette. */
+/** One named starting point for the USER palette.
+
+    A starting point is the whole look, so it carries the surface as well as the
+    colours: a preset that only re-inked the panel would leave a brass palette on
+    the charcoal bakelite surface it was on. `background` names an entry of
+    j37panel::assets::backgroundChoices (Source/GUI/PanelAssets.h) and is applied
+    through the same callback a backdrop key uses.
+*/
 struct UiPalettePreset
 {
     const char *name;
     const UiPalette *palette;
+    const char *background;
 };
 
 // The order is the order the keys are drawn in: the five front-panel themes
 // first, because a user who likes the panel they are on wants its palette, then
 // the seven rooms of their own. Twelve keys, so the band is three rows of four.
 inline constexpr UiPalettePreset userThemePresets[] = {
-    { "DARK METAL",   &darkMetalPalette },
-    { "METAL",        &metalPalette },
-    { "CHARCOAL",     &charcoalPalette },
-    { "IVORY",        &ivoryPalette },
-    { "WHITE MONSTER", &whiteMonsterPalette },
-    { "OXBLOOD",      &oxbloodPalette },
-    { "BRASS",        &brassPalette },
-    { "TEAL",         &tealPalette },
-    { "SEPIA",        &sepiaPalette },
-    { "COBALT",       &cobaltPalette },
-    { "PLUM",         &plumPalette },
-    { "FOREST",       &forestPalette },
+    { "DARK METAL",   &darkMetalPalette,     "DARK METAL" },
+    { "METAL",        &metalPalette,        "METAL" },
+    { "CHARCOAL",     &charcoalPalette,     "CHARCOAL" },
+    { "IVORY",        &ivoryPalette,        "IVORY" },
+    //  WHITE MONSTER has a palette but no material tile of its own: the atlas stops
+    //  at four stock surfaces, so its key takes the generic chassis texture rather
+    //  than claiming a tile index that belongs to another theme.
+    { "WHITE MONSTER", &whiteMonsterPalette, "PANEL" },
+    { "OXBLOOD",      &oxbloodPalette,      "DARK METAL" },
+    { "BRASS",        &brassPalette,        "METAL" },
+    { "TEAL",         &tealPalette,         "DARK METAL" },
+    { "SEPIA",        &sepiaPalette,        "IVORY" },
+    { "COBALT",       &cobaltPalette,       "DARK METAL" },
+    { "PLUM",         &plumPalette,         "DARK METAL" },
+    { "FOREST",       &forestPalette,       "DARK METAL" },
 };
 
 inline constexpr int userThemePresetCount =

@@ -855,6 +855,13 @@ void FirstAudioProcessor::changeProgramName (int, const juce::String&)
 //==============================================================================
 void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerBlock)
 {
+    //  The stream is starting again, so the teardown releaseResources() armed the
+    //  watchdog for is not coming: a host that stopped the plugin only to
+    //  reconfigure it - a device or rate change - would otherwise leave a watch
+    //  running that reports a false stall the next time the message thread is busy
+    //  for two seconds. This is the other end of that arm.
+    j37diag::shutdownWatchdog().disarm();
+
     sampleRate = static_cast<float> (sampleRateToUse);
 
     // The OSC voice is tuned at the engine rate. Preparing it here also clears
@@ -1535,7 +1542,30 @@ void FirstAudioProcessor::releaseResources()
     // stages are prepared again on the next prepareToPlay - but it is the last
     // message-thread moment before the teardown in some hosts, so it is where the
     // shutdown trace says which of the two it was.
+    //
+    //  IT IS ALSO WATCHED, and that is the CLAP half of the diagnostic. A wrapper
+    //  the host has to unwind the plug-in through - clap-juce-extensions included -
+    //  reaches this call while the project is closing; JUCE then detaches the editor
+    //  and only afterwards runs a destructor. A host that stops HERE therefore hangs
+    //  with the editor gone and no CPU in its message thread, which is exactly the
+    //  shape a "REAPER freezes on the last plug-in window" report has, and the
+    //  teardown trace used to begin one call too late - in a destructor that was
+    //  never reached. Bracketing the call with the watchdog means the dump names this
+    //  phase, and the phase names the host's stop rather than the panel.
+    auto& guard = j37diag::shutdownWatchdog();
+    guard.arm();
+    guard.phase ("releaseResources: the host stopped the stream");
     j37diag::note ("releaseResources: the host stopped the stream");
+    guard.phase ("releaseResources: returned");
+
+    //  IT IS DELIBERATELY LEFT ARMED. The hang this guards against is the one AFTER
+    //  this callback returns - JUCE detaching the editor, the wrapper unwinding the
+    //  plug-in, the destructor that never runs - so disarming here would stop the
+    //  watch at the last moment it was still useful. Both destructors re-arm (arm()
+    //  is idempotent) and disarm at the end of the teardown they own, so the watch
+    //  stays continuous from this call to the end of the shutdown, and
+    //  prepareToPlay() disarms it when the host restarts the stream instead - which
+    //  is what keeps a device change from leaving a false stall report behind.
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations

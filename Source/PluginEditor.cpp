@@ -1496,12 +1496,17 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
         const auto rowTwoY = header.getY() + 41;
         // Four keys on the phone's second row since RND joined it (OSCRing,
         // THEME, RND, then the status badge reads what is left).
+        //
+        // THE KEYS ARE AS TALL AS THE SWITCHES ABOVE THEM. They used to be 25 px
+        // against the row one switches' 30, which read as two different kinds of
+        // control on a panel where all four are buttons - and it put THEME's caption
+        // a size smaller than BYPASS's on the same 400 px screen.
         const auto utilityWidth = juce::jmax (1, juce::jmin (88, (header.getWidth() - 12) / 4));
-        oscButton.setBounds (header.getX() + 4, rowTwoY, utilityWidth, 25);
+        oscButton.setBounds (header.getX() + 4, rowTwoY, utilityWidth, 30);
         themeButton.setBounds (header.getX() + utilityWidth + 8, rowTwoY,
-                               utilityWidth, 25);
+                               utilityWidth, 30);
         randomButton.setBounds (header.getX() + 2 * (utilityWidth + 8), rowTwoY,
-                                utilityWidth, 25);
+                                utilityWidth, 30);
         oscButton.setVisible (true);
         themeButton.setVisible (true);
         randomButton.setVisible (true);
@@ -1514,7 +1519,7 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
         // instead, same height, centred in what the keys leave.
         const auto statusLeft = header.getX() + 3 * (utilityWidth + 8) + 4;
         statusLabel.setBounds (statusLeft, rowTwoY,
-                               juce::jmax (1, header.getRight() - statusLeft - 4), 25);
+                               juce::jmax (1, header.getRight() - statusLeft - 4), 30);
         statusLabel.setJustificationType (juce::Justification::centred);
         statusLabel.setFont (statusLabel.getFont().withHeight (uiFontSize (8.5f)));
         statusLabel.setBorderSize (juce::BorderSize<int> (0));

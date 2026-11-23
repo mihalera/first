@@ -166,37 +166,8 @@ inline void rememberMetersVisible (bool visible)
     editorPreferences().saveIfNeeded();
 }
 
-inline const char* themeChoiceName (j37panel::ThemeChoice theme) noexcept
-{
-    switch (theme)
-    {
-        case j37panel::ThemeChoice::charcoal:     return "CHARCOAL";
-        case j37panel::ThemeChoice::metal:        return "METAL";
-        case j37panel::ThemeChoice::darkMetal:    return "DARK METAL";
-        case j37panel::ThemeChoice::whiteMonster: return "WHITE MONSTER";
-        case j37panel::ThemeChoice::user:         return "USER";
-        case j37panel::ThemeChoice::ivory:
-        default:                                  return "IVORY";
-    }
-}
-
-inline j37panel::ThemeChoice themeChoiceFromName (const juce::String& name) noexcept
-{
-    // Nothing stored (a fresh install) and a name this build no longer knows (a theme
-    // removed by a later version) mean the same thing: open on the default panel.
-    for (const auto theme : {j37panel::ThemeChoice::ivory,
-                             j37panel::ThemeChoice::charcoal,
-                             j37panel::ThemeChoice::metal,
-                             j37panel::ThemeChoice::darkMetal,
-                             j37panel::ThemeChoice::whiteMonster,
-                             j37panel::ThemeChoice::user})
-    {
-        if (name.equalsIgnoreCase (themeChoiceName (theme)))
-            return theme;
-    }
-
-    return j37panel::ThemeChoice::ivory;
-}
+// themeChoiceName() and themeChoiceFromName() are j37panel's, in PanelPaint.h: a
+// theme's name belongs to the theme. This file only reads and writes them.
 
 /** The panel the last editor was left on, or IVORY before anything is stored. */
 inline j37panel::ThemeChoice rememberedThemeChoice()
@@ -230,10 +201,13 @@ inline void rememberUserPalette (const j37panel::UiPalette& palette)
     editorPreferences().saveIfNeeded();
 }
 
-/** The chassis surface chosen in COLOURS, by name. A machine preference for the
-    same reason the theme is: which art the desk is wearing is not the mix, so it
-    must not travel in a session or a preset. An unknown stored name - one a later
-    build dropped, or none at all - comes back as THEME. */
+/** The surface the USER panel was given in COLOURS, by name. A machine preference
+    for the same reason the theme is: which material the desk is wearing is not the
+    mix, so it must not travel in a session or a preset. It is the USER panel's
+    surface: a stock panel always wears its own theme's material (see
+    rebuildPanelTextureLayers). An unknown stored name - one a later build dropped,
+    "THEME" from before the four materials became keys, or none at all - comes back
+    as the default entry. */
 constexpr const char* panelBackgroundKey = "panel_background";
 
 inline juce::String rememberedBackground()

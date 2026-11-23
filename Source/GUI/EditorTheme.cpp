@@ -625,7 +625,9 @@ void FirstAudioProcessorEditor::openUserThemeWindow() {
 
         // The backdrop is a MACHINE preference, not a colour of the palette: it is
         // remembered by name and rebuilt in place, without switching the panel to
-        // USER - a user on IVORY who only changes the surface should stay on IVORY.
+        // USER. It is the USER panel's surface either way - a stock panel wears its
+        // own theme's material - so a user on IVORY who presses a backdrop key stays
+        // on IVORY and sees it the moment they take a starting point.
         userThemeWindow->onBackgroundChanged = [this](const juce::String &name) {
             j37panel::assets::activeBackground = name;
             j37panel::rememberBackground (name);
