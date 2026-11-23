@@ -1,7 +1,7 @@
 # Graph Report - first  (2026-11-23)
 
 ## Corpus Check
-- 352 files · ~921,078 words
+- 352 files · ~921,129 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 54 file(s) not represented in the graph (top: .toml 22, (none) 9, .cmake 8)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `7164e7a2`
+- Built from commit: `fa69af07`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -671,7 +671,7 @@ Nodes (15): decodeWavMemory(), NoiseDecodeOutcome, fileChannels, frames, reason,
 
 ### Community 80 - "sys"
 Cohesion: 0.08
-Nodes (7): harnesses(), documents(), target_of(), hits(), read(), source_files(), snap()
+Nodes (7): harnesses(), documents(), unwrapped(), hits(), read(), source_files(), snap()
 
 ### Community 81 - "Amounts"
 Cohesion: 0.08
@@ -1402,7 +1402,7 @@ Nodes (6): DeckRect, h, name, w, x, y
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `FirstAudioProcessor` connect `FirstAudioProcessor` to `TapeBlockState`, `ProcessorSignalPath.cpp`, `BlockContext`, `FirstAudioProcessor::scaleOffsetsForMode`, `phase_test.cpp`, `VinylStage`, `State`, `cmath`, `TransportRig`, `.getBypassParameter`, `.getUndoManager`, `ValueTree`, `SafetyLimiter`, `ProcessorPresets.cpp`, `SaturationCore`, `DattorroRoom`, `CorrectorStage`, `MultibandCompressor`, `NoiseLoader`, `TapeBlockState`, `PluginProcessor.cpp`, `GlueCompressor`, `TelemetryFrame`, `RangedAudioParameter`, `PitchTracker`, `FxRack`, `ThreeBandEq`, `parameter_audio.cpp`, `gain_test.cpp`, `SubharmonicGenerator`, `TelemetryFrame`, `StateSwapAction`, `ParameterTable.cpp`, `AmpVoicing`, `FxTargets`, `.prepareToPlay`, `SampleInputContext`, `Surface`, `LofiHold`, `TapeCondition`, `RepitchStage`, `SpectrumAnalyser`, `loudness_test.cpp`, `HarmonicAnalyser`, `.active`, `PluginEditor.h`, `ModalVoice`, `processGuardedBlock`, `Sheet`, `fixture_test.cpp`, `String`, `ProcessorSignalPath.cpp`, `IrStage`, `FirstAudioProcessor::processOneSample`?**
-  _High betweenness centrality (0.212) - this node is a cross-community bridge._
+  _High betweenness centrality (0.236) - this node is a cross-community bridge._
 - **Are the 7 inferred relationships involving `FirstAudioProcessor` (e.g. with `.perform()` and `.undo()`) actually correct?**
   _`FirstAudioProcessor` has 7 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `activeSlot`, `activeTapeType`, `ampBiasParam` to the rest of the system?**
@@ -1413,5 +1413,5 @@ _Questions this graph is uniquely positioned to answer:_
   _High betweenness centrality (0.038) - this node is a cross-community bridge._
 - **Should `live-browser.js` be split into smaller, more focused modules?**
   _Cohesion score 0.028943278943278944 - nodes in this community are weakly interconnected._
-- **Why does `DattorroRoom` connect `DattorroRoom` to `FirstAudioProcessor`, `.wetAt`, `vector`, `.processFrame`, `reverb_test.cpp`, `PluginEditor.h`?**
-  _High betweenness centrality (0.037) - this node is a cross-community bridge._
+- **Why does `TapeScene` connect `TapeScene` to `vector`, `TapeSceneFrame.cpp`, `Mesh`, `TapeScene::uniformRevision`, `ControlBank`, `TapeScene::newOpenGLContextCreated`, `.getWidth`, `ControlPlacement`, `TapeScene.cpp`?**
+  _High betweenness centrality (0.034) - this node is a cross-community bridge._
