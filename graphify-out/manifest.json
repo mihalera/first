@@ -669,14 +669,14 @@
     "semantic_hash": ""
   },
   "Source/GUI/EditorPaint.cpp": {
-    "mtime": 1795430309.3895066,
-    "seen": 1795430621.227896,
+    "mtime": 1795432732.7556973,
+    "seen": 1795432948.8607748,
     "ast_hash": "49f9cb36b9f3ec612343e2eb627b9fe9",
     "semantic_hash": ""
   },
   "Source/GUI/EditorPreferences.h": {
-    "mtime": 1795430358.2439053,
-    "seen": 1795430621.2279038,
+    "mtime": 1795432732.7566955,
+    "seen": 1795432948.8607843,
     "ast_hash": "621be214c4ea6ce3056d77a880ae35d6",
     "semantic_hash": "",
     "language": "language=.cpp"
@@ -688,8 +688,8 @@
     "semantic_hash": ""
   },
   "Source/GUI/EditorTheme.cpp": {
-    "mtime": 1795430359.5501223,
-    "seen": 1795430621.2279167,
+    "mtime": 1795432732.757198,
+    "seen": 1795432948.8608007,
     "ast_hash": "f52a7dc73e56b7e20aff27e295ff9ed4",
     "semantic_hash": ""
   },
@@ -785,8 +785,8 @@
     "semantic_hash": "dd9d77c77147f4a4624d360eaa005d4e"
   },
   "Source/GUI/NativeRenderer_Sokol.cpp": {
-    "mtime": 1795430312.157205,
-    "seen": 1795430621.2280583,
+    "mtime": 1795432732.757697,
+    "seen": 1795432948.8609204,
     "ast_hash": "9a481be3ebe9c9de2c95e8b1f16a52d7",
     "semantic_hash": ""
   },
@@ -832,15 +832,15 @@
     "language": "language=.cpp"
   },
   "Source/GUI/PanelAssets.h": {
-    "mtime": 1795430116.0240047,
-    "seen": 1795430621.228107,
+    "mtime": 1795432732.758703,
+    "seen": 1795432948.860976,
     "ast_hash": "0339aea8ebd9b36187ef6a8f3c5af51f",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
   "Source/GUI/PanelPaint.h": {
-    "mtime": 1795430117.2955127,
-    "seen": 1795430621.2281134,
+    "mtime": 1795432732.7592075,
+    "seen": 1795432948.8609838,
     "ast_hash": "b9483fd6becaff9cd52b49a87f89c446",
     "semantic_hash": "",
     "language": "language=.cpp"
@@ -988,8 +988,8 @@
     "semantic_hash": "65848bf02e08486cfb8ce84e6021fced"
   },
   "Source/GUI/UserThemeWindow.h": {
-    "mtime": 1795430118.406606,
-    "seen": 1795430621.2282655,
+    "mtime": 1795432732.7602139,
+    "seen": 1795432948.861169,
     "ast_hash": "2e8a3d807e9f31392daa1759adfb24b1",
     "semantic_hash": "",
     "language": "language=.cpp"
@@ -1029,9 +1029,9 @@
     "semantic_hash": ""
   },
   "Source/PluginEditor.cpp": {
-    "mtime": 1795430311.1311686,
-    "seen": 1795430621.2283034,
-    "ast_hash": "d514eee56589a7ba2b0ea35d9b36faa4",
+    "mtime": 1795432760.8676221,
+    "seen": 1795432948.8612175,
+    "ast_hash": "32411aab4f3762b2ceaa7b4765a1ee44",
     "semantic_hash": ""
   },
   "Source/PluginEditor.h": {
@@ -1042,9 +1042,9 @@
     "language": "language=.cpp"
   },
   "Source/PluginProcessor.cpp": {
-    "mtime": 1795430466.5372586,
-    "seen": 1795430621.2283149,
-    "ast_hash": "fdd07b92744005ac8a1225a0badfa610",
+    "mtime": 1795432732.7627184,
+    "seen": 1795432948.8612318,
+    "ast_hash": "7dd17bfd96d0dab4179134b7ca05e8e1",
     "semantic_hash": ""
   },
   "Source/PluginProcessor.h": {
@@ -1845,8 +1845,8 @@
     "semantic_hash": "42afb586e24ab38ddd8f73335a3f0e94"
   },
   "tests/render_backend/check_render_backend.py": {
-    "mtime": 1795430360.1840458,
-    "seen": 1795430621.229283,
+    "mtime": 1795432732.7987835,
+    "seen": 1795432948.862386,
     "ast_hash": "4af20bbc3f0400a7a3c9b0d386dd141d",
     "semantic_hash": ""
   },
@@ -2906,9 +2906,9 @@
     "semantic_hash": ""
   },
   "tests/README.md": {
-    "mtime": 1795425799.91981,
-    "seen": 1795425960.766759,
-    "ast_hash": "31396dca55355ff6cac930ae74e6cbfd",
+    "mtime": 1795432768.5339067,
+    "seen": 1795432948.8638196,
+    "ast_hash": "53cac8d13bbcfa10e93ce706f95ce7e1",
     "semantic_hash": ""
   },
   "tests/shaders/VulkanSceneShaders/README.md": {
@@ -3155,9 +3155,9 @@
     "semantic_hash": ""
   },
   "tests/header_render.cpp": {
-    "mtime": 1795385174.6028388,
-    "seen": 1795386715.6551068,
-    "ast_hash": "8097b3fac7df6a563e79afba5a01e3d5",
+    "mtime": 1795432767.6222744,
+    "seen": 1795432948.861985,
+    "ast_hash": "53dd54e3723d8381251132a71b53def4",
     "semantic_hash": ""
   },
   "tests/layout/render.sh": {

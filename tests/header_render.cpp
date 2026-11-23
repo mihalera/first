@@ -29,7 +29,8 @@
     The claims are made per width on the main page - and per PALETTE and per
     TRANSLATION at the panel's minimum width, because the badge is measured from its
     words: a longer translation is a layout case, and a different palette is different
-    ink on the same geometry. And on SETTINGS, where the badge's absence is the claim.
+    ink on the same geometry. And on SETTINGS, where the badge used to stand down and
+    now keeps the row, with the language selector below it on the page.
 
       plate  nothing is drawn in the badge's row but the lamp and the glyphs. Every
              pixel that differs between the two renders is inside the glyph ink or
@@ -81,6 +82,9 @@ struct J37HeaderRenderProbe
 
     juce::Rectangle<int> badge() const { return editor.statusBadgeBounds(); }
     juce::Rectangle<int> levels() const { return editor.levelsButton.getBounds(); }
+    /** Where the SETTINGS page put its LANGUAGE selector, so a claim can say the
+        badge's row and the selector do not share a pixel. */
+    juce::Rectangle<int> language() const { return editor.languageBox.getBounds(); }
     juce::Rectangle<int> header() const { return editor.getEditorLayout().header; }
     const j37panel::UiPalette& palette() const { return j37panel::paletteFor (editor.darkTheme); }
     bool badgeShown() const { return editor.statusLabel.isVisible(); }
@@ -671,9 +675,10 @@ int main()
     expect (returned.badge == realTime.badge,
             "state: switching back restores the first state's box, to the pixel");
 
-    //  SETTINGS: the one page the badge is hidden on, because its row belongs to the
-    //  language selector there. The claim is that absence, and that the row is not left
-    //  blank by it: the selector paints where the badge would have been.
+    //  SETTINGS: the page the badge used to stand down on, because the language
+    //  selector was placed in the same row. The pair lives in the page's own member
+    //  band now, so the claims are the opposite ones: the badge is UP, it still ends
+    //  inside the header, and its row neither contains nor overlaps the selector.
     const auto mainPage = probe.tab();
 
     probe.openPage (j37panel::index_of_tab_named ("SETTINGS"));
@@ -687,8 +692,8 @@ int main()
 
         expect (probe.tab() == j37panel::index_of_tab_named ("SETTINGS"),
                 "settings: the page opened");
-        expect (! probe.badgeShown(),
-                "settings: the badge is hidden where the row is the language selector");
+        expect (probe.badgeShown(),
+                "settings: the badge stays up on the page that used to hide it");
 
         const auto row = juce::Rectangle<int> (settings.levels.getRight(), settings.levels.getY(),
                                                settings.header.getRight()
@@ -698,7 +703,11 @@ int main()
                           luma (pixel (settings.image, settings.header.getRight() - 4,
                                        row.getCentreY())))
                     > 0,
-                "settings: the row is the language selector, not an empty gap");
+                "settings: the badge paints its row, it is not an empty gap");
+        expect (! row.intersects (probe.language()),
+                "settings: the language selector is below the badge's row, not in it");
+        expect (probe.badge().getRight() <= settings.header.getRight(),
+                "settings: the badge still ends inside the header");
     }
 
     //  The palette the width loop rendered in. The controls below damage THAT shot,
@@ -719,7 +728,8 @@ int main()
         j37panel::ThemeChoice::metal,        j37panel::ThemeChoice::darkMetal,
         j37panel::ThemeChoice::whiteMonster, j37panel::ThemeChoice::user};
 
-    //  Back to the page the badge lives on: SETTINGS above hid it on purpose.
+    //  Back to the page the badge lives on, so the matrix below measures the same
+    //  arrangement the first claims did.
     probe.openPage (mainPage);
     pumpMessages (50);
 
