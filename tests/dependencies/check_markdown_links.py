@@ -76,14 +76,18 @@ def documents():
         yield relative
 
 
-def target_of(raw):
-    """The path part of a link target: angle brackets removed, fragment dropped."""
+def unwrapped(raw):
+    """The target as Markdown means it: `[x]: <https://example.com>` is a URL."""
     target = raw.strip()
 
     if target.startswith("<") and target.endswith(">"):
         target = target[1:-1].strip()
 
-    return target.split("#", 1)[0]
+    return target
+
+
+#  Beyond a local path: a destination this repository does not own.
+EXTERNAL = ("http://", "https://", "mailto:", "tel:")
 
 
 problems = []
@@ -103,11 +107,16 @@ for relative in sorted(documents()):
     targets += [("[%s]: %s" % (label, target), target)
                 for label, target in REFERENCE.findall(text)]
 
-    for shown, target in targets:
-        if target.startswith(("http://", "https://", "mailto:", "#")):
+    for shown, raw in targets:
+        #  Angle brackets come off before anything is decided: `[x]: <https://example.com>`
+        #  is an external destination, not a local path called `<https://example.com>`,
+        #  and an empty `<...>` is nothing to check either.
+        target = unwrapped(raw)
+
+        if target.startswith(EXTERNAL) or target.startswith("#"):
             continue
 
-        path = target_of(target)
+        path = target.split("#", 1)[0]
 
         if not path:
             continue
