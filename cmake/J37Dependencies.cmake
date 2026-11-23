@@ -159,7 +159,7 @@ endfunction()
 #                                    "signalsmith-linear/stft.h", and ThirdParty/
 #                                    on the include path is what answers it when
 #                                    the two are sibling CHECKOUTS
-#    ThirdParty/sokol/               floooh/sokol @ 93aa187b (sokol_gfx.h)
+#    ThirdParty/sokol/               floooh/sokol @ 09558a10 (sokol_gfx.h)
 #    ThirdParty/nlohmann_json/       nlohmann/json @ v3.12.0 (single_include/)
 #    ThirdParty/xsimd/               xtensor-stack/xsimd @ 14.3.0 (include/)
 #    ThirdParty/glm/                 g-truc/glm @ 1.0.3 (repo root)
