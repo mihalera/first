@@ -1592,19 +1592,18 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     headerCell (glueButton,      5, headerRowOneY, switchHeight);
     levelsButton.setVisible (true);
 
-    // Row two: THEME, RND, LEVELS and the language pair. The selector spans the
-    // final two cells while the caption occupies the cell before it.
+    // Row two: THEME, RND, LEVELS - and then the state badge, which owns the rest.
+    //
+    //  THE LANGUAGE PAIR IS NOT PLACED HERE ANY MORE. It used to sit in cells 3-5 of
+    //  this row and only be shown on SETTINGS, which is why the badge used to stand
+    //  down on that page; the pair now lives ON the SETTINGS page, in its own member
+    //  band (LANGUAGE, UI SOUNDS, ANTI-PHASE GUARD, UI SCALE). Two owners for one
+    //  rectangle is what would let the page's layout and the header disagree, and at
+    //  the minimum width the row is the badge's alone by measurement rather than by
+    //  convention.
     headerCell (themeButton,     0, headerRowTwoY, switchHeight);
     headerCell (randomButton,    1, headerRowTwoY, switchHeight);
     headerCell (levelsButton,    2, headerRowTwoY, switchHeight);
-    headerCell (languageLabel,   3, headerRowTwoY, switchHeight);
-    languageLabel.setJustificationType (juce::Justification::centredRight);
-    constexpr int languageColumns = headerColumns - 4;
-    languageBox.setBounds (headerGridLeft + 4 * (headerColumnWidth + headerGap),
-                           headerRowTwoY,
-                           languageColumns * headerColumnWidth
-                               + (languageColumns - 1) * headerGap,
-                           switchHeight);
 
     // The renderer caption sits on the brand row's right end, ending one gap
     // before the switch grid: the row above the title is the only part of the
@@ -2972,10 +2971,12 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
     oversamplingBox.setVisible (geometry.settingsTab);
     languageLabel.setVisible (geometry.settingsTab);
     languageBox.setVisible (geometry.settingsTab);
-    //  The state badge shares the header's second row with that pair, and there is
-    //  room on that row for one of them: the badge stands down while SETTINGS is up.
-    if (! j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
-        statusLabel.setVisible (! geometry.settingsTab);
+    //  THE STATE BADGE KEEPS ITS ROW ON EVERY PAGE, SETTINGS included. It used to
+    //  stand down there because the LANGUAGE pair was placed beside it in that row;
+    //  the pair has since moved onto the page itself (see the SETTINGS branch
+    //  below), so the row belongs to the badge and hiding it only took the
+    //  machine's own state away from the one page that has no deck to read it from.
+    statusLabel.setVisible (true);
     for (std::size_t i = 0; i < autoTuneControls.size(); ++i)
     {
         autoTuneControls[i].setVisible (geometry.autotuneTab);
