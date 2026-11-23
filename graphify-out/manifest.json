@@ -785,9 +785,9 @@
     "semantic_hash": "dd9d77c77147f4a4624d360eaa005d4e"
   },
   "Source/GUI/NativeRenderer_Sokol.cpp": {
-    "mtime": 1795432732.757697,
-    "seen": 1795432948.8609204,
-    "ast_hash": "9a481be3ebe9c9de2c95e8b1f16a52d7",
+    "mtime": 1795434479.5604978,
+    "seen": 1795434589.4934833,
+    "ast_hash": "924da39a179a824bae229d675a15a42b",
     "semantic_hash": ""
   },
   "Source/GUI/NativeRenderer_Sokol.h": {
@@ -922,10 +922,10 @@
     "language": "language=.cpp"
   },
   "Source/GUI/SokolGfxImpl.cpp": {
-    "mtime": 1793089008.6210365,
-    "seen": 1794648118.5835333,
-    "ast_hash": "85d2dbd2a6ca464993cf488ea482568f",
-    "semantic_hash": "85d2dbd2a6ca464993cf488ea482568f"
+    "mtime": 1795434468.019564,
+    "seen": 1795434589.4936218,
+    "ast_hash": "3e68729f35ff1c09353381a4f135536b",
+    "semantic_hash": ""
   },
   "Source/GUI/SpectrumMetrics.h": {
     "mtime": 1792836337.482191,
@@ -1029,8 +1029,8 @@
     "semantic_hash": ""
   },
   "Source/PluginEditor.cpp": {
-    "mtime": 1795432760.8676221,
-    "seen": 1795432948.8612175,
+    "mtime": 1795434023.574254,
+    "seen": 1795434589.4937396,
     "ast_hash": "32411aab4f3762b2ceaa7b4765a1ee44",
     "semantic_hash": ""
   },
@@ -1845,9 +1845,9 @@
     "semantic_hash": "42afb586e24ab38ddd8f73335a3f0e94"
   },
   "tests/render_backend/check_render_backend.py": {
-    "mtime": 1795432732.7987835,
-    "seen": 1795432948.862386,
-    "ast_hash": "4af20bbc3f0400a7a3c9b0d386dd141d",
+    "mtime": 1795434480.1343505,
+    "seen": 1795434589.494831,
+    "ast_hash": "60439fca31749133a5a1c66522cbd800",
     "semantic_hash": ""
   },
   "tests/render_backend/juce_stub/JuceHeader.h": {
@@ -2906,8 +2906,8 @@
     "semantic_hash": ""
   },
   "tests/README.md": {
-    "mtime": 1795432768.5339067,
-    "seen": 1795432948.8638196,
+    "mtime": 1795434023.6117082,
+    "seen": 1795434589.4961004,
     "ast_hash": "53cac8d13bbcfa10e93ce706f95ce7e1",
     "semantic_hash": ""
   },
@@ -3155,8 +3155,8 @@
     "semantic_hash": ""
   },
   "tests/header_render.cpp": {
-    "mtime": 1795432767.6222744,
-    "seen": 1795432948.861985,
+    "mtime": 1795434023.6127157,
+    "seen": 1795434589.4944763,
     "ast_hash": "53dd54e3723d8381251132a71b53def4",
     "semantic_hash": ""
   },
@@ -3173,8 +3173,8 @@
     "semantic_hash": ""
   },
   "docs/THIRD_PARTY_NOTICES.md": {
-    "mtime": 1795425912.4942384,
-    "seen": 1795425960.7666347,
+    "mtime": 1795434561.9001658,
+    "seen": 1795434589.4959755,
     "ast_hash": "0cf7755e37b1f6abae28c8ab213db5ed",
     "semantic_hash": ""
   }
