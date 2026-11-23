@@ -873,6 +873,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     /** Builds the deck's SceneFrame on the message thread and hands it to the
         native adapter. No-op when no adapter is presentable. */
     void submitNativeSceneFrame();
+    void serviceGraphicsAndNativeScene (bool phoneLayout);
 
     /** The adapter's configuration for the deck's CURRENT bounds - shared by
         setup and resize so the swapchain size cannot drift from the component. */

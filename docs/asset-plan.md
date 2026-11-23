@@ -1,44 +1,58 @@
 # MiBoX asset plan
 
-## Status
+## Purpose and current state
 
-The asset plan is implemented. MiBoX now has 24 optional PNG slots, 18 indexed
-atlases with 389 named cells, and one standalone signal-flow illustration. The
-nine new images are generated as original CC0 project artwork by
-[`Assets/generate_asset_pack.py`](../Assets/generate_asset_pack.py). Each runtime
-draw site keeps its existing vector or palette-based rendering when its image is
-missing.
+Artwork is an optional presentation layer over MiBoX's complete, code-drawn
+interface. The original asset rollout is implemented: 24 optional PNG slots,
+18 indexed atlases containing 389 named cells, one standalone signal-flow
+illustration, and separately catalogued Android launcher resources. Missing PNGs
+must leave every control and readout usable through the existing vector,
+procedural, or palette-based fallback.
 
-The durable source of truth is:
+The next work is inventory consistency, reproducible generation, and fallback
+coverage—not adding imagery without a named product need.
 
-- [`Source/GUI/PanelAssetSlots.h`](../Source/GUI/PanelAssetSlots.h) for names,
-  symbols, dimensions, and use contracts;
-- [`Assets/manifest.json`](../Assets/manifest.json) for provenance and licence;
-- [`Assets/asset_catalog.json`](../Assets/asset_catalog.json) for atlas grids,
-  keys, and stable tile order.
+### Sources of truth
+Keep each fact in its owning source; avoid a second manually maintained
+inventory when the existing tables already describe it:
 
-## System rules
+- [`Source/GUI/PanelAssetSlots.h`](../Source/GUI/PanelAssetSlots.h): runtime slot
+  names, BinaryData symbols, dimensions, purpose, and fallback intent.
+- [`Assets/manifest.json`](../Assets/manifest.json): file provenance, licence,
+  author, dimensions, and runtime use.
+- [`Assets/asset_catalog.json`](../Assets/asset_catalog.json): atlas grids,
+  stable semantic keys, tile order, and standalone/platform asset metadata.
+- [`Assets/generate_asset_pack.py`](../Assets/generate_asset_pack.py): generated
+  art/catalog output and source tables for compatibility-sensitive ordering.
+- [`Assets/README.md`](../Assets/README.md): concise contributor guide and slot
+  inventory.
 
-1. **No asset is required.** A clean checkout or build without any PNG still has
-   the complete functional interface.
-2. **Art stays out of the audio callback.** `cachedImage()` is a message-thread
-   cache; no processor or DSP code may call it.
-3. **Dynamic state stays dynamic.** JUCE draws moving pointers, knob indicators,
-   labels, transport state, and user text. Static images provide surface and
-   material detail only.
-4. **Source tables own order.** Tape swatches follow `tapeStockNames`, rack pedals
-   follow the four RACK page names, parameter glyphs follow `controlSpecs`, and
-   factory art follows CMake's `FACTORY_PRESET_FILES`.
-5. **Theme and patina are machine preferences.** They do not change plugin
-   parameters, host automation, presets, or saved processor state.
-6. **All embedded artwork needs clear provenance.** The current art is original
-   CC0-1.0 work. Third-party art needs an explicitly compatible licence before it
-   can enter a plugin binary.
+If these disagree, identify the owning source, update derived copies, and extend
+focused checks. Never silently renumber an index tied to a parameter, preset,
+theme, or UI control.
 
-The slot loader decodes images on first use. If every declared image is decoded
-as RGBA, the upper bound is about **30.94 MiB**. Actual use is lower because the
-cache is lazy and several documentation and product images are not opened by the
-editor.
+## Non-negotiable constraints
+
+1. **Optional at runtime:** missing art must not disable a control, hide a value,
+   or leave a blank panel. Every runtime slot needs a useful fallback.
+2. **Never in the audio path:** image decoding, file access, and image caching stay
+   outside processor/DSP code and the audio callback. Panel images use the existing
+   message-thread `cachedImage()` path.
+3. **Static art, live state:** images may provide material, texture, or a fixed
+   glyph. JUCE continues to draw changing labels, meters, switches, knob pointers,
+   transport state, and user text from live UI data.
+4. **Preserve compatibility order:** derive order from live source tables whenever
+   possible. For persisted indices, append instead of inserting, then update the
+   catalog and checks with the source change.
+5. **Keep preferences local:** theme, patina, renderer, and desk settings belong to
+   machine-wide editor preferences, not host parameters, presets, or processor state.
+6. **Record provenance before embedding:** current project art is documented as
+   CC0-1.0. Do not add third-party art with unclear, non-commercial, or incompatible
+   terms.
+7. **Budget decoded memory:** images are decoded lazily. Decoding all declared
+   images as RGBA would use about **30.94 MiB**; any expansion must state its
+   decoded-memory cost, intended usage, and scaling behavior. Actual use is lower
+   because documentation and product images are not all opened by the editor.
 
 ## Shipped inventory
 
@@ -141,14 +155,58 @@ native tape scene is not active. It fades with `smoothedMachineSpeed`; existing
 transport animation and invalidation already repaint the region. The native scene
 renderer and audio engine do not use or depend on this image.
 
-## Authoring and validation
+## Prioritized follow-up plan
 
-`Assets/generate_asset_pack.py` uses Python and Pillow to create the 19 generated
-PNG sheets and the asset catalog. It reads the live source tables where cell order
-is a compatibility contract. Pillow is not a CMake, plugin, or runtime dependency.
-The five hand-maintained identity sheets are not rewritten by the generator.
+### P0 — Reconcile preset-art metadata
+`PanelAssetSlots.h` describes `factory_preset_art` as **29** tiles, while its
+2240 × 64 dimensions and the manifest/catalog describe **35** tiles. Correct the
+stale source-table description and confirm that all copies agree with CMake's
+`FACTORY_PRESET_FILES` order. Do not change preset identities or reorder tiles to
+make the documentation pass.
 
-Run the narrow checks after changing assets or their draw sites:
+**Done when:** the slot description, manifest, catalog, CMake list, and generated
+atlas agree on count and order, and `tests/assets/check_assets.py` passes.
+
+### P1 — Keep generated output reproducible
+The generator uses Python and Pillow to produce generated PNGs and catalog data
+from live source tables where order matters. Pillow is authoring-only, not a CMake,
+plugin, or runtime dependency. Some identity/material sheets are hand-maintained
+and must not be overwritten by the generator. Before editing a generated PNG by
+hand, verify whether regeneration replaces it; change the generator or documented
+source artwork instead.
+
+**Done when:** generation is reproducible and catalog keys and required indices
+are unique, contiguous, and source-aligned.
+
+### P2 — Verify optional rendering paths
+For each changed runtime slot or draw site, verify both valid-image rendering and
+the missing/invalid-image fallback. Keep overlays clipped, text and hit targets
+readable, and animation driven by UI state rather than DSP internals. For visual
+changes, inspect compact, normal, and high-DPI sizes where practical; source-level
+presence does not prove alignment or legibility.
+
+**Done when:** absent art leaves a complete usable interface and focused asset and
+editor checks pass.
+
+### P3 — Control pack growth
+Before adding a slot or increasing resolution, record decoded RGBA memory impact,
+expected use frequency, scaling behavior, and fallback. Extend an existing atlas
+only when ownership and tile ordering remain clear. Keep unused documentation art
+out of runtime decoding where practical.
+
+**Done when:** every new embedded runtime image has a concrete consumer and a
+stated memory budget.
+
+### P4 — Gate distribution on rights review
+Before shipping, verify provenance and licence metadata for the exact embedded
+files, then follow [`release-checklist.md`](release-checklist.md). A local build
+or repository presence does not grant permission to distribute art or binaries.
+
+**Done when:** release review confirms distribution rights for every shipped file.
+
+## Authoring and validation workflow
+After changing assets, source-derived lists, or draw sites, run from the repository
+root:
 
 ```sh
 python Assets/generate_asset_pack.py
@@ -157,22 +215,27 @@ python tests/dependencies/check_markdown_links.py
 python tests/theme/check_theme_wiring.py
 ```
 
-The asset check verifies the slot/manifest/catalog/file agreement, PNG dimensions
-and alpha, license metadata, live tape and rack ordering, and the optional draw
-sites and fallbacks. The build embeds every PNG through the existing
-`Assets/*.png` CMake glob; no new dependency or platform install step is needed.
+The asset check verifies slot/manifest/catalog/file agreement, dimensions and
+alpha, licence metadata, source-derived tape/RACK/preset/parameter ordering,
+optional draw-site wiring, and fallback contracts. Run
+`tests/editor/check_editor_juce.sh` when changing C++ rendering integration; it
+compiles editor translation units and GUI headers against JUCE. Report exactly
+which checks ran: focused checks are not a full platform build or release review.
 
-Before distribution, follow [`release-checklist.md`](release-checklist.md). A local
-build does not grant permission to distribute artwork or binaries.
+CMake embeds `Assets/*.png` through BinaryData; adding a PNG does not require a new
+runtime dependency or platform install step. Android launcher resources are
+packaging assets catalogued separately from the runtime slot table and must stay
+aligned with their catalog entries and Android manifest.
 
-## Completion roadmap
+## Completion status
 
-- [x] **Phase 1 — identity and foundation:** existing materials, marks, icons,
-  glyphs, preset artwork, help scenes, and signal path.
-- [x] **Phase 2 — controls and metering:** knob caps, AVG/VU scale, moving needle.
-- [x] **Phase 3 — machine surfaces:** deck plate, four RACK treatments, tape swatches.
-- [x] **Phase 4 — atmosphere:** tube glow, optional patina, software reel blur.
+- [x] Identity, materials, icons, preset art, help scenes, and signal-flow diagram.
+- [x] Knob caps and AVG/VU-style meter scale and needle.
+- [x] Deck plate, RACK surfaces, and tape-stock swatches.
+- [x] Tube glow, optional patina, and software-reel motion overlay.
+- [ ] Reconcile the stale factory-preset tile count in `PanelAssetSlots.h`.
+- [ ] Keep generated catalog data aligned with source tables and checks.
 
-The system is complete. Future visual work should add a new slot only when a real
-draw site, a stable cell order where needed, and a missing-image fallback can be
-specified together.
+The artwork rollout is complete. Add new art only for a named product/UI need,
+with a clear source of truth, stable ordering where relevant, optional loading, a
+useful fallback, compatible licensing, and focused validation.

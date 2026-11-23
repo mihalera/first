@@ -262,7 +262,12 @@ private:
         }
 
         auto nextWorker = std::make_unique<Worker> (*this, file, requestGeneration);
-        nextWorker->startThread();
+        if (! nextWorker->startThread())
+        {
+            finishWithError ("the print loader could not start", requestGeneration);
+            return;
+        }
+
         workers.push_back (std::move (nextWorker));
     }
 

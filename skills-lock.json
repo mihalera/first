@@ -5,19 +5,22 @@
       "source": "kunitoki/sonic-skills",
       "sourceType": "github",
       "skillPath": "skills/au-review/SKILL.md",
-      "computedHash": "348f91b4b41989ea80aea59d5aa4ac1f142d6da2089569c00127bcc736cb9e2e"
+      "computedHash": "348f91b4b41989ea80aea59d5aa4ac1f142d6da2089569c00127bcc736cb9e2e",
+      "commit": "8b6dcfe89030d7de9ba9d6afcc2d927fb11fe7fa"
     },
     "audio-numerics-review": {
       "source": "kunitoki/sonic-skills",
       "sourceType": "github",
       "skillPath": "skills/audio-numerics-review/SKILL.md",
-      "computedHash": "00ba5637fc0c0de44fdb234955e12de799bada73c8b8f7bfecd0b2112752df3a"
+      "computedHash": "00ba5637fc0c0de44fdb234955e12de799bada73c8b8f7bfecd0b2112752df3a",
+      "commit": "8b6dcfe89030d7de9ba9d6afcc2d927fb11fe7fa"
     },
     "clap-review": {
       "source": "kunitoki/sonic-skills",
       "sourceType": "github",
       "skillPath": "skills/clap-review/SKILL.md",
-      "computedHash": "06ebbe27713f598effeb8fbf6ba1008b632f43a4aad8a6a31f92a9feec38aca0"
+      "computedHash": "06ebbe27713f598effeb8fbf6ba1008b632f43a4aad8a6a31f92a9feec38aca0",
+      "commit": "8b6dcfe89030d7de9ba9d6afcc2d927fb11fe7fa"
     },
     "earshot": {
       "source": "Leonxlnx/earshot",
@@ -30,19 +33,22 @@
       "source": "vercel-labs/skills",
       "sourceType": "github",
       "skillPath": "skills/find-skills/SKILL.md",
-      "computedHash": "7bc223e2aafbdbf6e50ea243ba6ef67fe432bb069ab439fea0390795dac0bf7f"
+      "computedHash": "7bc223e2aafbdbf6e50ea243ba6ef67fe432bb069ab439fea0390795dac0bf7f",
+      "commit": "57217cf86ba38148a57af9e90d14a4c049558330"
     },
     "game-audio-review": {
       "source": "kunitoki/sonic-skills",
       "sourceType": "github",
       "skillPath": "skills/game-audio-review/SKILL.md",
-      "computedHash": "5b1c226c6132df931d45ec4f62f6db2377071e7b90c9306dc258493edd811bd9"
+      "computedHash": "5b1c226c6132df931d45ec4f62f6db2377071e7b90c9306dc258493edd811bd9",
+      "commit": "8b6dcfe89030d7de9ba9d6afcc2d927fb11fe7fa"
     },
     "juce-review": {
       "source": "kunitoki/sonic-skills",
       "sourceType": "github",
       "skillPath": "skills/juce-review/SKILL.md",
-      "computedHash": "9eb82890a3db7c0af4f0ca1989054214d379c3ec5867b5c676067f37ed26dc87"
+      "computedHash": "9eb82890a3db7c0af4f0ca1989054214d379c3ec5867b5c676067f37ed26dc87",
+      "commit": "8b6dcfe89030d7de9ba9d6afcc2d927fb11fe7fa"
     },
     "real-sound": {
       "source": "Leonxlnx/earshot",
@@ -55,13 +61,15 @@
       "source": "kunitoki/sonic-skills",
       "sourceType": "github",
       "skillPath": "skills/webaudio-review/SKILL.md",
-      "computedHash": "9fd7edc01b6595ecb54dc3576473bbde4e29b97b74c3de1fb82619c438ad32fc"
+      "computedHash": "9fd7edc01b6595ecb54dc3576473bbde4e29b97b74c3de1fb82619c438ad32fc",
+      "commit": "8b6dcfe89030d7de9ba9d6afcc2d927fb11fe7fa"
     },
     "yup-review": {
       "source": "kunitoki/sonic-skills",
       "sourceType": "github",
       "skillPath": "skills/yup-review/SKILL.md",
-      "computedHash": "11563a719608400f7c1787db7449b7a559d1847d89f19025ca4b4b78ab0efda0"
+      "computedHash": "11563a719608400f7c1787db7449b7a559d1847d89f19025ca4b4b78ab0efda0",
+      "commit": "8b6dcfe89030d7de9ba9d6afcc2d927fb11fe7fa"
     }
   }
 }

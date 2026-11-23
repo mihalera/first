@@ -337,28 +337,8 @@ void FirstAudioProcessorEditor::repaintAnimatedSurfaces() {
 }
 
 //==============================================================================
-void FirstAudioProcessorEditor::timerCallback() {
-    audioProcessor.flushPendingTransportHostSync();
-
-    // Hosts can keep an editor alive while its window is hidden. Do not poll
-    // telemetry, advance physics, or issue repaint work in that state; the next
-    // visible timer tick reconstructs all display-only state from the processor.
-    if (!isShowing())
-        return;
-
-    // The parameter sheet is an opaque, full-editor overlay. Its rows have their
-    // own attachments and its viewport is the only thing the user can see. The
-    // phone layout omits the large meters; its compact OSC ring remains active
-    // and is redrawn only while visible.
-    const auto panelCovered = parameterSheet != nullptr && parameterSheet->isOpen();
-    const auto phoneLayout = j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight());
-    const auto metersVisible = levelsVisible && ! panelCovered && ! phoneLayout;
-    inputMeter.setActive(metersVisible);
-    outputMeter.setActive(metersVisible);
-    compressorMeterIn.setActive(metersVisible);
-    compressorMeterOut.setActive(metersVisible);
-    oscRing.setRedrawEnabled(! panelCovered && oscRing.isVisible());
-
+void FirstAudioProcessorEditor::serviceGraphicsAndNativeScene (bool phoneLayout)
+{
     // Retry context creation while the host is still creating its peer. The
     // budget is bounded so an unavailable driver is not polled forever.
     if (openGLAttachAttemptsLeft > 0) {
@@ -398,6 +378,31 @@ void FirstAudioProcessorEditor::timerCallback() {
     // and hands it over - the adapter records it on its own GL thread.
     if (!phoneLayout && nativeRenderer != nullptr)
         submitNativeSceneFrame();
+}
+
+void FirstAudioProcessorEditor::timerCallback() {
+    audioProcessor.flushPendingTransportHostSync();
+
+    // Hosts can keep an editor alive while its window is hidden. Do not poll
+    // telemetry, advance physics, or issue repaint work in that state; the next
+    // visible timer tick reconstructs all display-only state from the processor.
+    if (!isShowing())
+        return;
+
+    // The parameter sheet is an opaque, full-editor overlay. Its rows have their
+    // own attachments and its viewport is the only thing the user can see. The
+    // phone layout omits the large meters; its compact OSC ring remains active
+    // and is redrawn only while visible.
+    const auto panelCovered = parameterSheet != nullptr && parameterSheet->isOpen();
+    const auto phoneLayout = j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight());
+    const auto metersVisible = levelsVisible && ! panelCovered && ! phoneLayout;
+    inputMeter.setActive(metersVisible);
+    outputMeter.setActive(metersVisible);
+    compressorMeterIn.setActive(metersVisible);
+    compressorMeterOut.setActive(metersVisible);
+    oscRing.setRedrawEnabled(! panelCovered && oscRing.isVisible());
+
+    serviceGraphicsAndNativeScene (phoneLayout);
 
     // Four meters: the two level meters each show the full four-way loudness reading
     // (peak dB, RMS, LUFS, VU and their equal-weighted combination), and each glue
