@@ -855,6 +855,13 @@ void FirstAudioProcessor::changeProgramName (int, const juce::String&)
 //==============================================================================
 void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerBlock)
 {
+    //  The stream is starting again, so the teardown releaseResources() armed the
+    //  watchdog for is not coming: a host that stopped the plugin only to
+    //  reconfigure it - a device or rate change - would otherwise leave a watch
+    //  running that reports a false stall the next time the message thread is busy
+    //  for two seconds. This is the other end of that arm.
+    j37diag::shutdownWatchdog().disarm();
+
     sampleRate = static_cast<float> (sampleRateToUse);
 
     // The OSC voice is tuned at the engine rate. Preparing it here also clears
@@ -1550,7 +1557,15 @@ void FirstAudioProcessor::releaseResources()
     guard.phase ("releaseResources: the host stopped the stream");
     j37diag::note ("releaseResources: the host stopped the stream");
     guard.phase ("releaseResources: returned");
-    guard.disarm();
+
+    //  IT IS DELIBERATELY LEFT ARMED. The hang this guards against is the one AFTER
+    //  this callback returns - JUCE detaching the editor, the wrapper unwinding the
+    //  plug-in, the destructor that never runs - so disarming here would stop the
+    //  watch at the last moment it was still useful. Both destructors re-arm (arm()
+    //  is idempotent) and disarm at the end of the teardown they own, so the watch
+    //  stays continuous from this call to the end of the shutdown, and
+    //  prepareToPlay() disarms it when the host restarts the stream instead - which
+    //  is what keeps a device change from leaving a false stall report behind.
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
