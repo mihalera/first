@@ -157,7 +157,6 @@ void FirstAudioProcessorEditor::applyTheme() {
     // captioned grid: without this they keep the ivory ink on every other theme.
     uiSoundsLabel.setColour(juce::Label::textColourId, palette.secondary);
     parameterSheetLabel.setColour(juce::Label::textColourId, palette.secondary);
-    guideLabel.setColour(juce::Label::textColourId, palette.secondary);
     uiScaleLabel.setColour(juce::Label::textColourId, palette.secondary);
     // The renderer selector's caption is a settings row's caption like LANGUAGE's -
     // unstyled it would keep the ivory ink on the charcoal and metal panels.

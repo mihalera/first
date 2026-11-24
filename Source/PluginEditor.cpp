@@ -1478,6 +1478,10 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
     {
         levelsButton.setVisible (false);
+        //  GUIDE is a header key on the desktop only: the phone's second row is
+        //  four utility keys and the status badge already, and a fifth would come
+        //  out of the badge's caption rather than out of a gap.
+        guideButton.setVisible (false);
         const auto rowOneY = header.getY() + 5;
         const auto titleWidth = juce::jmin (82, juce::jmax (0, header.getWidth() / 4));
         titleLabel.setBounds (header.getX() + 4, rowOneY, titleWidth, 32);
@@ -1613,6 +1617,20 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     headerCell (themeButton,     0, headerRowTwoY, switchHeight);
     headerCell (randomButton,    1, headerRowTwoY, switchHeight);
     headerCell (levelsButton,    2, headerRowTwoY, switchHeight);
+
+    //  GUIDE rides the title's baseline instead of a cell in that grid: it is
+    //  documentation about the machine, so it belongs beside the wordmark rather
+    //  than among the switches, and the slack between the title and the grid is the
+    //  one part of the header that is not a control. It sat on SETTINGS before - a
+    //  page of preferences, where nobody looks for the manual twice - and it was
+    //  the fifth key of a row of four, which is why that row's cells were narrower
+    //  than the one below it. The clamp is against the grid, never the title: on a
+    //  window too narrow to hold both, the key yields.
+    guideButton.setBounds (juce::jmin (headerGridLeft - headerColumnGap
+                                          - headerGuideKeyWidth,
+                                      titleLabel.getRight() + 14),
+                           headerRowTwoY, headerGuideKeyWidth, switchHeight);
+    guideButton.setVisible (true);
 
     // The renderer caption sits on the brand row's right end, ending one gap
     // before the switch grid: the row above the title is the only part of the
@@ -3003,8 +3021,6 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
     antiPhaseGuardButton.setVisible (geometry.settingsTab);
     parameterSheetButton.setVisible (geometry.settingsTab);
     parameterSheetLabel.setVisible (geometry.settingsTab);
-    guideButton.setVisible (geometry.settingsTab);
-    guideLabel.setVisible (geometry.settingsTab);
     uiScaleLabel.setVisible (geometry.settingsTab);
     uiScaleBox.setVisible (geometry.settingsTab);
     // The USER theme's colour key rides SETTINGS's first band, beside OVERSAMPLING -
@@ -3213,7 +3229,6 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
         placeSetting (backendLabel,         backendBox,          1, 0, fullRow);
         placeSetting (userThemeLabel,       userThemeButton,     2, 0, fullRow);
         placeSetting (parameterSheetLabel,  parameterSheetButton, 3, 0, fullRow);
-         placeSetting (guideLabel,           guideButton,          4, 0, fullRow);
 
         // Row two: the language, the interface sounds, the guard and the panel's
         // own working scale - the four things that describe how it behaves while
@@ -3624,7 +3639,6 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             { "guardBtn",       &antiPhaseGuardButton },
             { "paramSheetLbl",  &parameterSheetLabel },
             { "paramSheet",     &parameterSheetButton },
-            { "guideLbl",       &guideLabel },
             { "guideBtn",       &guideButton },
             // The USER theme's caption and colour key, in SETTINGS's first band.
             // They are here because this list is the one place a hand-placed switch
