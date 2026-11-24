@@ -592,6 +592,12 @@ void FirstAudioProcessorEditor::stylePanelLabels() {
                juce::Justification::left);
     styleLabel(valveTypeLabel, "VALVE", 9.0f, paletteFor(false).secondary, true,
                juce::Justification::left);
+    styleLabel(pentodeTypeLabel, "PENTODE", 9.0f, paletteFor(false).secondary, true,
+               juce::Justification::left);
+    styleLabel(triodeTypeLabel, "TRIODE", 9.0f, paletteFor(false).secondary, true,
+               juce::Justification::left);
+    styleLabel(transistorTypeLabel, "TRANSISTOR", 9.0f, paletteFor(false).secondary, true,
+               juce::Justification::left);
     styleLabel(transformerTypeLabel, "XFMR", 9.0f, paletteFor(false).secondary, true,
                juce::Justification::left);
     styleLabel(digitalTypeLabel, "DIGITAL", 9.0f, paletteFor(false).secondary, true,
@@ -660,6 +666,9 @@ void FirstAudioProcessorEditor::stylePanelLabels() {
     addAndMakeVisible(buildLabel);
     addAndMakeVisible(tapeTypeLabel);
     addAndMakeVisible(valveTypeLabel);
+    addAndMakeVisible(pentodeTypeLabel);
+    addAndMakeVisible(triodeTypeLabel);
+    addAndMakeVisible(transistorTypeLabel);
     addAndMakeVisible(transformerTypeLabel);
     addAndMakeVisible(digitalTypeLabel);
     addAndMakeVisible(vinylTypeLabel);
