@@ -62,17 +62,17 @@ theme, or UI control.
 | 1 | `panel_materials` | 3072 × 256 | 6 × 512 × 256 | Theme surface atlas in `ThemeChoice` order. |
 | 1 | `brand_mark` | 256 × 256 | 1 | USER THEME header; drawn emblem fallback. |
 | 1 | `window_icon` | 64 × 64 | 1 | USER THEME window and desktop peer; drawn emblem fallback. |
-| 1 | `brand_lockups` | 512 × 128 | 4 × 128 × 128 | Brand variants for product surfaces and documentation. |
+| 1 | `brand_lockups` | 512 × 128 | 4 × 128 × 128 | Square lockup in the panel header; palette-aware horizontal/reversed lockup in the USER THEME header. |
 | 1 | `ui_icons` | 512 × 832 | 104 × 64 × 64 | Page, family, control, workflow, status and platform glyphs. |
 | 1 | `principle_icons` | 576 × 64 | 9 × 64 × 64 | MIX bar source glyphs, tinted with the active palette. |
-| 2 | `parameter_glyphs` | 512 × 832 | 100 × 64 × 64 | Named glyphs in current `controlSpecs` order. |
-| 2 | `machine_models` | 512 × 512 | 52 × 64 × 64 | Tape, circuit, digital and vinyl model glyph library. |
-| 2 | `meter_status` | 512 × 256 | 32 × 64 × 64 | Meter, signal, phase, band and health glyph library. |
-| 2 | `hardware_details` | 256 × 256 | 16 × 64 × 64 | Small mechanical detail glyph library. |
+| 2 | `parameter_glyphs` | 512 × 832 | 100 × 64 × 64 | Control caption glyphs in `controlSpecs` order, drawn in `J37LookAndFeel::drawLabel()`; fallback is the text-only caption. |
+| 2 | `machine_models` | 512 × 512 | 52 × 64 × 64 | Model-selector glyphs for valve, pentode, triode, transistor, transformer, digital and vinyl boxes; tape keeps its swatch. |
+| 2 | `meter_status` | 512 × 256 | 32 × 64 × 64 | Input/output glyph plus red clipping glyph in `LevelMeter::paint()`; fallback is text-only title. |
+| 2 | `hardware_details` | 256 × 256 | 16 × 64 × 64 | `hardware.screw` tile in `drawScrew()`; full atlas also available as the USER PANEL "DETAIL" background. |
 | 3 | `factory_preset_art` | 2240 × 64 | 35 × 64 × 64 | Selected factory preset badge in CMake preset order. |
-| 3 | `preset_categories` | 512 × 64 | 8 × 64 × 64 | Preset category glyph library. |
-| 3 | `signal_path` | 1600 × 500 | Standalone | Full signal path diagram in `docs/signal-path.md`. |
-| 4 | `help_illustrations` | 1024 × 576 | 4 × 512 × 288 | Signal, A/B, preset and file-loading help scenes. |
+| 3 | `preset_categories` | 512 × 64 | 8 × 64 × 64 | Instrument-profile chip in `PresetArtworkBadge::paint()` (Master Bus/mixing, Vocal/vocals, Bass/bass, Guitar/guitar, Piano/keys, Drums/drums). |
+| 3 | `signal_path` | 1600 × 500 | Standalone | Full-width diagram in the GUIDE sheet; also referenced by `docs/signal-path.md`. |
+| 4 | `help_illustrations` | 1024 × 576 | 4 × 512 × 288 | Signal path, A/B, preset workflow and load-model scenes in the GUIDE sheet. |
 | 5 | `knob_caps` | 512 × 256 | 8 × 128 × 128 | Static face material for every rotary; pointer and ticks stay dynamic. |
 | 5 | `level_scale` | 512 × 256 | 1 × 512 × 256 | Transparent -20 to +3 scale for the AVG-driven needle. |
 | 5 | `vu_needle_profile` | 256 × 64 | 1 × 256 × 64 | Shadowed moving pointer; vector line fallback. |
@@ -82,6 +82,35 @@ theme, or UI control.
 | 6 | `tube_glow_maps` | 512 × 256 | 4 × 128 × 256 | Decorative heater marks driven by the visible slider amount. |
 | 6 | `wear_and_patina` | 1024 × 1024 | 1 × 1024 × 1024 | Seamless optional surface wear, enabled in USER THEME. |
 | 6 | `spindown_blur` | 256 × 256 | 1 × 256 × 256 | Software reel motion overlay, faded by smoothed transport speed. |
+
+## Planned assets
+
+These are additional assets identified as useful for the plugin's UI but not yet
+shipped. Each entry lists a proposed slot name, dimensions, decoded RGBA cost, and
+intended consumer. They are candidates, not commitments: add one only when a
+concrete draw site and fallback are defined.
+
+| Proposed slot | Size | ~MiB | Intended consumer | Notes |
+| --- | --- | ---: | --- | --- |
+| `automation_icons` | 512 × 256 | 0.50 | Automation lane and parameter-modulation glyphs | Reuse `ui_icons` family if overlap. |
+| `eq_curve_previews` | 1024 × 256 | 1.00 | IN/OUT EQ response preview behind the EQ knobs | Static; frequency axis from code. |
+| `reverb_room_shapes` | 512 × 512 | 1.00 | Reverb page room preview | One tile per reverb size preset. |
+| `ir_waveforms` | 1024 × 128 | 0.50 | IR MIX readout preview | Rendered from the loaded IR; optional. |
+| `neural_model_previews` | 512 × 128 | 0.25 | Neural model badge thumbnail | Falls back to `model.neural` glyph. |
+| `vinyl_label_art` | 512 × 512 | 1.00 | Vinyl page label preview | Optional decorative. |
+| `tape_reel_faces` | 512 × 512 | 1.00 | Software reel face variants | Extends `knob_caps` family. |
+| `cabinet_previews` | 512 × 256 | 0.50 | Cabinet selector preview | One tile per cabinet type. |
+| `oscilloscope_grids` | 512 × 512 | 1.00 | Oscilloscope overlay grid | Reusable across scopes. |
+| `spectrum_frames` | 1024 × 256 | 1.00 | Spectrum analyzer chrome | Low-contrast frame only. |
+| `meter_frames` | 512 × 256 | 0.50 | Meter bezel variants | Extends `hardware_details`. |
+| `knob_scale_rings` | 512 × 512 | 1.00 | Optional printed scale ring overlay | Fallback is code-drawn ticks. |
+| `mod_matrix_diagram` | 1024 × 512 | 2.00 | Modulation routing diagram | Help-sheet candidate. |
+| `preset_thumbnails` | 1024 × 64 | 0.25 | Preset browser row thumbnail | Extends `factory_preset_art`. |
+| `transport_icons` | 256 × 256 | 0.25 | Play/stop/record transport glyphs | Reuse `ui_icons` if overlap. |
+
+Adding all fifteen would cost about 12.75 MiB of decoded RGBA on top of the current
+~30.94 MiB. Add them incrementally, one at a time, with a draw site and fallback
+defined first.
 
 ## New art and integration contracts
 
@@ -155,6 +184,60 @@ native tape scene is not active. It fades with `smoothedMachineSpeed`; existing
 transport animation and invalidation already repaint the region. The native scene
 renderer and audio engine do not use or depend on this image.
 
+### Parameter glyphs
+
+`parameter_glyphs.png` carries 100 tintable glyphs in `controlSpecs` order. Each
+control label (`controlLabels`) is given the custom look-and-feel and the control's
+parameter id as its component id. `J37LookAndFeel::drawLabel()` resolves the id to a
+`controlSpecs` index and draws the matching 64 px tile to the left of the caption,
+tinted with the caption ink. The caption text area shrinks by the glyph width, so
+long captions still fit through `drawFittedText()`. A missing atlas leaves the
+text-only caption exactly as before.
+
+### Machine model glyphs
+
+`machine_models.png` feeds the model selectors. `EditorSetup.cpp` assigns each box a
+stable id (`mibox.valve`, `mibox.pentode`, `mibox.triode`, `mibox.transistor`,
+`mibox.transformer`, `mibox.digital`, `mibox.vinyl`); the tape box keeps its
+existing `mibox.tape_stock` swatch. `modelGlyphTileFor()` maps box id plus selected
+entry to a tile index, and `drawComboBox()` draws it beside the value while
+`positionComboBoxText()` reserves the matching inset. Off entries map to the
+family's `Off` tile (or the generic screw `Off` tile for principle families, which
+have no per-model glyph). A missing atlas leaves the selector text-only.
+
+### Meter status glyphs
+
+`LevelMeter::paint()` draws the `meter.input` (tile 0) or `meter.output` (tile 1)
+glyph to the left of the centred title, and the `meter.clipping` (tile 6) glyph on
+the right in red when `clipping` is true. Both are tinted with the meter palette
+and fall back to the text-only title when the atlas is absent.
+
+### Preset category chips
+
+`PresetArtworkBadge::paint()` overlays a small category chip in its bottom-right
+corner, derived from the live `instrument` parameter: Master Bus -> mixing,
+Vocal -> vocals, Bass -> bass, Guitar -> guitar, Piano -> keys, Drums -> drums.
+The two remaining atlas categories (mastering, creative) are reserved for a future
+explicit preset-category field, which the factory preset JSON does not yet carry.
+A missing atlas leaves the badge as before.
+
+### Brand lockups
+
+The panel header draws the square lockup (tile 0) in its left margin, ahead of the
+copper rule. The USER THEME window header draws the horizontal lockup (tile 1) on a
+light palette and the reversed lockup (tile 3) on a dark palette, falling back to
+`brand_mark` and then to nothing. The monochrome lockup (tile 2) is reserved for
+future monochrome surfaces.
+
+### GUIDE sheet
+
+A new full-editor overlay, opened from the SETTINGS page's GUIDE row, displays
+`signal_path.png` at full width followed by a 2 x 2 grid of the four
+`help_illustrations` scenes with captions (SIGNAL PATH, A/B COMPARE, PRESET
+WORKFLOW, LOAD A MODEL OR IR). It follows the panel palette, closes on Escape or
+CLOSE, and rebuilds on a theme switch. Missing images leave the captions and a
+text fallback, so the sheet is never blank.
+
 ## Prioritized follow-up plan
 
 ### P0 — Reconcile preset-art metadata
@@ -227,14 +310,72 @@ runtime dependency or platform install step. Android launcher resources are
 packaging assets catalogued separately from the runtime slot table and must stay
 aligned with their catalog entries and Android manifest.
 
+## Runtime draw-site index
+
+Every slot has exactly one or more message-thread consumers. Missing or invalid
+images always fall back to the procedural/palette/vector path listed.
+
+| Slot | Consumer | Fallback |
+| --- | --- | --- |
+| `panel_texture` | `EditorPaint.cpp` generic grain surface | Arithmetic grain + wear. |
+| `panel_materials` | `EditorPaint.cpp` theme surface atlas | Generic texture, then grain. |
+| `brand_mark` | `PluginEditor.cpp` window icon; `EditorMeters.cpp` preset badge; `UserThemeWindow.h` header | Drawn reel/monogram or empty margin. |
+| `window_icon` | `UserThemeWindow.h` title-bar icon | Host/default icon. |
+| `brand_lockups` | `EditorPaint.cpp` header square (tile 0); `UserThemeWindow.h` header lockup (tile 1/3) | `brand_mark`, then empty margin. |
+| `ui_icons` | `J37LookAndFeel.cpp` family buttons (tiles 18-20) | Text-only button caption. |
+| `principle_icons` | `EditorMeters.cpp` MIX bar source glyphs | Principle-coloured bars only. |
+| `parameter_glyphs` | `J37LookAndFeel.cpp` control captions (`drawLabel`) | Text-only caption. |
+| `machine_models` | `J37LookAndFeel.cpp` model combo boxes | Text-only selector value. |
+| `meter_status` | `EditorMeters.cpp` `LevelMeter::paint()` | Text-only title. |
+| `hardware_details` | `PanelPaint.h` `drawScrew()`; `PanelAssets.h` DETAIL background | Procedural screw / grain. |
+| `factory_preset_art` | `EditorMeters.cpp` `PresetArtworkBadge` | `brand_mark`, then drawn reel. |
+| `preset_categories` | `EditorMeters.cpp` preset badge chip | No chip (artwork only). |
+| `signal_path` | `HelpSheet.h` guide diagram | Text fallback. |
+| `help_illustrations` | `HelpSheet.h` scene grid | Captions only. |
+| `knob_caps` | `J37LookAndFeel.cpp` cap face | Procedural dome. |
+| `level_scale` | `EditorMeters.cpp` dial scale | Adaptive ticks and labels. |
+| `vu_needle_profile` | `EditorMeters.cpp` needle | Vector needle. |
+| `deck_plate` | `EditorPaint.cpp` deck overlay | Theme texture only. |
+| `rack_pedals` | `EditorPaint.cpp` RACK page background | Themed panel background. |
+| `tape_stock_swatches` | `J37LookAndFeel.cpp` tape combo | Text-only value. |
+| `tube_glow_maps` | `J37LookAndFeel.cpp` source knobs | No glow. |
+| `wear_and_patina` | `EditorPaint.cpp` panel layers | Clean surface. |
+| `spindown_blur` | `EditorPaint.cpp` software reel | No blur overlay. |
+
+## Fallback contract
+
+1. `cachedImage(symbol)` returns an invalid `juce::Image` when the binary resource is
+   absent; every call site tests `isValid()` (and usually dimensions) before drawing.
+2. No call site hides a control, label, meter, or readout because an image is missing.
+3. Procedural/palette/vector drawing always runs first or remains visible underneath;
+   the image is an additive layer.
+4. Tinted atlases use `g.setColour(...)` before `drawImage(..., true)`; untinted
+   raster art sets white to avoid a black tint.
+5. Missing art must not trigger allocations, file I/O, or audio-thread work.
+
+## Adding a new asset
+
+1. Add a row to `PanelAssetSlots.h` (name, file, symbol, size, purpose).
+2. Add provenance, licence, author, and `used_by` to `Assets/manifest.json`.
+3. Add atlas grid/keys to `Assets/asset_catalog.json` if it is an atlas.
+4. Add the PNG to `Assets/` (or the generator) and run `python Assets/generate_asset_pack.py`.
+5. Add exactly one draw site with an explicit fallback, and update this document.
+6. Run `python tests/assets/check_assets.py`, `tests/editor/check_editor_juce.sh`,
+   and the relevant harness; report exactly what ran.
+
+## Decoded memory budget
+
+Decoding every declared image as RGBA costs about 30.94 MiB; actual editor use is
+lower because documentation/help images and some atlases are only touched on demand.
+New runtime images must state their decoded RGBA cost, expected open frequency, and
+scaling behaviour before being added. Prefer extending an existing atlas over adding
+a standalone full-resolution image.
+
 ## Completion status
 
-- [x] Identity, materials, icons, preset art, help scenes, and signal-flow diagram.
-- [x] Knob caps and AVG/VU-style meter scale and needle.
-- [x] Deck plate, RACK surfaces, and tape-stock swatches.
-- [x] Tube glow, optional patina, and software-reel motion overlay.
-- [ ] Reconcile the stale factory-preset tile count in `PanelAssetSlots.h`.
-- [ ] Keep generated catalog data aligned with source tables and checks.
+All 24 shipped slots are connected to live draw sites with procedural fallbacks.
+Generation is unblocked: no outstanding item prevents producing or regenerating
+the PNGs.
 
 The artwork rollout is complete. Add new art only for a named product/UI need,
 with a clear source of truth, stable ordering where relevant, optional loading, a
