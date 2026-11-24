@@ -167,35 +167,51 @@ void reset() noexcept
 
     - sokol_log.h's own slog_func writes to the platform's logging system - stderr
       plus OutputDebugStringA() on Windows, logcat on Android, syslog on Apple -
-      which is what a debugger or a device log shows. It also owns the spelling of
-      the level and the item id, so this file does not carry a second copy of that
-      table to keep in step with the header.
+      which is what a debugger or a device log shows. It also owns the long-form
+      spelling of the level and the item id for that sink; the trace below keeps
+      only the one-word severity it needs.
     - the diagnostic trace gets a copy when the switch is on. A host's stderr is
       not the file a support report carries: it goes wherever the host sends it,
       which for a plugin is usually nowhere, and the validation layer's own words
       are the one thing worth having when a renderer dies on someone else's
-      machine. */
+      machine. That line carries the severity as well: a trace where a panic and
+      an info message read alike is a trace that cannot be triaged.
+
+    THE TRACE GOES FIRST. slog_func calls abort() for log level 0, so anything
+    written after it is written by a process that is already dying - and a panic
+    is exactly the message a support report cannot do without. The order is not
+    cosmetic: swap these two and the trace loses its only fatal line. */
 void sokolLog (const char* tag, uint32_t logLevel, uint32_t logItemId,
                const char* messageOrNull, uint32_t lineNr,
                const char* fileNameOrNull, void* userData)
 {
+    if (j37diag::enabled())
+    {
+        //  sokol_log.h formats its own severity word for the platform sink; the
+        //  trace needs the same distinction in one short token, because the
+        //  difference between "panic" and "warning" is the whole reason the line
+        //  is read.
+        const char* level = logLevel == 0 ? "panic" : logLevel == 1 ? "error"
+                            : logLevel == 2 ? "warning"
+                                           : "info";
+
+        juce::String text;
+        text << "sokol_gfx " << tag << ' ' << level;
+
+        if (messageOrNull != nullptr)
+            text << ": " << messageOrNull;
+
+        text << " (id " << static_cast<int> (logItemId) << ')';
+
+        if (fileNameOrNull != nullptr)
+            text << " at " << fileNameOrNull << ':' << static_cast<int> (lineNr);
+
+        //  note() closes its stream before returning, so the line survives the
+        //  abort() that follows.
+        j37diag::note (text.toStdString());
+    }
+
     slog_func (tag, logLevel, logItemId, messageOrNull, lineNr, fileNameOrNull, userData);
-
-    if (! j37diag::enabled())
-        return;
-
-    juce::String text;
-    text << "sokol_gfx " << tag;
-
-    if (messageOrNull != nullptr)
-        text << ": " << messageOrNull;
-
-    text << " (id " << static_cast<int> (logItemId) << ')';
-
-    if (fileNameOrNull != nullptr)
-        text << " at " << fileNameOrNull << ':' << static_cast<int> (lineNr);
-
-    j37diag::note (text.toStdString());
 }
 
 #if defined (SOKOL_GLES3)
