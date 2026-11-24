@@ -172,6 +172,11 @@ require("if (! j37diag::enabled())" in sokol
 require("text << \"sokol_gfx \" << tag << ' ' << level;" in sokol,
         "the diagnostic trace line must carry the message severity, or a panic "
         "cannot be told from an informational message in a support report")
+require(sokol.index("j37diag::note (text.toStdString());")
+        < sokol.index("slog_func (tag, logLevel, logItemId, messageOrNull, lineNr,"
+                      " fileNameOrNull, userData);"),
+        "the trace must be written before slog_func, which aborts the process for "
+        "a panic and would otherwise swallow the only fatal line")
 
 shader_sources = {}
 for name in ("vertex", "fragment"):

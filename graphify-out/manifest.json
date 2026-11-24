@@ -785,9 +785,9 @@
     "semantic_hash": "dd9d77c77147f4a4624d360eaa005d4e"
   },
   "Source/GUI/NativeRenderer_Sokol.cpp": {
-    "mtime": 1795520782.8257954,
-    "seen": 1795520892.3330584,
-    "ast_hash": "3c82ddf57ad735e54ab091c201f68f36",
+    "mtime": 1795521158.7860315,
+    "seen": 1795521256.8608813,
+    "ast_hash": "55e576216feec1c053b46b70f85d5c4c",
     "semantic_hash": ""
   },
   "Source/GUI/NativeRenderer_Sokol.h": {
@@ -1844,9 +1844,9 @@
     "semantic_hash": "42afb586e24ab38ddd8f73335a3f0e94"
   },
   "tests/render_backend/check_render_backend.py": {
-    "mtime": 1795520787.9620514,
-    "seen": 1795520892.3344388,
-    "ast_hash": "ede480966f62f752b94296c68f7377ac",
+    "mtime": 1795521163.4430501,
+    "seen": 1795521256.862154,
+    "ast_hash": "22a14f4cb7037eea4c5b1d1541405780",
     "semantic_hash": ""
   },
   "tests/render_backend/juce_stub/JuceHeader.h": {
