@@ -1624,13 +1624,21 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     //  one part of the header that is not a control. It sat on SETTINGS before - a
     //  page of preferences, where nobody looks for the manual twice - and it was
     //  the fifth key of a row of four, which is why that row's cells were narrower
-    //  than the one below it. The clamp is against the grid, never the title: on a
-    //  window too narrow to hold both, the key yields.
-    guideButton.setBounds (juce::jmin (headerGridLeft - headerColumnGap
-                                          - headerGuideKeyWidth,
-                                      titleLabel.getRight() + 14),
-                           headerRowTwoY, headerGuideKeyWidth, switchHeight);
-    guideButton.setVisible (true);
+    //  than the one below it.
+    //
+    //  The key YIELDS rather than squeezes. Pushing it left when the grid comes close
+    //  would put it over the title, and shrinking it to whatever is left would put
+    //  "GUIDE" in a 20 px pill - so a header with no slack between the wordmark and
+    //  the switches shows no key at all, the same answer the phone layout gives for
+    //  the same reason. The floor is a measurement, not a guess: the title's right
+    //  edge plus the key's own width must still end a gap before the grid starts.
+    const auto guideLeft = titleLabel.getRight() + 14;
+    const auto guideFits = guideLeft + headerGuideKeyWidth <= headerGridLeft - headerColumnGap;
+
+    guideButton.setVisible (guideFits);
+
+    if (guideFits)
+        guideButton.setBounds (guideLeft, headerRowTwoY, headerGuideKeyWidth, switchHeight);
 
     // The renderer caption sits on the brand row's right end, ending one gap
     // before the switch grid: the row above the title is the only part of the
