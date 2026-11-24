@@ -157,6 +157,7 @@ void FirstAudioProcessorEditor::applyTheme() {
     // captioned grid: without this they keep the ivory ink on every other theme.
     uiSoundsLabel.setColour(juce::Label::textColourId, palette.secondary);
     parameterSheetLabel.setColour(juce::Label::textColourId, palette.secondary);
+    guideLabel.setColour(juce::Label::textColourId, palette.secondary);
     uiScaleLabel.setColour(juce::Label::textColourId, palette.secondary);
     // The renderer selector's caption is a settings row's caption like LANGUAGE's -
     // unstyled it would keep the ivory ink on the charcoal and metal panels.
@@ -302,6 +303,7 @@ void FirstAudioProcessorEditor::applyTheme() {
     stylePickerButton(loadNoiseButton);
     stylePickerButton(clearNoiseButton);
     stylePickerButton(parameterSheetButton);
+    stylePickerButton(guideButton);
     // The USER theme's editor key is an interface preference like PARAMETERS beside
     // it, and it takes the same raised pill. Without this line the key would keep the
     // constructor's ivory face on every dark panel - the exact defect the picker
@@ -422,6 +424,13 @@ void FirstAudioProcessorEditor::applyTheme() {
         parameterSheet.reset();
         if (wasOpen)
             toggleParameterSheet();
+    }
+
+    if (helpSheet != nullptr) {
+        const auto wasOpen = helpSheet->isOpen();
+        helpSheet.reset();
+        if (wasOpen)
+            toggleHelpSheet();
     }
 
     repaint();

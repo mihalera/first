@@ -1014,6 +1014,31 @@ juce::Font J37LookAndFeel::getPopupMenuFont()
     return j37panel::panelFont (12.0f);
 }
 
+namespace {
+int modelGlyphTileFor(const juce::ComboBox &box)
+{
+    const auto id = box.getComponentID();
+    const auto selected = box.getSelectedId() - 1;
+    if (selected < 0)
+        return -1;
+    if (id == "mibox.valve")
+        return selected < 6 ? 13 + selected : 19;
+    if (id == "mibox.pentode")
+        return selected < 4 ? 41 : 12;
+    if (id == "mibox.triode")
+        return selected < 4 ? 42 : 12;
+    if (id == "mibox.transistor")
+        return selected < 4 ? 43 : 12;
+    if (id == "mibox.transformer")
+        return selected < 5 ? 20 + selected : 25;
+    if (id == "mibox.digital")
+        return selected < 5 ? 26 + selected : 31;
+    if (id == "mibox.vinyl")
+        return selected < 6 ? 32 + selected : 38;
+    return -1;
+}
+} // namespace
+
 void J37LookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
 {
     // The panel's own height comes in through the camera (setPanelCamera, which
@@ -1024,7 +1049,9 @@ void J37LookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& lab
     const auto inset = comboTextInset (box.getHeight(), panelHeight);
 
     const auto swatchInset = box.getComponentID() == "mibox.tape_stock" ? 23 : 0;
-    label.setBounds(inset + swatchInset, 1, juce::jmax(0, box.getWidth() - 30 - swatchInset),
+    const auto glyphInset = modelGlyphTileFor(box) >= 0 ? 22 : 0;
+    label.setBounds(inset + swatchInset + glyphInset, 1,
+                    juce::jmax(0, box.getWidth() - 30 - swatchInset - glyphInset),
                     box.getHeight() - 2);
     label.setFont (getComboBoxFont (box));
 }
@@ -1041,20 +1068,38 @@ void J37LookAndFeel::drawComboBox(juce::Graphics &g,
     juce::LookAndFeel_V4::drawComboBox(g, width, height, isButtonDown, buttonX, buttonY, buttonW,
                                        buttonH, box);
 
-    if (box.getComponentID() != "mibox.tape_stock")
+    if (box.getComponentID() == "mibox.tape_stock")
+    {
+        const auto tile = box.getSelectedId() - 1;
+        const auto &atlas = j37panel::assets::cachedImage("tape_stock_swatches_png");
+        if (juce::isPositiveAndBelow(tile, 13) && atlas.isValid() && atlas.getWidth() >= 1014 &&
+            atlas.getHeight() >= 128)
+        {
+            const auto left = juce::jlimit(2, 8, height / 6);
+            const auto top = juce::jmax(2, height / 8);
+            const auto swatchWidth = juce::jmin(18, juce::jmax(10, height / 2));
+            const auto swatchHeight = juce::jmax(1, height - top * 2);
+            g.drawImage(atlas, left, top, swatchWidth, swatchHeight, tile * 78, 0, 78, 128, true);
+        }
+    }
+
+    // A model selector carries its own machine glyph from the machine_models
+    // atlas: the tile index is a function of the box id and the selected entry,
+    // so the glyph follows the value the way the tape swatch does.
+    const auto modelTile = modelGlyphTileFor(box);
+    if (modelTile < 0)
         return;
 
-    const auto tile = box.getSelectedId() - 1;
-    const auto &atlas = j37panel::assets::cachedImage("tape_stock_swatches_png");
-    if (!juce::isPositiveAndBelow(tile, 13) || !atlas.isValid() || atlas.getWidth() < 1014 ||
-        atlas.getHeight() < 128)
+    const auto &modelAtlas = j37panel::assets::cachedImage("machine_models_png");
+    if (!modelAtlas.isValid() || modelAtlas.getWidth() < 512 || modelAtlas.getHeight() < 512)
         return;
 
+    const auto glyphSize = juce::jmin(18, juce::jmax(12, height / 2));
     const auto left = juce::jlimit(2, 8, height / 6);
-    const auto top = juce::jmax(2, height / 8);
-    const auto swatchWidth = juce::jmin(18, juce::jmax(10, height / 2));
-    const auto swatchHeight = juce::jmax(1, height - top * 2);
-    g.drawImage(atlas, left, top, swatchWidth, swatchHeight, tile * 78, 0, 78, 128, true);
+    const auto top = juce::jmax(2, (height - glyphSize) / 2);
+    g.setColour(juce::Colours::white);
+    g.drawImage(modelAtlas, left, top, glyphSize, glyphSize,
+                (modelTile % 8) * 64, (modelTile / 8) * 64, 64, 64, true);
 }
 
 //==============================================================================
@@ -1089,6 +1134,50 @@ void J37LookAndFeel::drawLabel (juce::Graphics& g, juce::Label& label)
                    : label.getFont());
 
     auto area = label.getLocalBounds().toFloat();
+
+    // Each control's caption carries its own glyph from the parameter atlas. The
+    // label's id is the control's parameter id (set in EditorSetup), which is the
+    // atlas's fixed key, so the tile index is the controlSpecs position - the
+    // same order asset_catalog.json and check_assets.py agree on.
+    const auto controlID = label.getComponentID();
+    int controlIndex = -1;
+    if (controlID.isNotEmpty())
+    {
+        for (int i = 0; i < static_cast<int> (controlCount); ++i)
+            if (controlID == j37panel::controlSpecs[static_cast<std::size_t>(i)].id)
+            {
+                controlIndex = i;
+                break;
+            }
+    }
+    if (controlIndex >= 0)
+    {
+        const auto &glyphs = j37panel::assets::cachedImage("parameter_glyphs_png");
+        constexpr int atlasColumns = 8;
+        constexpr int tileSize = 64;
+        const auto tileCount = glyphs.isValid() && glyphs.getWidth() % tileSize == 0
+                                  && glyphs.getHeight() % tileSize == 0
+                                      ? (glyphs.getWidth() / tileSize)
+                                            * (glyphs.getHeight() / tileSize)
+                                      : 0;
+        if (controlIndex < tileCount)
+        {
+            const auto glyphSide = juce::jlimit(9.0f, 13.0f, area.getHeight() - 3.0f);
+            if (area.getWidth() >= glyphSide + 14.0f)
+            {
+                g.setColour(ink.withAlpha(ink.getAlpha()
+                                           * (label.isEnabled() ? 0.75f : 0.35f)));
+                g.drawImage(glyphs,
+                            juce::roundToInt(area.getX() + 1.0f),
+                            juce::roundToInt(area.getY() + (area.getHeight() - glyphSide) * 0.5f),
+                            juce::roundToInt(glyphSide), juce::roundToInt(glyphSide),
+                            (controlIndex % atlasColumns) * tileSize,
+                            (controlIndex / atlasColumns) * tileSize,
+                            tileSize, tileSize, true);
+                area.removeFromLeft(glyphSide + 3.0f);
+            }
+        }
+    }
 
     // A list's value is a FIELD, not a paragraph. The deck's boxes are 30-36 px tall,
     // and once the landscape rows grew past one line's worth of height "Master Bus"

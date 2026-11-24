@@ -423,6 +423,19 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
         }
     }
 
+    // The brand's square lockup, sitting in the header's left margin ahead of the
+    // copper rule. A build without the atlas simply leaves the margin empty.
+    if (! j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
+    {
+        const auto &lockups = j37panel::assets::cachedImage("brand_lockups_png");
+        if (lockups.isValid() && lockups.getWidth() >= 128 && lockups.getHeight() >= 128)
+        {
+            g.setColour(juce::Colours::white);
+            g.drawImage(lockups, layout.header.getX() + 4, layout.header.getY() + 8,
+                        12, 12, 0, 0, 128, 128, true);
+        }
+    }
+
     // The brand's copper rule: a 3 px accent bar to the LEFT of the brand strip and
     // the title, which start 26 px and 25 px in on the desktop header. The phone
     // header has no brand strip and starts the title 4 px in, so the same bar ran

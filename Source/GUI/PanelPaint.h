@@ -32,6 +32,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "GUI/PanelAssets.h"
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -776,6 +777,18 @@ inline juce::Font shrinkingFont(const juce::String &text,
 // and a cross whose flutes each carry a lit lip, because a groove with a lit
 // lip has depth and a groove painted flat does not.
 inline void drawScrew(juce::Graphics &g, float x, float y, const UiPalette &palette) {
+    // The hand-drawn screw is the fallback; when the hardware_details atlas is
+    // present, its first tile (hardware.screw) is the same head at higher
+    // fidelity. Tinted by the panel's metal so it follows the theme.
+    const auto &atlas = j37panel::assets::cachedImage("hardware_details_png");
+    if (atlas.isValid() && atlas.getWidth() >= 64 && atlas.getHeight() >= 64)
+    {
+        g.setColour(palette.knobEdge);
+        g.drawImage(atlas, juce::roundToInt(x - 4.0f), juce::roundToInt(y - 4.0f), 8, 8,
+                    0, 0, 64, 64, true);
+        return;
+    }
+
     const auto r = 3.2f;
     const auto reach = r * 0.66f;
 

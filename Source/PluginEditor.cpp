@@ -1430,6 +1430,13 @@ void FirstAudioProcessorEditor::resized()
         parameterSheet->setVisible (parameterSheetWasOpen);
     }
 
+    const auto helpSheetWasOpen = helpSheet != nullptr && helpSheet->isOpen();
+    if (helpSheet != nullptr)
+    {
+        helpSheet->setBounds (getLocalBounds());
+        helpSheet->setVisible (helpSheetWasOpen);
+    }
+
     // The native scene adapter sizes its swapchain from the same numbers its
     // setup used; without this the surface and the frame would disagree about
     // the viewport the moment the window is dragged.
@@ -2996,6 +3003,8 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
     antiPhaseGuardButton.setVisible (geometry.settingsTab);
     parameterSheetButton.setVisible (geometry.settingsTab);
     parameterSheetLabel.setVisible (geometry.settingsTab);
+    guideButton.setVisible (geometry.settingsTab);
+    guideLabel.setVisible (geometry.settingsTab);
     uiScaleLabel.setVisible (geometry.settingsTab);
     uiScaleBox.setVisible (geometry.settingsTab);
     // The USER theme's colour key rides SETTINGS's first band, beside OVERSAMPLING -
@@ -3204,6 +3213,7 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
         placeSetting (backendLabel,         backendBox,          1, 0, fullRow);
         placeSetting (userThemeLabel,       userThemeButton,     2, 0, fullRow);
         placeSetting (parameterSheetLabel,  parameterSheetButton, 3, 0, fullRow);
+         placeSetting (guideLabel,           guideButton,          4, 0, fullRow);
 
         // Row two: the language, the interface sounds, the guard and the panel's
         // own working scale - the four things that describe how it behaves while
@@ -3614,6 +3624,8 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             { "guardBtn",       &antiPhaseGuardButton },
             { "paramSheetLbl",  &parameterSheetLabel },
             { "paramSheet",     &parameterSheetButton },
+            { "guideLbl",       &guideLabel },
+            { "guideBtn",       &guideButton },
             // The USER theme's caption and colour key, in SETTINGS's first band.
             // They are here because this list is the one place a hand-placed switch
             // has to be named to be covered: the key shares its page with the four

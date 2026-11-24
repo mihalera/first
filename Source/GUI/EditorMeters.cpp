@@ -65,6 +65,33 @@ void FirstAudioProcessorEditor::PresetArtworkBadge::paint (juce::Graphics& g)
         }
     }
 
+    // The preset's category glyph, read from the live instrument profile: Master
+    // Bus -> mixing, Vocal -> vocals, Bass -> bass, Guitar -> guitar, Piano -> keys,
+    // Drums -> drums. Drawn as a small chip in the corner so it does not fight the
+    // preset artwork. The atlas's remaining two categories are reserved for a
+    // future explicit preset-category field.
+    const auto &categoryAtlas = j37panel::assets::cachedImage("preset_categories_png");
+    if (categoryAtlas.isValid() && categoryAtlas.getWidth() >= 512 && categoryAtlas.getHeight() >= 64)
+    {
+        const auto *instrumentValue = processor.parameters.getRawParameterValue("instrument");
+        const auto instrument = instrumentValue != nullptr
+                                    ? juce::jlimit(0, 5, juce::roundToInt(instrumentValue->load()))
+                                    : 0;
+        constexpr int categoryTile[] = { 0, 3, 4, 5, 6, 2 };
+        const auto tile = categoryTile[instrument];
+        const auto chip = juce::jlimit(8.0f, 14.0f, bounds.getWidth() * 0.28f);
+        const auto chipRect = juce::Rectangle<float>(bounds.getRight() - chip - 2.0f,
+                                                     bounds.getBottom() - chip - 2.0f,
+                                                     chip, chip);
+        g.setColour(palette.raised.darker(0.2f).withAlpha(0.85f));
+        g.fillRoundedRectangle(chipRect, 2.0f);
+        g.setColour(palette.text.withAlpha(0.9f));
+        g.drawImage(categoryAtlas,
+                    juce::roundToInt(chipRect.getX()), juce::roundToInt(chipRect.getY()),
+                    juce::roundToInt(chipRect.getWidth()), juce::roundToInt(chipRect.getHeight()),
+                    tile * 64, 0, 64, 64, true);
+    }
+
     g.setColour (palette.border.withAlpha (0.9f));
     g.drawRoundedRectangle (bounds.reduced (0.5f), 3.0f, 0.75f);
 }
@@ -225,6 +252,29 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     g.fillRoundedRectangle (bounds, 5.0f);
     g.setColour (palette.border.withAlpha (0.9f));
     g.drawRoundedRectangle (bounds.reduced (0.5f), 5.0f, 1.0f);
+
+    // The meter's own status glyph: input or output, from the meter_status atlas.
+    // The title stays centred; the glyph sits in the left margin and the clipping
+    // indicator in the right margin, so neither competes with the reading.
+    const auto &meterAtlas = j37panel::assets::cachedImage("meter_status_png");
+    if (meterAtlas.isValid() && meterAtlas.getWidth() >= 512 && meterAtlas.getHeight() >= 256)
+    {
+        const auto glyphSide = juce::jlimit(10, 16, juce::roundToInt(14.0f * textScale));
+        const auto tile = title.equalsIgnoreCase("OUTPUT") ? 1 : 0;
+        g.setColour(palette.text.withAlpha(0.85f));
+        g.drawImage(meterAtlas,
+                    titleBand.getX() + 4, titleBand.getCentreY() - glyphSide / 2,
+                    glyphSide, glyphSide,
+                    (tile % 8) * 64, (tile / 8) * 64, 64, 64, true);
+        if (clipping)
+        {
+            g.setColour(juce::Colour::fromRGB(208, 82, 58));
+            g.drawImage(meterAtlas,
+                        titleBand.getRight() - 4 - glyphSide, titleBand.getCentreY() - glyphSide / 2,
+                        glyphSide, glyphSide,
+                        (6 % 8) * 64, (6 / 8) * 64, 64, 64, true);
+        }
+    }
 
     g.setColour (palette.text);
     g.setFont (j37panel::panelFont (10.5f * textScale, juce::Font::bold));

@@ -50,6 +50,7 @@
 // without the CPM dependency tree (the JUCE-only harness) the class is a stub
 // with `available == false` and the editor does not offer the button.
 #include "GUI/ParameterSheet.h"
+#include "GUI/HelpSheet.h"
 
 // The panel's tooltip window. juce::TooltipWindow shows the NEXT control's tip
 // at once while one is on screen; DwellTooltipWindow applies the dwell on every
@@ -1011,6 +1012,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
         the constructor's phases: nothing in the panel is built from it, and the
         layout harness checks that the phase block and the constructor agree. */
     void toggleParameterSheet();
+    void toggleHelpSheet();
 
     // Declared FIRST so it is destroyed LAST, after every other member below has
     // gone: the teardown trace then covers the window's children, look-and-feels
@@ -1148,6 +1150,10 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     juce::TextButton parameterSheetButton{"OPEN"};
     juce::Label parameterSheetLabel;
     std::unique_ptr<j37panel::ParameterSheet> parameterSheet;
+
+    juce::TextButton guideButton{"OPEN"};
+    juce::Label guideLabel;
+    std::unique_ptr<j37panel::HelpSheet> helpSheet;
 
     // -----------------------------------------------------------------------
     //  The asynchronous file pickers.

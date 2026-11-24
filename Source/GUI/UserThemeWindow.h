@@ -277,11 +277,21 @@ class UserThemePane final : public juce::Component {
                    header.reduced(14, 0).withTrimmedTop(20), juce::Justification::centredLeft,
                    false);
 
-        // The optional brand mark, right-aligned in the header. It is the one
-        // place on this window with room for a signature, and a build without the
-        // asset simply has the empty end of the band - the window never draws a
-        // placeholder box, which is what a missing image looks like.
-        if (const auto &mark = j37panel::assets::cachedImage("brand_mark_png"); mark.isValid()) {
+        // The brand lockup, right-aligned in the header. Reversed on a dark palette,
+        // horizontal on a light one, so it stays legible; a build without the atlas
+        // falls back to the brand mark, then to nothing.
+        const auto &lockups = j37panel::assets::cachedImage("brand_lockups_png");
+        const auto dark = palette.background.getPerceivedBrightness() < 0.5f;
+        const int lockupTile = dark ? 3 : 1;
+        if (lockups.isValid() && lockups.getWidth() >= 512 && lockups.getHeight() >= 128)
+        {
+            const auto side = juce::jmin(userThemeHeaderHeight - 12, 34);
+            g.setColour(juce::Colours::white);
+            g.drawImage(lockups, getWidth() - 14 - side, 6, side, side,
+                        lockupTile * 128, 0, 128, 128, true);
+        }
+        else if (const auto &mark = j37panel::assets::cachedImage("brand_mark_png"); mark.isValid())
+        {
             const auto side = juce::jmin(userThemeHeaderHeight - 12, 34);
             g.drawImageWithin(mark, getWidth() - 14 - side, 6, side, side,
                               juce::RectanglePlacement::centred, false);

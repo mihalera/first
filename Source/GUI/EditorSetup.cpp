@@ -782,6 +782,8 @@ void FirstAudioProcessorEditor::setUpControlStrip() {
         configureControlSlider(slider, id);
 
         controlLabels[i].setText(controlNames[static_cast<int>(i)], juce::dontSendNotification);
+        controlLabels[i].setComponentID(controlIds[static_cast<int>(i)]);
+        controlLabels[i].setLookAndFeel(&customLookAndFeel);
         controlLabels[i].setFont (j37panel::panelFont (9.5f, juce::Font::bold));
         controlLabels[i].setJustificationType(juce::Justification::centred);
         controlLabels[i].setInterceptsMouseClicks(false, false);
@@ -922,12 +924,19 @@ void FirstAudioProcessorEditor::setUpDeckSelectors() {
     tapeTypeBox.addItemList(tapeStockNameList(), 1);
     tapeTypeBox.setComponentID("mibox.tape_stock");
     valveTypeBox.addItemList(valveTypeNameList(), 1);
+    valveTypeBox.setComponentID("mibox.valve");
     pentodeTypeBox.addItemList(pentodeTypeNameList(), 1);
+    pentodeTypeBox.setComponentID("mibox.pentode");
     triodeTypeBox.addItemList(triodeTypeNameList(), 1);
+    triodeTypeBox.setComponentID("mibox.triode");
     transistorTypeBox.addItemList(transistorTypeNameList(), 1);
+    transistorTypeBox.setComponentID("mibox.transistor");
     transformerTypeBox.addItemList(transformerTypeNameList(), 1);
+    transformerTypeBox.setComponentID("mibox.transformer");
     digitalTypeBox.addItemList(digitalTypeNameList(), 1);
+    digitalTypeBox.setComponentID("mibox.digital");
     vinylTypeBox.addItemList(vinylTypeNameList(), 1);
+    vinylTypeBox.setComponentID("mibox.vinyl");
     //  The lists carry the same entries, in the same order, as the choice
     //  parameters beside them - OFF last, because the index is the preset ABI.
     vinylSpeedBox.addItemList(juce::StringArray{"33 RPM", "45 RPM", "78 RPM", "Off"}, 1);
@@ -1665,6 +1674,26 @@ void FirstAudioProcessorEditor::setUpSettingsSwitches() {
     addAndMakeVisible(parameterSheetButton);
 
     // ---------------------------------------------------------------
+    //  GUIDE - opens the guide sheet: the signal path diagram and the four
+    //  help scenes. Always available: every image is optional and the sheet
+    //  falls back to captions when an asset is absent.
+    // ---------------------------------------------------------------
+    guideButton.setLookAndFeel(&inlineLookAndFeel);
+    styleLabel(guideLabel, xlat("GUIDE"), 9.0f, paletteFor(false).secondary, true,
+               juce::Justification::left);
+    addAndMakeVisible(guideLabel);
+    guideButton.setButtonText(xlat("OPEN"));
+    guideButton.setColour(juce::TextButton::buttonColourId, paletteFor(false).raised);
+    guideButton.setColour(juce::TextButton::textColourOffId, paletteFor(false).text);
+    guideButton.setColour(juce::TextButton::buttonOnColourId,
+                         paletteFor(false).raised.darker(0.15f));
+    setTip(guideButton, "GUIDE - opens the guide sheet: the signal path diagram, "
+                        "A/B comparison, the preset workflow and loading a model or "
+                        "impulse response. Escape or CLOSE returns to the panel.");
+    guideButton.onClick = [this] { toggleHelpSheet(); };
+    addAndMakeVisible(guideButton);
+
+    // ---------------------------------------------------------------
     //  UI SCALE - the panel's working size, in SETTINGS's second band.
     //
     //  Six stops rather than a slider: the layout has a real floor (the six deck
@@ -1777,6 +1806,22 @@ void FirstAudioProcessorEditor::toggleParameterSheet() {
     parameterSheet->setBounds(getLocalBounds());
     parameterSheet->toFront(true);
     parameterSheet->open();
+}
+
+void FirstAudioProcessorEditor::toggleHelpSheet() {
+    if (helpSheet == nullptr) {
+        helpSheet = std::make_unique<j37panel::HelpSheet>(paletteForTheme(themeChoice));
+        addAndMakeVisible(*helpSheet);
+    }
+
+    if (helpSheet->isOpen()) {
+        helpSheet->close();
+        return;
+    }
+
+    helpSheet->setBounds(getLocalBounds());
+    helpSheet->toFront(true);
+    helpSheet->open();
 }
 
 void FirstAudioProcessorEditor::setUpModelButtons() {
