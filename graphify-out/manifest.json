@@ -146,8 +146,8 @@
     "ast_empty": true
   },
   "Assets/asset_catalog.json": {
-    "mtime": 1795452536.6293678,
-    "seen": 1795452563.0655613,
+    "mtime": 1795520455.5628006,
+    "seen": 1795520892.332389,
     "ast_hash": "98d21e228c65f4b606a66b30df1d7a5d",
     "semantic_hash": ""
   },
@@ -158,9 +158,9 @@
     "semantic_hash": ""
   },
   "Assets/manifest.json": {
-    "mtime": 1795452071.9573457,
-    "seen": 1795452563.0655935,
-    "ast_hash": "2003de870c7e169d9f51a1a9d70d0c86",
+    "mtime": 1795505887.1991382,
+    "seen": 1795520892.332404,
+    "ast_hash": "f0309cd705470dbe4bdd68597ad76d1b",
     "semantic_hash": ""
   },
   "Source/DSP/AmpVoicing.h": {
@@ -380,9 +380,9 @@
     "language": "language=.cpp"
   },
   "Source/DSP/NoiseLoader.h": {
-    "mtime": 1795292781.5196207,
-    "seen": 1795359787.9258444,
-    "ast_hash": "61ec8f78cb74786bb46329222ce0395f",
+    "mtime": 1795465187.563485,
+    "seen": 1795520892.3326464,
+    "ast_hash": "947e1100fbb1d6fd7f6792e3c1ecc75c",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
@@ -663,15 +663,15 @@
     "language": "language=.cpp"
   },
   "Source/GUI/EditorMeters.cpp": {
-    "mtime": 1795462440.661404,
-    "seen": 1795462490.2759435,
-    "ast_hash": "1447751e73dbef6c3a1fd980938a99cc",
+    "mtime": 1795505760.0701425,
+    "seen": 1795520892.332925,
+    "ast_hash": "af14fab37133611195810c5ade172cb8",
     "semantic_hash": ""
   },
   "Source/GUI/EditorPaint.cpp": {
-    "mtime": 1795452650.8480515,
-    "seen": 1795462490.2759516,
-    "ast_hash": "581e186c3a3e213793a818ad073213fb",
+    "mtime": 1795506016.84934,
+    "seen": 1795520892.332932,
+    "ast_hash": "25781503bedc9462f5a0f9cb721610a9",
     "semantic_hash": ""
   },
   "Source/GUI/EditorPreferences.h": {
@@ -682,27 +682,27 @@
     "language": "language=.cpp"
   },
   "Source/GUI/EditorSetup.cpp": {
-    "mtime": 1795451407.8918858,
-    "seen": 1795452563.0662787,
-    "ast_hash": "2a7018eed176a30b5b63f104dab2f53d",
+    "mtime": 1795505819.9694884,
+    "seen": 1795520892.3329453,
+    "ast_hash": "e2081d1955b62a363f8cdbbb4f3a8505",
     "semantic_hash": ""
   },
   "Source/GUI/EditorTheme.cpp": {
-    "mtime": 1795452651.2575088,
-    "seen": 1795462490.275974,
-    "ast_hash": "0972c16f08ec9cdb3364024d1e196175",
+    "mtime": 1795505866.6855586,
+    "seen": 1795520892.3329515,
+    "ast_hash": "dd3767aa9863432e65c5531ea5e674be",
     "semantic_hash": ""
   },
   "Source/GUI/EditorTimer.cpp": {
-    "mtime": 1795366551.6066976,
-    "seen": 1795375070.2879837,
-    "ast_hash": "c4a421ea572548b13b3db41278b36dd6",
+    "mtime": 1795465001.6419992,
+    "seen": 1795520892.3329577,
+    "ast_hash": "88d75db13df7903ffd16e35dd795329f",
     "semantic_hash": ""
   },
   "Source/GUI/J37LookAndFeel.cpp": {
-    "mtime": 1795452651.3975856,
-    "seen": 1795462490.2759888,
-    "ast_hash": "7d396004ff53532b01f8f33261129a9b",
+    "mtime": 1795505956.6518786,
+    "seen": 1795520892.3329716,
+    "ast_hash": "d48ee0a4c5d8a438775c2f2680e4f982",
     "semantic_hash": ""
   },
   "Source/GUI/KnobMetrics.h": {
@@ -785,9 +785,9 @@
     "semantic_hash": "dd9d77c77147f4a4624d360eaa005d4e"
   },
   "Source/GUI/NativeRenderer_Sokol.cpp": {
-    "mtime": 1795449985.6021278,
-    "seen": 1795452563.0664387,
-    "ast_hash": "dfe978ca9fdd8ea4bd5eac1fd7bb5c47",
+    "mtime": 1795520782.8257954,
+    "seen": 1795520892.3330584,
+    "ast_hash": "3c82ddf57ad735e54ab091c201f68f36",
     "semantic_hash": ""
   },
   "Source/GUI/NativeRenderer_Sokol.h": {
@@ -839,9 +839,9 @@
     "language": "language=.cpp"
   },
   "Source/GUI/PanelPaint.h": {
-    "mtime": 1795432732.7592075,
-    "seen": 1795432948.8609838,
-    "ast_hash": "b9483fd6becaff9cd52b49a87f89c446",
+    "mtime": 1795505724.0908399,
+    "seen": 1795520892.3331227,
+    "ast_hash": "5f28c13b1f64e6112c73fc75fa680c8c",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
@@ -988,9 +988,9 @@
     "semantic_hash": "65848bf02e08486cfb8ce84e6021fced"
   },
   "Source/GUI/UserThemeWindow.h": {
-    "mtime": 1795452650.729214,
-    "seen": 1795462490.2763155,
-    "ast_hash": "8f121988d0d759dba57c362da602936a",
+    "mtime": 1795506019.3514888,
+    "seen": 1795520892.3332758,
+    "ast_hash": "3b55fe09b51809bab4aa32e5fe5ec72b",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
@@ -1029,15 +1029,15 @@
     "semantic_hash": ""
   },
   "Source/PluginEditor.cpp": {
-    "mtime": 1795452651.550757,
-    "seen": 1795462490.276393,
-    "ast_hash": "bd6e7358a4b57fca112c94ea82fab8a3",
+    "mtime": 1795505854.2766259,
+    "seen": 1795520892.333334,
+    "ast_hash": "71c61392bb0463181b77f2e72db7f147",
     "semantic_hash": ""
   },
   "Source/PluginEditor.h": {
-    "mtime": 1795452730.5453637,
-    "seen": 1795462490.2764108,
-    "ast_hash": "951a9e0fd14a45a45e2664f4fbf4f4c0",
+    "mtime": 1795505800.5383117,
+    "seen": 1795520892.3333423,
+    "ast_hash": "8d5810005723562d22e7f415d9eea519",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
@@ -1455,9 +1455,9 @@
     "semantic_hash": "25f2bf421acfc48c8f6ca6b3b3089bdd"
   },
   "skills-lock.json": {
-    "mtime": 1795462399.8311715,
-    "seen": 1795462490.276955,
-    "ast_hash": "2eeca0217a3eee22eeb66452e2d18641",
+    "mtime": 1795463367.174456,
+    "seen": 1795520892.3338099,
+    "ast_hash": "e1f83f8c1dedf8c90f6dcbed05dd1fa2",
     "semantic_hash": ""
   },
   "tests/android/check_android_apk.py": {
@@ -1844,9 +1844,9 @@
     "semantic_hash": "42afb586e24ab38ddd8f73335a3f0e94"
   },
   "tests/render_backend/check_render_backend.py": {
-    "mtime": 1795449985.6388237,
-    "seen": 1795452563.068122,
-    "ast_hash": "4590bda632859473f860c9d29b4d9b8c",
+    "mtime": 1795520787.9620514,
+    "seen": 1795520892.3344388,
+    "ast_hash": "ede480966f62f752b94296c68f7377ac",
     "semantic_hash": ""
   },
   "tests/render_backend/juce_stub/JuceHeader.h": {
@@ -2833,9 +2833,9 @@
     "semantic_hash": ""
   },
   "docs/asset-plan.md": {
-    "mtime": 1795451886.5709054,
-    "seen": 1795452563.0696971,
-    "ast_hash": "773df55161b48719f29828515a888880",
+    "mtime": 1795520286.8177762,
+    "seen": 1795520892.3360398,
+    "ast_hash": "19af9d7dd297e99dd0d800507c9eb56b",
     "semantic_hash": ""
   },
   "docs/diagnostics.md": {
@@ -2917,8 +2917,8 @@
     "semantic_hash": ""
   },
   "Assets/brand_lockups.png": {
-    "mtime": 1795452536.2162647,
-    "seen": 1795452563.0698445,
+    "mtime": 1795520455.1694138,
+    "seen": 1795520892.336152,
     "ast_hash": "bcee5fe453cad616e463fd05b5fa4626",
     "semantic_hash": ""
   },
@@ -2929,32 +2929,32 @@
     "semantic_hash": ""
   },
   "Assets/factory_preset_art.png": {
-    "mtime": 1795452536.1981952,
-    "seen": 1795452563.0698726,
+    "mtime": 1795520455.1518817,
+    "seen": 1795520892.336171,
     "ast_hash": "9f68c539683059a2a81e89ef7f664fa9",
     "semantic_hash": ""
   },
   "Assets/hardware_details.png": {
-    "mtime": 1795452536.179612,
-    "seen": 1795452563.0698807,
+    "mtime": 1795520455.134868,
+    "seen": 1795520892.336177,
     "ast_hash": "a714b938d5374f94445918d677e1da0d",
     "semantic_hash": ""
   },
   "Assets/help_illustrations.png": {
-    "mtime": 1795452536.257941,
-    "seen": 1795452563.0698895,
+    "mtime": 1795520455.2079432,
+    "seen": 1795520892.3361838,
     "ast_hash": "58d0723f8023f2ecc003cd71f8d0dbaf",
     "semantic_hash": ""
   },
   "Assets/machine_models.png": {
-    "mtime": 1795452536.1428466,
-    "seen": 1795452563.0699143,
+    "mtime": 1795520455.1008208,
+    "seen": 1795520892.3362024,
     "ast_hash": "fab5d8b16707e15bea28af9eaa5b1a79",
     "semantic_hash": ""
   },
   "Assets/meter_status.png": {
-    "mtime": 1795452536.162997,
-    "seen": 1795452563.069923,
+    "mtime": 1795520455.1188269,
+    "seen": 1795520892.336208,
     "ast_hash": "8986d7aab11f7ae8c67505d022527000",
     "semantic_hash": ""
   },
@@ -2971,14 +2971,14 @@
     "semantic_hash": ""
   },
   "Assets/parameter_glyphs.png": {
-    "mtime": 1795452536.1126068,
-    "seen": 1795452563.069948,
+    "mtime": 1795520455.0718,
+    "seen": 1795520892.3362281,
     "ast_hash": "f4c6b905b4753034074c9a9fc15ce8e5",
     "semantic_hash": ""
   },
   "Assets/preset_categories.png": {
-    "mtime": 1795452536.168557,
-    "seen": 1795452563.069956,
+    "mtime": 1795520455.1243598,
+    "seen": 1795520892.3362346,
     "ast_hash": "2424da34c8764cad2e8b6bcf224c7249",
     "semantic_hash": ""
   },
@@ -2989,14 +2989,14 @@
     "semantic_hash": ""
   },
   "Assets/signal_path.png": {
-    "mtime": 1795452536.62526,
-    "seen": 1795452563.0699806,
+    "mtime": 1795520455.5592992,
+    "seen": 1795520892.336253,
     "ast_hash": "69ee783641e23850ac9575635a362447",
     "semantic_hash": ""
   },
   "Assets/ui_icons.png": {
-    "mtime": 1795452536.049939,
-    "seen": 1795452563.0700119,
+    "mtime": 1795520455.0148244,
+    "seen": 1795520892.3362777,
     "ast_hash": "72a14df50222cb9287f8f42108456a0d",
     "semantic_hash": ""
   },
@@ -3178,56 +3178,56 @@
     "semantic_hash": ""
   },
   "Assets/deck_plate.png": {
-    "mtime": 1795452536.3620424,
-    "seen": 1795452563.0698624,
+    "mtime": 1795520455.3085725,
+    "seen": 1795520892.336165,
     "ast_hash": "189b275ed6a19b18dbda20956a504664",
     "semantic_hash": ""
   },
   "Assets/knob_caps.png": {
-    "mtime": 1795452536.3131678,
-    "seen": 1795452563.069898,
+    "mtime": 1795520455.2605093,
+    "seen": 1795520892.33619,
     "ast_hash": "164545c68dbf99a8ef75afa5d8961797",
     "semantic_hash": ""
   },
   "Assets/level_scale.png": {
-    "mtime": 1795452536.3237486,
-    "seen": 1795452563.0699062,
+    "mtime": 1795520455.2715123,
+    "seen": 1795520892.3361964,
     "ast_hash": "e598a8f5bb126a7a8587a813e3409c01",
     "semantic_hash": ""
   },
   "Assets/rack_pedals.png": {
-    "mtime": 1795452536.4061973,
-    "seen": 1795452563.0699728,
+    "mtime": 1795520455.3511124,
+    "seen": 1795520892.336247,
     "ast_hash": "63fbd7c94a8bf2903e4d2848d09d6e47",
     "semantic_hash": ""
   },
   "Assets/spindown_blur.png": {
-    "mtime": 1795452536.5899374,
-    "seen": 1795452563.069988,
+    "mtime": 1795520455.5252516,
+    "seen": 1795520892.3362591,
     "ast_hash": "937c75eaa6c9ceb7f02c1947aef4f396",
     "semantic_hash": ""
   },
   "Assets/tape_stock_swatches.png": {
-    "mtime": 1795452536.4197736,
-    "seen": 1795452563.0699959,
+    "mtime": 1795520455.363624,
+    "seen": 1795520892.3362658,
     "ast_hash": "18b096d3ff5bc0a40c07bb4657eba26a",
     "semantic_hash": ""
   },
   "Assets/tube_glow_maps.png": {
-    "mtime": 1795452536.4322996,
-    "seen": 1795452563.0700042,
+    "mtime": 1795520455.3756328,
+    "seen": 1795520892.3362715,
     "ast_hash": "94eb51da5ef70a8cf5504b3e803c5326",
     "semantic_hash": ""
   },
   "Assets/vu_needle_profile.png": {
-    "mtime": 1795452536.4338024,
-    "seen": 1795452563.070019,
+    "mtime": 1795520455.3771331,
+    "seen": 1795520892.3362844,
     "ast_hash": "24dd5341e4a979b884fa57f2a5ea9dd8",
     "semantic_hash": ""
   },
   "Assets/wear_and_patina.png": {
-    "mtime": 1795452536.5858762,
-    "seen": 1795452563.070026,
+    "mtime": 1795520455.5212514,
+    "seen": 1795520892.3362906,
     "ast_hash": "a4f75e1e76a67731ccbc05a46fa498a7",
     "semantic_hash": ""
   },
@@ -3842,5 +3842,12 @@
     "seen": 1795462490.2792368,
     "ast_hash": "397857254c38b0323a828502976e9b0f",
     "semantic_hash": ""
+  },
+  "Source/GUI/HelpSheet.h": {
+    "mtime": 1795506030.7883902,
+    "seen": 1795520892.3329647,
+    "ast_hash": "d5192903248f6a3b3241c32497ec12d6",
+    "semantic_hash": "",
+    "language": "language=.cpp"
   }
 }

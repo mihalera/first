@@ -169,6 +169,9 @@ require("#include <sokol_log.h>" in sokol_impl and "SOKOL_IMPL" in sokol_impl,
 require("if (! j37diag::enabled())" in sokol
         and "j37diag::note (text.toStdString());" in sokol,
         "Sokol's log must also reach the diagnostic trace, and only when it is on")
+require("text << \"sokol_gfx \" << tag << ' ' << level;" in sokol,
+        "the diagnostic trace line must carry the message severity, or a panic "
+        "cannot be told from an informational message in a support report")
 
 shader_sources = {}
 for name in ("vertex", "fragment"):
