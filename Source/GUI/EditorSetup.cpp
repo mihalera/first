@@ -1675,18 +1675,14 @@ void FirstAudioProcessorEditor::setUpSettingsSwitches() {
 
     // ---------------------------------------------------------------
     //  GUIDE - opens the guide sheet: the signal path diagram and the four
-    //  help scenes. Always available: every image is optional and the sheet
-    //  falls back to captions when an asset is absent.
+    //  help scenes. It belongs to the HEADER, beside the title, and the
+    //  placement lives in placeHeader(): the sheet is documentation about the
+    //  machine rather than one of its preferences, and a page of settings is
+    //  not where a reader looks for the manual. Always present: every image is
+    //  optional and the sheet falls back to captions when an asset is absent.
     // ---------------------------------------------------------------
-    guideButton.setLookAndFeel(&inlineLookAndFeel);
-    styleLabel(guideLabel, xlat("GUIDE"), 9.0f, paletteFor(false).secondary, true,
-               juce::Justification::left);
-    addAndMakeVisible(guideLabel);
-    guideButton.setButtonText(xlat("OPEN"));
-    guideButton.setColour(juce::TextButton::buttonColourId, paletteFor(false).raised);
-    guideButton.setColour(juce::TextButton::textColourOffId, paletteFor(false).text);
-    guideButton.setColour(juce::TextButton::buttonOnColourId,
-                         paletteFor(false).raised.darker(0.15f));
+    guideButton.setLookAndFeel(&customLookAndFeel);
+    guideButton.setButtonText(xlat("GUIDE"));
     setTip(guideButton, "GUIDE - opens the guide sheet: the signal path diagram, "
                         "A/B comparison, the preset workflow and loading a model or "
                         "impulse response. Escape or CLOSE returns to the panel.");

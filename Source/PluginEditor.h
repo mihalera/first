@@ -703,6 +703,8 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     //  The switch rows are six pixels taller than before. The offsets keep them
     //  inside the 84 px header with a clear gap before the status badge.
     static constexpr int headerSwitchHeight = 28;
+    // The GUIDE key beside the title: one cell of the smallest grid.
+    static constexpr int headerGuideKeyWidth = 62;
     static constexpr int headerRowOneOffset = 4;
     static constexpr int headerRowTwoOffset = 34;
     static constexpr int headerStatusOffset = 65;
@@ -1151,8 +1153,9 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     juce::Label parameterSheetLabel;
     std::unique_ptr<j37panel::ParameterSheet> parameterSheet;
 
-    juce::TextButton guideButton{"OPEN"};
-    juce::Label guideLabel;
+    // The guide sheet's key. It lives in the HEADER (placeHeader), beside the
+    // title: the sheet documents the machine rather than setting it up.
+    juce::TextButton guideButton{"GUIDE"};
     std::unique_ptr<j37panel::HelpSheet> helpSheet;
 
     // -----------------------------------------------------------------------
