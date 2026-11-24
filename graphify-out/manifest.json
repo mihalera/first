@@ -663,15 +663,15 @@
     "language": "language=.cpp"
   },
   "Source/GUI/EditorMeters.cpp": {
-    "mtime": 1795505760.0701425,
-    "seen": 1795520892.332925,
-    "ast_hash": "af14fab37133611195810c5ade172cb8",
+    "mtime": 1795532101.7241125,
+    "seen": 1795532409.7642984,
+    "ast_hash": "c807e79066b715bf649cb6ba086d907a",
     "semantic_hash": ""
   },
   "Source/GUI/EditorPaint.cpp": {
-    "mtime": 1795506016.84934,
-    "seen": 1795520892.332932,
-    "ast_hash": "25781503bedc9462f5a0f9cb721610a9",
+    "mtime": 1795531718.2388837,
+    "seen": 1795532409.7643073,
+    "ast_hash": "d6a05070e374d545aff185c2c3c97b0b",
     "semantic_hash": ""
   },
   "Source/GUI/EditorPreferences.h": {
@@ -682,8 +682,8 @@
     "language": "language=.cpp"
   },
   "Source/GUI/EditorSetup.cpp": {
-    "mtime": 1795528172.318615,
-    "seen": 1795528301.5383081,
+    "mtime": 1795529455.5707345,
+    "seen": 1795532409.764323,
     "ast_hash": "8cb5c3bcd8b0cf90815aa97bc792db6d",
     "semantic_hash": ""
   },
@@ -700,9 +700,9 @@
     "semantic_hash": ""
   },
   "Source/GUI/J37LookAndFeel.cpp": {
-    "mtime": 1795505956.6518786,
-    "seen": 1795520892.3329716,
-    "ast_hash": "d48ee0a4c5d8a438775c2f2680e4f982",
+    "mtime": 1795532107.51369,
+    "seen": 1795532409.7643547,
+    "ast_hash": "1cee13f148e1ed98e7c07b5618129446",
     "semantic_hash": ""
   },
   "Source/GUI/KnobMetrics.h": {
@@ -1029,15 +1029,15 @@
     "semantic_hash": ""
   },
   "Source/PluginEditor.cpp": {
-    "mtime": 1795525606.9013932,
-    "seen": 1795528301.538735,
-    "ast_hash": "682042521e68eba734f3c7610170fd2d",
+    "mtime": 1795531770.5662558,
+    "seen": 1795532409.7647073,
+    "ast_hash": "077a2fcb3c6250500f16db16fa4e5cf2",
     "semantic_hash": ""
   },
   "Source/PluginEditor.h": {
-    "mtime": 1795525606.9029033,
-    "seen": 1795528301.5387416,
-    "ast_hash": "ef65f09372123d3281b888af93959cef",
+    "mtime": 1795531741.0733087,
+    "seen": 1795532409.7647135,
+    "ast_hash": "5a8676352d0d4406e8c4303dc7642468",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
@@ -3154,9 +3154,9 @@
     "semantic_hash": ""
   },
   "tests/header_render.cpp": {
-    "mtime": 1795528099.0390844,
-    "seen": 1795528301.5395298,
-    "ast_hash": "c1235d9c63364a396b5d7ffff47562eb",
+    "mtime": 1795532262.0805635,
+    "seen": 1795532409.765369,
+    "ast_hash": "6d66ba2fc2025d192828f069741b6fb6",
     "semantic_hash": ""
   },
   "tests/layout/render.sh": {

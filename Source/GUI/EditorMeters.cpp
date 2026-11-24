@@ -330,18 +330,43 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     // the black half-circle that hung below the meter and ran through the readout rows.
     // 3/2*pi -> 5/2*pi traces the same left -> top -> right path that the ticks and the
     // needle describe with (cos a, sin a) over pi..2*pi, so all three agree exactly.
+    //  The printed scale is drawn by the ARC it prints, never by a rectangle.
+    //
+    //  Its 512 x 256 atlas is a half circle whose arc is centred at (256, 251)
+    //  with a 214 px radius. Stretching that atlas into the dial's box - which is
+    //  not 2:1 - turned the arc into an ellipse, pushed its endpoints below the
+    //  needle's pivot and shrank the printed numbers to a smear, so the dial read
+    //  as loose ticks over an empty face. Scale it uniformly about that centre so
+    //  the printed arc lands exactly on the gauge's own radius, and print the
+    //  numbers from code where the type survives the meter's size.
     const auto &scaleImage = j37panel::assets::cachedImage("level_scale_png");
     const auto hasScaleImage =
         scaleImage.isValid() && scaleImage.getWidth() >= 512 && scaleImage.getHeight() >= 256;
     if (hasScaleImage) {
-        // The scale's arc endpoints sit at source y=251. Offset its destination
-        // six pixels upward so those endpoints meet the AVG needle's pivot at
-        // centreY rather than the dial rectangle's lower padding. drawImage's
-        // destination overload takes integer coordinates, so round explicitly.
-        g.drawImage(scaleImage, juce::roundToInt (dial.getX()),
-                    juce::roundToInt (centreY - radius - 16.0f),
-                    juce::roundToInt (dial.getWidth()), juce::roundToInt (dial.getHeight()),
-                    0, 0, 512, 256, true);
+        constexpr float sourceCentreX = 256.0f;
+        constexpr float sourceCentreY = 251.0f;
+        constexpr float sourceRadius = 214.0f;
+        const auto uniform = radius / sourceRadius;
+
+        //  The printed arc and its ticks only. Its numbers are cut away with an
+        //  even-odd annulus so they can never print twice against the code type
+        //  below - at this dial size they are a sub-pixel smear anyway.
+        juce::Path band;
+        band.setUsingNonZeroWinding (false);
+        const auto inkBand = juce::jmax (6.0f, radius - 14.0f);
+        band.addEllipse (centreX - radius - 3.0f, centreY - radius - 3.0f,
+                         (radius + 3.0f) * 2.0f, (radius + 3.0f) * 2.0f);
+        band.addEllipse (centreX - inkBand, centreY - inkBand, inkBand * 2.0f, inkBand * 2.0f);
+
+        g.saveState();
+        g.reduceClipRegion (band);
+        g.drawImage(scaleImage,
+                    juce::Rectangle<float>(centreX - sourceCentreX * uniform,
+                                           centreY - sourceCentreY * uniform,
+                                           static_cast<float>(scaleImage.getWidth()) * uniform,
+                                           static_cast<float>(scaleImage.getHeight()) * uniform),
+                    juce::RectanglePlacement::stretchToFit, false);
+        g.restoreState();
     } else {
         juce::Path scaleArc;
         scaleArc.addCentredArc(centreX, centreY, radius, radius, 0.0f,
@@ -362,19 +387,28 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
                                                   centreY + std::sin(angle) * innerRadius);
             g.setColour(palette.gaugeInk);
             g.drawLine(inner.x, inner.y, outer.x, outer.y, major ? 1.1f : 0.7f);
-
-            if (major) {
-                const auto db = -20 + juce::roundToInt(fraction * 23.0f);
-                const auto labelRadius = juce::jmax(4.0f, radius - 18.0f);
-                const auto labelPoint = juce::Point<float>(centreX + std::cos(angle) * labelRadius,
-                                                           centreY + std::sin(angle) * labelRadius);
-                g.setFont(j37panel::panelFont(9.0f * textScale));
-                g.drawText(juce::String(db > 0 ? "+" : "") + juce::String(db),
-                           juce::Rectangle<int>(juce::roundToInt(labelPoint.x - 10.0f),
-                                                juce::roundToInt(labelPoint.y - 5.0f), 20, 11),
-                           juce::Justification::centred, false);
-            }
         }
+    }
+
+    //  The numbers are ALWAYS code. A raster number that has to survive a 0.3x
+    //  downscale is unreadable at every dial size this panel has, and the code
+    //  type follows the palette and the UI scale like the rest of the readouts.
+    for (int tick = 0; tick <= tickCount; ++tick) {
+        if (tick % 2 != 0)
+            continue;
+
+        const auto fraction = static_cast<float>(tick) / static_cast<float>(tickCount);
+        const auto angle = juce::jmap(fraction, startAngle, endAngle);
+        const auto db = -20 + juce::roundToInt(fraction * 23.0f);
+        const auto labelRadius = juce::jmax(4.0f, radius - 18.0f);
+        const auto labelPoint = juce::Point<float>(centreX + std::cos(angle) * labelRadius,
+                                                   centreY + std::sin(angle) * labelRadius);
+        g.setColour(palette.gaugeInk.withAlpha(0.85f));
+        g.setFont(j37panel::panelFont(8.0f * textScale));
+        g.drawText(juce::String(db > 0 ? "+" : "") + juce::String(db),
+                   juce::Rectangle<int>(juce::roundToInt(labelPoint.x - 10.0f),
+                                        juce::roundToInt(labelPoint.y - 5.0f), 20, 11),
+                   juce::Justification::centred, false);
     }
 
     // (The old standalone "VU" caption was removed: it sat at centreY + 13, exactly

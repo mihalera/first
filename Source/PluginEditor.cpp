@@ -1569,12 +1569,15 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     //  third cell of row two, preserving switch widths while leaving room for
     //  the language label and selector.
     //
-    //  Cells reach 74 px at the supported desktop minimum; narrower host layouts
-    //  compress smoothly to 62 px without changing their right anchor.
+    //  Cells grow to 88 px and compress smoothly to the 62 px floor without
+    //  changing their right anchor.
     // ------------------------------------------------------------------------------
-    //  Six pixels short of the panel's own edge, so the last cell of the row - GLUE
-    //  COMP since it joined - is not flush with the frame it sits in.
-    const auto headerRight = header.getRight() - 6;
+    //  The grid ends clear of the card's own corner hardware. Six pixels kept the
+    //  last cell - GLUE COMP since it joined - off the frame, but the countersunk
+    //  corner screw sits at right-9 and its head is 8 px wide, so that cell's
+    //  rounded end still ran under it and its state pill was clipped by the corner.
+    //  Twelve more pixels clear the screw's whole footprint.
+    const auto headerRight = header.getRight() - 18;
     // The grid dimensions are declared on the class so these cells stay aligned.
     constexpr int headerColumns = headerColumnCount;
     constexpr int headerGap = headerColumnGap;
