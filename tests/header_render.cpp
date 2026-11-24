@@ -67,6 +67,7 @@
 #include "PluginEditor.h"
 #include "PluginProcessor.h"
 
+#include <array>
 #include <cstdio>
 #include <vector>
 
@@ -85,6 +86,30 @@ struct J37HeaderRenderProbe
     /** Where the SETTINGS page put its LANGUAGE selector, so a claim can say the
         badge's row and the selector do not share a pixel. */
     juce::Rectangle<int> language() const { return editor.languageBox.getBounds(); }
+
+    /**  The MACHINE page's ten type selectors in layout order, each with the caption
+        label that names it. The labels are ordinary members of the editor, so this
+        reads exactly the components the page paints - including whether they were
+        ever ADDED to it, which is not something a placed rectangle can tell you. */
+    struct TypeCell
+    {
+        juce::Label& label;
+        juce::ComboBox& box;
+    };
+
+    std::array<TypeCell, 10> machineTypeCells() const
+    {
+        return {{{ editor.tapeTypeLabel, editor.tapeTypeBox },
+                 { editor.valveTypeLabel, editor.valveTypeBox },
+                 { editor.pentodeTypeLabel, editor.pentodeTypeBox },
+                 { editor.triodeTypeLabel, editor.triodeTypeBox },
+                 { editor.transistorTypeLabel, editor.transistorTypeBox },
+                 { editor.transformerTypeLabel, editor.transformerTypeBox },
+                 { editor.digitalTypeLabel, editor.digitalTypeBox },
+                 { editor.vinylTypeLabel, editor.vinylTypeBox },
+                 { editor.speedLabel, editor.speedBox },
+                 { editor.vinylSpeedLabel, editor.vinylSpeedBox }}};
+    }
     juce::Rectangle<int> header() const { return editor.getEditorLayout().header; }
     const j37panel::UiPalette& palette() const { return j37panel::paletteFor (editor.darkTheme); }
     bool badgeShown() const { return editor.statusLabel.isVisible(); }
@@ -709,6 +734,57 @@ int main()
         expect (probe.badge().getRight() <= settings.header.getRight(),
                 "settings: the badge still ends inside the header");
     }
+
+    //==========================================================================
+    //  The MACHINE page's TYPE row: a caption over every list.
+    //
+    //  The list and its caption are placed by one call, so the geometry cannot leave
+    //  a list unnamed - but a caption that is never given a parent can still be laid
+    //  out, given its words and made visible with every call succeeding, and the page
+    //  then paints ten lists under seven names. That is what the user's render showed.
+    //  The claim is therefore made of the pixels: every one of the ten captions has to
+    //  be a child of the panel, visible, and leaving ink in its own strip above its
+    //  list.
+    //==========================================================================
+    probe.openPage (j37panel::index_of_tab_named ("MACHINE"));
+    editor->setSize (1060, 916);
+    pumpMessages (200);
+
+    {
+        const auto machinePage = paint (*editor);
+        const auto cells = probe.machineTypeCells();
+
+        std::printf ("\nmachine  %dx%d\n", editor->getWidth(), editor->getHeight());
+        expect (static_cast<int> (cells.size()) == 10,
+                "machine: the page has ten type selectors");
+
+        for (const auto& cell : cells)
+        {
+            auto& label = cell.label;
+            auto& box = cell.box;
+            const auto name = "machine: \"" + label.getText() + "\" ";
+
+            //  A pixel of the cell that is outside the caption's own box, on the
+            //  caption's row: the panel behind it, in whatever theme is loaded.
+            const auto background = luma (pixel (machinePage, label.getX() - 3,
+                                                 label.getBounds().getCentreY()));
+            const auto ink = inkCount (machinePage, label.getBounds(), background);
+
+            std::printf ("      %-16s label %dx%d at %d,%d  ink %d\n",
+                         label.getText().toRawUTF8(), label.getWidth(), label.getHeight(),
+                         label.getX(), label.getY(), ink);
+
+            expect (label.getParentComponent() == editor,
+                    name + "is a child of the panel, not an orphan");
+            expect (label.isVisible(), name + "is visible on its page");
+            expect (! label.getText().isEmpty(), name + "has words of its own");
+            expect (label.getBottom() <= box.getY(), name + "sits above its list");
+            expect (ink > 0, name + "paints in the strip above its list");
+        }
+    }
+
+    probe.openPage (mainPage);
+    pumpMessages (50);
 
     //  The palette the width loop rendered in. The controls below damage THAT shot,
     //  so their plate is drawn in the ink it already carries.
