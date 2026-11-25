@@ -198,6 +198,7 @@ public:
             rightEnvelope[index].setTimes (3.0f, 60.0f, rate);
         }
 
+        makeupCoefficient = 1.0f - std::exp (-1.0f / (0.020f * static_cast<float> (rate)));
         reset();
     }
 

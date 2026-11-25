@@ -613,6 +613,18 @@ void FirstAudioProcessor::processReverbAndVinylStages (juce::dsp::AudioBlock<flo
     vinylL.noisePrint = noisePrint;
     vinylR.noisePrint = noisePrint;
 
+        if (noisePrint != nullptr && ! noisePrint->empty())
+        {
+            const double printStep = 1.0 / static_cast<double> (juce::jmax (1.0f, oversamplingRateFactor));
+            vinylL.noisePrintStep = printStep;
+            vinylR.noisePrintStep = printStep;
+        }
+        else
+        {
+            vinylL.noisePrintStep = 1.0;
+            vinylR.noisePrintStep = 1.0;
+        }
+
     for (int i = 0; i < samples; ++i)
     {
         for (int c = 0; c < frameWidth; ++c)
@@ -624,7 +636,7 @@ void FirstAudioProcessor::processReverbAndVinylStages (juce::dsp::AudioBlock<flo
         }
 
         if (reverbMix > 1.0e-5f)
-            reverb.processFrame (frame, frameWidth, reverbSettings);
+            activeReverb().processFrame (frame, frameWidth, reverbSettings);
 
         for (int c = 0; c < frameWidth; ++c)
         {
@@ -3500,12 +3512,15 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
 
         const float withDelay = dcBlocked + delayTap;
 
-        delayWriteFrame[static_cast<std::size_t> (channel)] = dcBlocked
-            + delayFeedbackWriteFrame[static_cast<std::size_t> (channel)];
+        // Store the dry delay input first; cross-channel ping-pong feedback from a
+        // higher channel index can still add into delayFeedbackWriteFrame[0], so
+        // the buffer write sums both after the whole frame has accumulated.
+        delayWriteFrame[static_cast<std::size_t> (channel)] = dcBlocked;
         if (channel + 1 == state.activeChannels && delayBufferLength > 0)
             for (int writeChannel = 0; writeChannel < state.activeChannels; ++writeChannel)
                 delayBuffer.getWritePointer (writeChannel)[delayWritePosition] =
-                    delayWriteFrame[static_cast<std::size_t> (writeChannel)];
+                    delayWriteFrame[static_cast<std::size_t> (writeChannel)]
+                    + delayFeedbackWriteFrame[static_cast<std::size_t> (writeChannel)];
 
         // -------------------------------------------------------------------
         //  Stereo tape offset.
@@ -3636,8 +3651,6 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
     // frame and halve the spacing between the two heads.
     tracksBleedWritePosition = (tracksBleedWritePosition + 1) % tracksBleedBufferLength;
 
-    updateSampleLoudnessMeters (state, sample);
-
     // The reference is a per-channel average now, the same scale the
     // post-compressor power below is measured on.
     state.referenceBlockPower /= static_cast<float> (juce::jmax (1, state.activeChannels));
@@ -3701,14 +3714,16 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
 
     // Each stage pays back part of the reduction it applied, weighted by how hard
     // its trim control is driving it, so both together cannot leave the machine
-    // quieter than it arrived.
+    // quieter than it arrived. Use the live smoothed input reduction rather than
+    // the block-peak latch so inputMakeup tracks compression smoothly without
+    // resetting to 0 dB at every block boundary.
 #if J37_HAS_CHOWDSP_MATH
-    const float inputMakeup = chowdsp::DecibelsApprox::decibelsToGain (-state.inputPeakReductionDb
+    const float inputMakeup = chowdsp::DecibelsApprox::decibelsToGain (-inputReductionDb
                                                                         * state.inputMakeupFraction);
     const float outputMakeup = chowdsp::DecibelsApprox::decibelsToGain (-reductionDb
                                                                          * state.outputMakeupFraction);
 #else
-    const float inputMakeup = juce::Decibels::decibelsToGain (-state.inputPeakReductionDb
+    const float inputMakeup = juce::Decibels::decibelsToGain (-inputReductionDb
                                                               * state.inputMakeupFraction);
     const float outputMakeup = juce::Decibels::decibelsToGain (-reductionDb
                                                                * state.outputMakeupFraction);
@@ -4311,6 +4326,9 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         vuAverage += (std::abs (limitedOut) - vuAverage) * state.vuBallisticCoefficient;
     }
 
+    // Measure K-weighted output loudness after state.channelData[c][sample] holds
+    // limitedOut, while state.inputChainHistory still holds the pre-chain pair.
+    updateSampleLoudnessMeters (state, sample);
 }
 
 void FirstAudioProcessor::updateSampleLoudnessMeters (TapeBlockState& state, int sample) noexcept

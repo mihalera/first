@@ -1124,6 +1124,12 @@ private:
     /** Rebuilds every time-domain constant from the current sample rate. */
     void resetSampleRateDependentState();
 
+    /** Re-times every per-sample parameter smoother for the active engine rate. */
+    void resetControlSmoothers (double engineRate, bool preserveCurrentValues);
+
+    /** Seeds restored parameter-backed smoothers after a rate reset. */
+    void seedControlSmoothers();
+
     /** Prepares every engine-rate stage for each supported oversampling slot. */
     void prepareOversamplingStages (double sampleRateToUse, int preparedBlockSize);
 
@@ -2183,7 +2189,12 @@ private:
     //  and it takes the frame rather than a channel: Dattorro's network is fed
     //  one signal and its width comes from the taps.
     // -----------------------------------------------------------------------
-    DattorroRoom reverb;
+    std::array<DattorroRoom, oversamplingFactorCount> reverbs;
+
+    DattorroRoom& activeReverb() noexcept
+    {
+        return reverbs[oversamplingSlot (currentOversampling)];
+    }
     SampleSmoother reverbMixSmoothed { sampleClock };
     SampleSmoother reverbSizeSmoothed { sampleClock, false, false, 0.4f };
 

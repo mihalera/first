@@ -71,7 +71,7 @@ struct TapeCondition
         second generator.
     */
     void updateSlowSources (float mechanicsAmount, float wearAmount, int numSamples,
-                            std::uint32_t& randomState) noexcept
+                            std::uint32_t& randomState, float sampleRate = 48000.0f) noexcept
     {
         // -- MECHANICS: the drift target changes every few hundred milliseconds ---
         driftCountdown -= numSamples;
@@ -79,7 +79,8 @@ struct TapeCondition
         {
             // 120 ms between targets. Slow enough to read as a wandering transport
             // rather than as noise, fast enough that a held note hears it move.
-            driftCountdown = juce::jmax (1, juce::roundToInt (0.12f * 48000.0f));
+            const float clampedRate = sampleRate > 1.0f ? sampleRate : 48000.0f;
+            driftCountdown = juce::jmax (1, juce::roundToInt (0.12f * clampedRate));
 
             randomState = randomState * 1664525u + 1013904223u;
             const float unit = static_cast<float> ((randomState >> 8) & 0x00ffffffu)

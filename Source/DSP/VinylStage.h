@@ -229,6 +229,8 @@ struct VinylStage
     // ------------------------------------------------------------------
     const j37dsp::NoisePrint* noisePrint = nullptr;
     std::size_t noisePrintIndex = 0;
+    double noisePrintPhase = 0.0;
+    double noisePrintStep = 1.0;
 
     /** The print's contribution for one channel, advanced once per frame per
         stage (each channel owns its own index, and one channel's stage is called
@@ -250,6 +252,7 @@ struct VinylStage
     void reset() noexcept
     {
         noisePrintIndex = 0;
+        noisePrintPhase = 0.0;
         rumbleL = rumbleR = 0.0f;
         warmthLowL = warmthLowR = 0.0f;
         crackleEnvelopeL = crackleEnvelopeR = 0.0f;
@@ -325,8 +328,12 @@ struct VinylStage
         float groove = 0.0f;
         if (noisePrint != nullptr && ! noisePrint->empty())
         {
+            noisePrintIndex = static_cast<std::size_t> (noisePrintPhase) % noisePrint->length;
             groove = nextPrintSample (channel, printGain);
-            ++noisePrintIndex;
+            noisePrintPhase += noisePrintStep;
+            const auto lengthDouble = static_cast<double> (noisePrint->length);
+            if (noisePrintPhase >= lengthDouble)
+                noisePrintPhase -= lengthDouble;
         }
         else if (surfaceNoise > 0.0f)
         {

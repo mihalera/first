@@ -884,42 +884,8 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // factors in processBlock only routes to an already prepared engine.
     prepareOversamplingStages (sampleRateToUse, preparedBlockSize);
     setOversamplingFactor (requestedOversampling, preparedBlockSize);
-    // Stated as a double on purpose: SmoothedValue::reset takes the ramp length in seconds
-    // as a double, and `auto` here would have deduced the same type silently. Naming it
-    // makes the intent explicit and keeps the literal from looking like a float that lost
-    // its suffix.
-    const double smoothingSeconds = 0.02;
-    inputGainSmoothed.reset (sampleRateToUse, smoothingSeconds);
-    inputGainSmoothed.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (
-        inputDbParam != nullptr ? inputDbParam->load() : 0.0f));
-    outputGainSmoothed.reset (sampleRateToUse, smoothingSeconds);
-    outputGainSmoothed.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (
-        outputDbParam != nullptr ? outputDbParam->load() : 0.0f));
-    mixSmoothed.reset (sampleRateToUse, smoothingSeconds);
-    const float initialMix = (mixParam != nullptr ? mixParam->load() : 50.0f) * 0.01f;
-    mixSmoothed.setCurrentAndTargetValue (juce::jlimit (0.0f, 1.0f, initialMix));
-    widthSmoothed.reset (sampleRateToUse, smoothingSeconds);
-    widthSmoothed.setCurrentAndTargetValue (widthParam != nullptr
-        ? juce::jlimit (0.0f, 2.0f, widthParam->load() * 2.0f) : 1.0f);
-    bypassSmoothed.reset (sampleRateToUse, 0.01);
-    // Start from the state the parameter restores: a session saved with BYPASS on
-    // must not spend its first 10 ms ramping from the dry position.
-    bypassSmoothed.setCurrentAndTargetValue (bypassParam != nullptr && bypassParam->load() >= 0.5f ? 0.0f : 1.0f);
-    deltaListenSmoothed.reset (sampleRateToUse, smoothingSeconds);
-    // Same reasoning as BYPASS directly above: start from the state the parameter
-    // restores rather than ramping into it.
-    deltaListenSmoothed.setCurrentAndTargetValue (deltaParam != nullptr && deltaParam->load() >= 0.5f ? 1.0f : 0.0f);
-
-    // Auto Glue's share of the glue compression ramps like every other gain, so
-    // toggling it during playback fades the reduction in and out instead of
-    // stepping it by the existing envelope's full amount on the next block.
-    // The smoother advances once per ENGINE sample (processTapeEngine runs at
-    // the oversampled rate), so its ramp must be timed at the engine rate;
-    // timing it at the host rate makes the transition 1x..8x too fast.
-    glueShareSmoothed.reset (sampleRateToUse * static_cast<double> (oversamplingRateFactor),
-                             smoothingSeconds);
-    glueShareSmoothed.setCurrentAndTargetValue (glueOnParam == nullptr || glueOnParam->load() >= 0.5f
-                                                   ? 1.0f : 0.0f);
+    // All 64 per-sample smoothers run on sampleClock at the active engine rate;
+    // resetSampleRateDependentState() times and seeds them once the factor is set.
 
     inputPeakLevel.store (0.0f, std::memory_order_relaxed);
     inputRmsLevel.store (0.0f, std::memory_order_relaxed);
@@ -1071,12 +1037,8 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     loFiHoldClock.reset();
     wearModulation = 0.0f;
 
-    // The room starts empty. Its tank runs at the rate its own delay lengths were
-    // chosen at and the wrapper carries the signal across, so a new session rate
-    // re-times that conversion rather than resizing the room - which is also why
-    // the tail lasts the same number of SECONDS at any rate. prepare() clears the
-    // tank itself, so there is nothing to flush afterwards.
-    reverb.prepare (sampleRateToUse);
+    // The room starts empty per oversampling slot (allocated in prepareOversamplingStages).
+    // Its active tank is reset in setOversamplingFactor().
 
     // The vinyl stage's generator gets its own seed, separate from the tape hiss,
     // so the two noise sources are uncorrelated.
@@ -1099,10 +1061,12 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     antiPhaseProductMagnitude = 1.0e-3f;
     antiPhaseAmount.store (0.0f, std::memory_order_relaxed);
 
+    const auto activeEngineRate = sampleRateToUse * static_cast<double> (oversamplingRateFactor);
+
     // The per-band guard is prepared at the engine's rate here - the crossovers'
     // coefficients and the envelope's pole are both functions of it - and reset
     // so the first block after a rate change does not start with a stale filter.
-    antiPhaseGuard.prepare (sampleRateToUse);
+    antiPhaseGuard.prepare (activeEngineRate);
     antiPhaseGuard.reset();
 
     // The two equalisers start clean, so the first block after a rate change is
@@ -1129,12 +1093,11 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     evenHarmonicRatio.store (0.0f, std::memory_order_relaxed);
     oddHarmonicRatio.store (0.0f, std::memory_order_relaxed);
 
-    // Loudness metering. The K-weighting filters are built from the sample rate here,
-    // so the LUFS reading is correct at every supported rate rather than being tuned
-    // for one of them.
-    outputLoudness.prepare (sampleRateToUse);
+    // Loudness metering runs inside processTapeEngine at the engine rate. The
+    // K-weighting filters are built from the active engine rate here.
+    outputLoudness.prepare (activeEngineRate);
     outputLoudness.reset();
-    inputLoudness.prepare (sampleRateToUse);
+    inputLoudness.prepare (activeEngineRate);
     inputLoudness.reset();
     vuAverage = 0.0f;
     inputVuAverage = 0.0f;
@@ -1154,8 +1117,8 @@ void FirstAudioProcessor::prepareOversamplingStages (double sampleRateToUse, int
     //  Prepare every oversampler AND every rate-dependent stage once, here, for
     //  every factor. This is the allocation point for the whole oversampling
     //  switch: processBlock later only selects a slot, so pressing OVERSAMPLING
-    //  no longer calls CorrectorStage::prepare, IrStage::prepare or
-    //  RepitchStage::prepare on the audio thread.
+    //  no longer calls CorrectorStage::prepare, IrStage::prepare, DattorroRoom::prepare,
+    //  FxRack::prepare, or RepitchStage::prepare on the audio thread.
     for (int slot = 0; slot < static_cast<int> (oversamplingFactorCount); ++slot)
     {
         const auto factor = 1 << slot; // 1, 2, 4, 8 - the order of `oversamplers`
@@ -1173,6 +1136,9 @@ void FirstAudioProcessor::prepareOversamplingStages (double sampleRateToUse, int
 
         irStages[static_cast<std::size_t> (slot)].prepare (
             { engineRate, static_cast<juce::uint32> (engineBlock), 2 });
+
+        reverbs[static_cast<std::size_t> (slot)].prepare (engineRate);
+        fxRacks[static_cast<std::size_t> (slot)].prepare (engineRate);
 
         repitchStages[static_cast<std::size_t> (slot)].prepare (engineRate);
 
@@ -1216,6 +1182,154 @@ void FirstAudioProcessor::prepareRateDependentBuffers (double sampleRateToUse, i
     stOffsetBuffer.reset();
 }
 
+void FirstAudioProcessor::resetControlSmoothers (double engineRate, bool preserveCurrentValues)
+{
+    const double rate = juce::jmax (1.0, engineRate);
+
+    // Every per-sample smoother advances on `sampleClock`, which steps once per
+    // engine frame inside `processTapeEngine`. Timing all of them at `engineRate`
+    // keeps every ramp duration accurate in seconds across host rates and 1x..8x
+    // oversampling, and guarantees none stay at SmoothedValue's default 0-step jump.
+    constexpr double controlRampSeconds = 0.02;
+    constexpr double bypassRampSeconds = 0.01;
+    constexpr double formulaSwitchSeconds = 0.15;
+    constexpr double transportGateSeconds = 0.75;
+
+    struct SmootherSpec
+    {
+        SampleSmoother* smoother;
+        double seconds;
+    };
+
+    const SmootherSpec specs[] =
+    {
+        { &inputGainSmoothed, controlRampSeconds },
+        { &outputGainSmoothed, controlRampSeconds },
+        { &mixSmoothed, controlRampSeconds },
+        { &glueShareSmoothed, controlRampSeconds },
+        { &widthSmoothed, controlRampSeconds },
+        { &bypassSmoothed, bypassRampSeconds },
+        { &deltaListenSmoothed, controlRampSeconds },
+        { &toneShelfGainSmoothed, controlRampSeconds },
+        { &toneShelfBoostSmoothed, controlRampSeconds },
+        { &preDriveGainSmoothed, controlRampSeconds },
+        { &shaperDriveSmoothed, controlRampSeconds },
+        { &shaperAsymmetrySmoothed, controlRampSeconds },
+        { &driveAmountSmoothed, controlRampSeconds },
+        { &toneLpSmoothed, controlRampSeconds },
+        { &hfPostSmoothed, controlRampSeconds },
+        { &headGapSmoothed, controlRampSeconds },
+        { &flutterScaleSmoothed, controlRampSeconds },
+        { &hissGainSmoothed, transportGateSeconds },
+        { &headDampingSwitchSmoothed, formulaSwitchSeconds },
+        { &subFundamentalSmoothed, controlRampSeconds },
+        { &delaySamplesSmoothed, controlRampSeconds },
+        { &delayFeedbackSmoothed, controlRampSeconds },
+        { &pingPongSmoothed, controlRampSeconds },
+        { &stOffsetSamplesSmoothed, controlRampSeconds },
+        { &noiseTrimSmoothed, controlRampSeconds },
+        { &tapeSourceSmoothed, controlRampSeconds },
+        { &valveSourceSmoothed, controlRampSeconds },
+        { &pentodeSourceSmoothed, controlRampSeconds },
+        { &triodeSourceSmoothed, controlRampSeconds },
+        { &transistorSourceSmoothed, controlRampSeconds },
+        { &foldSourceSmoothed, controlRampSeconds },
+        { &glassSourceSmoothed, controlRampSeconds },
+        { &transformerSourceSmoothed, controlRampSeconds },
+        { &digitalSourceSmoothed, controlRampSeconds },
+        { &stLinkSmoothed, controlRampSeconds },
+        { &sagSmoothed, controlRampSeconds },
+        { &presenceSmoothed, controlRampSeconds },
+        { &cabinetSmoothed, controlRampSeconds },
+        { &ampBiasSmoothed, controlRampSeconds },
+        { &preampSmoothed, controlRampSeconds },
+        { &distortionSmoothed, controlRampSeconds },
+        { &diSmoothed, controlRampSeconds },
+        { &diLoadSmoothed, controlRampSeconds },
+        { &diTransformerSmoothed, controlRampSeconds },
+        { &fluxSmoothed, controlRampSeconds },
+        { &wearSmoothed, controlRampSeconds },
+        { &mechanicsSmoothed, controlRampSeconds },
+        { &reverbMixSmoothed, controlRampSeconds },
+        { &reverbSizeSmoothed, controlRampSeconds },
+        { &inputEqLowSmoothed, controlRampSeconds },
+        { &inputEqMidSmoothed, controlRampSeconds },
+        { &inputEqHighSmoothed, controlRampSeconds },
+        { &outputEqLowSmoothed, controlRampSeconds },
+        { &outputEqMidSmoothed, controlRampSeconds },
+        { &outputEqHighSmoothed, controlRampSeconds },
+        { &vinylSmoothed, controlRampSeconds },
+        { &noiseLvlSmoothed, controlRampSeconds },
+        { &vinylCrackleSmoothed, controlRampSeconds },
+        { &vinylRumbleSmoothed, controlRampSeconds },
+        { &transientAttackSmoothed, controlRampSeconds },
+        { &transientSustainSmoothed, controlRampSeconds },
+        { &transientMixSmoothed, controlRampSeconds },
+        { &neuralMixSmoothed, controlRampSeconds },
+        { &irMixSmoothed, controlRampSeconds },
+    };
+
+    for (const auto& spec : specs)
+    {
+        const float currentValue = spec.smoother->getCurrentValue();
+        spec.smoother->reset (rate, spec.seconds);
+        if (preserveCurrentValues)
+            spec.smoother->setCurrentAndTargetValue (currentValue);
+    }
+}
+
+void FirstAudioProcessor::seedControlSmoothers()
+{
+    inputGainSmoothed.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (
+        inputDbParam != nullptr ? inputDbParam->load() : 0.0f));
+    outputGainSmoothed.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (
+        outputDbParam != nullptr ? outputDbParam->load() : 0.0f));
+    const float initialMix = (mixParam != nullptr ? mixParam->load() : 50.0f) * 0.01f;
+    mixSmoothed.setCurrentAndTargetValue (juce::jlimit (0.0f, 1.0f, initialMix));
+    widthSmoothed.setCurrentAndTargetValue (widthParam != nullptr
+        ? juce::jlimit (0.0f, 2.0f, widthParam->load() * 2.0f) : 1.0f);
+    bypassSmoothed.setCurrentAndTargetValue (bypassParam != nullptr && bypassParam->load() >= 0.5f ? 0.0f : 1.0f);
+    deltaListenSmoothed.setCurrentAndTargetValue (deltaParam != nullptr && deltaParam->load() >= 0.5f ? 1.0f : 0.0f);
+    glueShareSmoothed.setCurrentAndTargetValue (glueOnParam == nullptr || glueOnParam->load() >= 0.5f ? 1.0f : 0.0f);
+
+    toneShelfGainSmoothed.setCurrentAndTargetValue (toneShelfGain);
+    toneShelfBoostSmoothed.setCurrentAndTargetValue (toneShelfBoost);
+    preDriveGainSmoothed.setCurrentAndTargetValue (preDriveGain);
+    toneLpSmoothed.setCurrentAndTargetValue (toneLpAc);
+    flutterScaleSmoothed.setCurrentAndTargetValue (flutterScale);
+
+    diSmoothed.setCurrentAndTargetValue (diParam != nullptr ? diParam->load() : 0.0f);
+    diLoadSmoothed.setCurrentAndTargetValue (diLoadParam != nullptr ? diLoadParam->load() : 0.0f);
+    diTransformerSmoothed.setCurrentAndTargetValue (diTransformerParam != nullptr
+                                                        ? diTransformerParam->load() : 0.0f);
+
+    inputEqLowSmoothed.setCurrentAndTargetValue (
+        juce::Decibels::decibelsToGain (inputEqLowParam != nullptr ? inputEqLowParam->load() : 0.0f));
+    inputEqMidSmoothed.setCurrentAndTargetValue (
+        juce::Decibels::decibelsToGain (inputEqMidParam != nullptr ? inputEqMidParam->load() : 0.0f));
+    inputEqHighSmoothed.setCurrentAndTargetValue (
+        juce::Decibels::decibelsToGain (inputEqHighParam != nullptr ? inputEqHighParam->load() : 0.0f));
+    outputEqLowSmoothed.setCurrentAndTargetValue (
+        juce::Decibels::decibelsToGain (outputEqLowParam != nullptr ? outputEqLowParam->load() : 0.0f));
+    outputEqMidSmoothed.setCurrentAndTargetValue (
+        juce::Decibels::decibelsToGain (outputEqMidParam != nullptr ? outputEqMidParam->load() : 0.0f));
+    outputEqHighSmoothed.setCurrentAndTargetValue (
+        juce::Decibels::decibelsToGain (outputEqHighParam != nullptr ? outputEqHighParam->load() : 0.0f));
+
+    subFundamentalSmoothed.setCurrentAndTargetValue (
+        subFundamentalParam != nullptr ? subFundamentalParam->load() : 0.0f);
+    transientAttackSmoothed.setCurrentAndTargetValue (
+        transientAttackParam != nullptr ? transientAttackParam->load() : 0.0f);
+    transientSustainSmoothed.setCurrentAndTargetValue (
+        transientSustainParam != nullptr ? transientSustainParam->load() : 0.0f);
+    transientMixSmoothed.setCurrentAndTargetValue (
+        transientMixParam != nullptr ? transientMixParam->load() : 0.0f);
+    neuralMixSmoothed.setCurrentAndTargetValue (
+        neuralMixParam != nullptr ? neuralMixParam->load() : 0.0f);
+    irMixSmoothed.setCurrentAndTargetValue (
+        irMixParam != nullptr ? irMixParam->load() : 0.0f);
+}
+
 void FirstAudioProcessor::resetSampleRateDependentState()
 {
     // Wow and flutter are very low frequency modulators, but they are advanced as
@@ -1226,74 +1340,26 @@ void FirstAudioProcessor::resetSampleRateDependentState()
     flutterPhaseL = 0.0f;
     flutterPhaseR = 0.0f;
 
-    // Force the tone and TONE caches to rebuild against the new rate.
+    const double engineRate = sampleRate * static_cast<double> (oversamplingRateFactor);
+    const float engineRateFloat = static_cast<float> (engineRate);
+
+    // Force the tone and TONE caches to rebuild against the active engine rate.
     previousTone = -1.0f;
     previousCharacter = -1.0f;
+    previousToneSampleRate = -1.0f;
     if (toneParam != nullptr)
-        updateToneCoefficients (toneParam->load(), sampleRate);
+        updateToneCoefficients (toneParam->load(), engineRateFloat);
 
-    // The control ramp: 20 ms. Every control-derived coefficient in the wet path
-    // uses this one window, because it is the shortest that is reliably inaudible
-    // as a step while still feeling immediate on a knob. Naming it means the
-    // three other, deliberately DIFFERENT windows in this function (the 750 ms
-    // hiss gate and the 150 ms formula switch) cannot be mistaken for it.
-    constexpr double controlRampSeconds = 0.02;
-
-    // Re-time the coefficient ramps for the new rate. The playback poles start from
-    // neutral non-zero values, so the first wet block is audible while the exact
-    // per-block targets are reached through the normal 20 ms ramps.
-    toneShelfGainSmoothed.reset (sampleRate, controlRampSeconds);
-    toneShelfGainSmoothed.setCurrentAndTargetValue (toneShelfGain);
-    toneShelfBoostSmoothed.reset (sampleRate, controlRampSeconds);
-    toneShelfBoostSmoothed.setCurrentAndTargetValue (toneShelfBoost);
-    preDriveGainSmoothed.reset (sampleRate, controlRampSeconds);
-    preDriveGainSmoothed.setCurrentAndTargetValue (preDriveGain);
-    toneLpSmoothed.reset (sampleRate, controlRampSeconds);
-    toneLpSmoothed.setCurrentAndTargetValue (toneLpAc);
-    flutterScaleSmoothed.reset (sampleRate, controlRampSeconds);
-    flutterScaleSmoothed.setCurrentAndTargetValue (flutterScale);
-
-    driveAmountSmoothed.reset (sampleRate, controlRampSeconds);
-    hfPostSmoothed.reset (sampleRate, controlRampSeconds);
-    headGapSmoothed.reset (sampleRate, controlRampSeconds);
-    // The noise floor ramps far slower than the controls: its gain is also the
-    // transport gate (see processTapeEngine), so this window is how long the floor
-    // takes to coast down when the machine comes to rest and back up when it spins
-    // again - a fade, never a mute-switch drop.
-    // The transport gate's own window: 750 ms. Deliberately far slower than the
-    // control ramp - it is the time the noise floor takes to coast down when the
-    // machine comes to rest, which should read as a fade rather than a mute.
-    constexpr double transportGateSeconds = 0.75;
-    hissGainSmoothed.reset (sampleRate, transportGateSeconds);
-    shaperDriveSmoothed.reset (sampleRate, controlRampSeconds);
-    shaperAsymmetrySmoothed.reset (sampleRate, controlRampSeconds);
-
-    // The formula-switch ramp is deliberately slower than the control ramps: it has to
-    // move the head-damping pole by up to 8 kHz without that travel being an audible
-    // sweep. 150 ms is long enough to read as a morph and short enough that switching
-    // formula still feels immediate.
-    // The formula switch's own window: 150 ms. Slower than the control ramp because
-    // a formula change moves the head-damping pole by up to 8 kHz, and 20 ms of
-    // that travel is an audible sweep rather than a morph.
-    constexpr double formulaSwitchSeconds = 0.15;
-    headDampingSwitchSmoothed.reset (sampleRate, formulaSwitchSeconds);
+    // Re-time all per-sample parameter smoothers against the engine rate, then
+    // seed restored parameter-backed smoothers so the first block does not ramp
+    // away from the session's loaded state.
+    resetControlSmoothers (engineRate, false);
+    seedControlSmoothers();
 
     // The subharmonic generators hold a bi-stable state and a follower, so they carry
-    // across blocks and have to start clean; the depth control ramps like every other
-    // gain so that moving it cannot step the phase-locked oscillator.
+    // across blocks and have to start clean.
     subharmonicL.reset();
     subharmonicR.reset();
-    subFundamentalSmoothed.reset (sampleRate, controlRampSeconds);
-    subFundamentalSmoothed.setCurrentAndTargetValue (
-        subFundamentalParam != nullptr ? subFundamentalParam->load() : 0.0f);
-
-    // Auto Glue's share is re-timed with the control ramp on a rate change, so a
-    // rate switch cannot leave it stepping at the old rate's pace. Timed at the
-    // engine rate, matching the per-engine-sample advance in processTapeEngine.
-    glueShareSmoothed.reset (sampleRate * static_cast<double> (oversamplingRateFactor),
-                             controlRampSeconds);
-    glueShareSmoothed.setCurrentAndTargetValue (glueOnParam == nullptr || glueOnParam->load() >= 0.5f
-                                                   ? 1.0f : 0.0f);
 
     // A rate change invalidates any switch in progress, so the countdown is cleared and
     // the next block re-seeds activeTapeType instead of treating the new rate as a
@@ -1303,46 +1369,27 @@ void FirstAudioProcessor::resetSampleRateDependentState()
 
     // The transient shaper's state is envelope-based, so a rate change invalidates it:
     // resuming from a stale envelope would read as a false transient on the first
-    // block. The stage is reset and its three controls ramped like every other gain.
+    // block.
     transientL.reset();
     transientR.reset();
-    transientAttackSmoothed.reset (sampleRate, controlRampSeconds);
-    transientAttackSmoothed.setCurrentAndTargetValue (
-        transientAttackParam != nullptr ? transientAttackParam->load() : 0.0f);
-    transientSustainSmoothed.reset (sampleRate, controlRampSeconds);
-    transientSustainSmoothed.setCurrentAndTargetValue (
-        transientSustainParam != nullptr ? transientSustainParam->load() : 0.0f);
-    transientMixSmoothed.reset (sampleRate, controlRampSeconds);
-    transientMixSmoothed.setCurrentAndTargetValue (
-        transientMixParam != nullptr ? transientMixParam->load() : 0.0f);
 
     // ~2 ms transient window, ~120 ms programme reference: the gap between the two
     // is what the detector reads as an edge. The gain smoother is slower than the
     // control ramp so the ride stays a ride rather than following the waveform.
-    transientFastCoefficient = onePoleCoefficient (2.0f, sampleRate);
-    transientSlowCoefficient = onePoleCoefficient (120.0f, sampleRate);
-    transientGainCoefficient = onePoleCoefficient (30.0f, sampleRate);
+    transientFastCoefficient = onePoleCoefficient (2.0f, engineRateFloat);
+    transientSlowCoefficient = onePoleCoefficient (120.0f, engineRateFloat);
+    transientGainCoefficient = onePoleCoefficient (30.0f, engineRateFloat);
 
-    // The effects rack and the multiband compressor are prepared at the ENGINE
-    // rate, which is the rate the per-sample loop runs at and therefore the rate
-    // every delay length and filter corner in them is stated in. This is the only
-    // place their memory is allocated: prepare() runs from prepareToPlay (and on a
-    // rate change), never from the audio callback.
-    fxRack.prepare (sampleRate);
-    multibandCompressor.prepare (sampleRate);
+    // The multiband compressor runs inside the oversampled engine loop, so it is
+    // prepared at the engine rate. The FxRack slots are prepared in
+    // prepareOversamplingStages().
+    multibandCompressor.prepare (engineRate);
 
     // The neural stage's recurrent state is let go of on a rate change for the same
     // reason the shaper's is: resuming a hidden state from a different rate would
     // produce a step. The model itself is untouched.
-    // The model's wet/dry ramp. IR MIX rides its own smoother beside it.
     neuralL.reset();
     neuralR.reset();
-    neuralMixSmoothed.reset (sampleRate, controlRampSeconds);
-    neuralMixSmoothed.setCurrentAndTargetValue (
-        neuralMixParam != nullptr ? neuralMixParam->load() : 0.0f);
-    irMixSmoothed.reset (sampleRate, controlRampSeconds);
-    irMixSmoothed.setCurrentAndTargetValue (
-        irMixParam != nullptr ? irMixParam->load() : 0.0f);
 
     // The oversampling filters hold per-rate state (their half-band coefficients are
     // tuned to the incoming rate), so they must be flushed on a rate change or the
@@ -1401,19 +1448,30 @@ void FirstAudioProcessor::setOversamplingFactor (OversamplingFactor factor, int 
     else
         oversamplingRateFactor = 1.0f;
 
-    // Re-time Auto Glue's share smoother for the new engine rate: it advances
-    // once per engine sample, so a factor change (1x -> 8x) must not leave the
-    // 20 ms ramp sized for the old rate. Preserve the current value so the
-    // switch does not step the gain.
-    const float currentGlueShare = glueShareSmoothed.getCurrentValue();
-    glueShareSmoothed.reset (sampleRate * static_cast<double> (oversamplingRateFactor),
-                             0.02);
-    glueShareSmoothed.setCurrentAndTargetValue (currentGlueShare);
+    const auto engineRate = static_cast<double> (
+        juce::jmax (1.0f, sampleRate * oversamplingRateFactor));
+
+    // Re-time all per-sample parameter smoothers for the new engine rate: they
+    // advance once per engine sample, so a factor change (1x -> 8x) must not
+    // leave 20 ms ramps sized for the old rate. Preserve live values so
+    // automating OVERSAMPLING does not step audio parameters.
+    resetControlSmoothers (engineRate, true);
+
+    // Force the tone filter cache to rebuild at the new engine rate.
+    previousToneSampleRate = -1.0f;
+
+    // Allocation-free stages that run inside the oversampled loop must track the
+    // new engine rate immediately; all slot-based allocating stages were
+    // prepared for every factor in prepareOversamplingStages().
+    multibandCompressor.prepare (engineRate);
+    antiPhaseGuard.prepare (engineRate);
+    outputLoudness.prepare (engineRate);
+    inputLoudness.prepare (engineRate);
 
     // Select the PREPARED slot. prepareToPlay has already called prepare() on the
-    // corrector, IR, trackers and repitch stage for every factor, so nothing here
-    // allocates and nothing here may call prepare(): this function also runs from
-    // processBlock when the host automation moves OVERSAMPLING.
+    // corrector, IR, reverb, FX rack, trackers and repitch stage for every factor,
+    // so nothing here allocates and nothing here may call prepare(): this function
+    // also runs from processBlock when the host automation moves OVERSAMPLING.
     currentOversampling = clamped;
 
     if (auto* oversampler = oversamplers.getUnchecked (clampedIndex))
@@ -1434,6 +1492,8 @@ void FirstAudioProcessor::setOversamplingFactor (OversamplingFactor factor, int 
         // resume a stale ring.
         activeCorrector().reset();
         activeIrStage().reset();
+        activeReverb().reset();
+        activeFxRack().reset();
         activeRepitchStage().reset();
 
         for (auto& tracker : activeAutoTuneTrackers())
@@ -1531,6 +1591,7 @@ void FirstAudioProcessor::updateToneCoefficients (float toneValue, float engineS
     toneShelfGain  = std::pow (10.0f, -tiltGive - tiltTake);  // low:  +15 dB warm .. -3.75 dB bright
     toneShelfBoost = std::pow (10.0f,  tiltGive + tiltTake);  // high: -3.75 dB warm .. +15 dB bright
     previousTone = toneValue;
+    previousToneSampleRate = engineSampleRate;
 
     // TONE macro crossfade, between machine states rather than dry/wet:
     //   head gap  - the dominant top-end damping of the playback head

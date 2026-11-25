@@ -2440,10 +2440,10 @@ static const Row table[] = {
 };
 int main ()
 {
-    //  Line-buffered: a run is 150 renders long, and ctest -V is what turns this
-    //  output into the CI log. Without this the lines arrive in block-sized
-    //  bursts after the fact instead of as progress.
-    std::setvbuf (stdout, nullptr, _IOLBF, 0);
+    //  Unbuffered on stdout: a run is 150+ renders long, and ctest -V turns
+    //  output into the CI log. Avoid `_IOLBF` with size 0, which trips MSVC UCRT's
+    //  invalid-parameter fastfail on Windows.
+    std::setvbuf (stdout, nullptr, _IONBF, 0);
 
     FirstAudioProcessor processor;
     std::vector<std::string> registered;
