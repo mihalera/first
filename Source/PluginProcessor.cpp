@@ -1007,8 +1007,6 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     for (auto& stage : irStages)
         stage.reset();
 
-    prepareRateDependentBuffers (sampleRateToUse, samplesPerBlock);
-
     // -----------------------------------------------------------------------
     //  Playback head delay line.
     //
@@ -1149,6 +1147,73 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // that correction now - Source/DSP/AutoGainCompensator.h - so this is its own
     // reset rather than a float written from here.
     autoGainCompensator.reset();
+}
+
+void FirstAudioProcessor::prepareOversamplingStages (double sampleRateToUse, int preparedBlockSize)
+{
+    //  Prepare every oversampler AND every rate-dependent stage once, here, for
+    //  every factor. This is the allocation point for the whole oversampling
+    //  switch: processBlock later only selects a slot, so pressing OVERSAMPLING
+    //  no longer calls CorrectorStage::prepare, IrStage::prepare or
+    //  RepitchStage::prepare on the audio thread.
+    for (int slot = 0; slot < static_cast<int> (oversamplingFactorCount); ++slot)
+    {
+        const auto factor = 1 << slot; // 1, 2, 4, 8 - the order of `oversamplers`
+        const auto engineRate = sampleRateToUse * static_cast<double> (factor);
+        const auto engineBlock = preparedBlockSize * factor;
+
+        if (auto* oversampler = oversamplers[slot])
+        {
+            oversampler->initProcessing (static_cast<size_t> (preparedBlockSize));
+            oversampler->reset();
+        }
+
+        auto& corrector = correctors[static_cast<std::size_t> (slot)];
+        corrector.prepare (engineRate, 2);
+
+        irStages[static_cast<std::size_t> (slot)].prepare (
+            { engineRate, static_cast<juce::uint32> (engineBlock), 2 });
+
+        repitchStages[static_cast<std::size_t> (slot)].prepare (engineRate);
+
+        for (auto& tracker : autoTuneTrackers[static_cast<std::size_t> (slot)])
+            tracker.prepare (engineRate);
+    }
+}
+
+void FirstAudioProcessor::prepareRateDependentBuffers (double sampleRateToUse, int samplesPerBlock)
+{
+    // The noise print, if one is loaded, is converted to this rate HERE - a
+    // prepare may allocate, an audio callback may not - and the print stays in
+    // its decoded form so a later rate switch costs arithmetic rather than
+    // another read of the file.
+    noiseLoader.prepare (sampleRateToUse);
+    postFxScratch.setSize (2, juce::jmax (1, samplesPerBlock * 8), false, true, true);
+    postFxScratch.clear();
+
+    // Per-channel DC-blocker state: AC coupling restarts from zero after a rate
+    // change, exactly like the analogue coupling capacitors do on power-up.
+    dcBlockXState.fill (0.0f);
+    dcBlockYState.fill (0.0f);
+
+    const double maxEngineRate = juce::jmax (44100.0, sampleRateToUse) * 8.0;
+    const int maxDelaySamples = static_cast<int> (std::ceil (0.25 * maxEngineRate)) + 4;
+    delayBufferLength = juce::jmax (4, maxDelaySamples);
+    delayBuffer.setSize (juce::jmax (1, juce::jmin (2, getTotalNumOutputChannels())),
+                         delayBufferLength, false, true, true);
+    delayBuffer.clear();
+    delayWritePosition = 0;
+    delayToneLpState.fill (0.0f);
+    delayHpXState.fill (0.0f);
+    delayHpYState.fill (0.0f);
+    delayFeedbackDampState.fill (0.0f);
+    delayToneCurrent = 0.5f;
+    delayFeedbackHpRCurrent = 0.99f;
+
+    // The offset buffer is a fixed short window - a few hundred microseconds is far
+    // more than the tens the control asks for - so it is a plain array, not an
+    // allocation.
+    stOffsetBuffer.reset();
 }
 
 void FirstAudioProcessor::resetSampleRateDependentState()

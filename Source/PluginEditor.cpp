@@ -1596,7 +1596,25 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     constexpr int headerColumns = headerColumnCount;
     constexpr int headerGap = headerColumnGap;
     const auto switchHeight = headerSwitchHeight;
-    const auto headerColumnWidth = headerColumnWidthFor (header.getWidth());
+    auto headerColumnWidth = headerColumnWidthFor (header.getWidth());
+
+    //  The brand row's renderer caption shares the row with the brand strip: it is
+    //  190 px of right-aligned type in the gap before the grid. The grid grows
+    //  leftwards, and at the growth this build now allows it walked over that
+    //  caption - the long "BACKEND ... PENDING" form printed across MASTER MACHINE.
+    //  The cells are therefore capped by the row above them as well as by their own
+    //  maximum, and a width where even the floor cannot hold the caption hides it
+    //  (the answer GUIDE already gives at the same widths) rather than overlapping.
+    const auto rendererLeft = brandLabel.getRight() + 6;
+    const auto rendererFits = [&] (int cellWidth)
+    {
+        const auto gridWidth = headerColumns * cellWidth + (headerColumns - 1) * headerGap;
+        return headerRight - gridWidth - headerGap - rendererLeft >= rendererCaptionWidth;
+    };
+
+    while (headerColumnWidth > headerColumnWidthMinimum && ! rendererFits (headerColumnWidth))
+        --headerColumnWidth;
+
     const auto headerGridWidth = headerColumns * headerColumnWidth
                                + (headerColumns - 1) * headerGap;
     const auto headerRowOneY = header.getY() + headerRowOneOffset;
@@ -1661,8 +1679,13 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     // before the switch grid: the row above the title is the only part of the
     // header with horizontal slack in it, and ending at headerGridLeft rather
     // than at a fixed x is what keeps it clear of the switches at every width.
-    rendererLabel.setBounds (headerGridLeft - headerGap - rendererCaptionWidth,
-                             header.getY() + 8, rendererCaptionWidth, 12);
+    const auto rendererSpace = headerGridLeft - headerGap - rendererLeft;
+    rendererLabel.setVisible (rendererSpace >= rendererCaptionWidth);
+
+    if (rendererLabel.isVisible())
+        rendererLabel.setBounds (headerGridLeft - headerGap - rendererCaptionWidth,
+                                 header.getY() + 8, rendererCaptionWidth, 12);
+
     rendererLabel.setJustificationType (juce::Justification::centredRight);
 
     //  The machine-state badge rides the header's SECOND row now, starting where
