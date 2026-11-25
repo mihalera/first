@@ -663,15 +663,15 @@
     "language": "language=.cpp"
   },
   "Source/GUI/EditorMeters.cpp": {
-    "mtime": 1795622566.5435777,
-    "seen": 1795623258.1566498,
-    "ast_hash": "23952a8c5049cc511148c068880b95d5",
+    "mtime": 1795634448.3205273,
+    "seen": 1795634870.7357614,
+    "ast_hash": "4cebae3ee4b59138643342d5318eb092",
     "semantic_hash": ""
   },
   "Source/GUI/EditorPaint.cpp": {
-    "mtime": 1795622263.3054383,
-    "seen": 1795623258.1566567,
-    "ast_hash": "d6a05070e374d545aff185c2c3c97b0b",
+    "mtime": 1795629324.4551375,
+    "seen": 1795632585.6714437,
+    "ast_hash": "4b391978796daa6817ac4ea9de2a79c2",
     "semantic_hash": ""
   },
   "Source/GUI/EditorPreferences.h": {
@@ -700,9 +700,9 @@
     "semantic_hash": ""
   },
   "Source/GUI/J37LookAndFeel.cpp": {
-    "mtime": 1795622263.3064377,
-    "seen": 1795623258.1566973,
-    "ast_hash": "1cee13f148e1ed98e7c07b5618129446",
+    "mtime": 1795634466.635963,
+    "seen": 1795634870.7358203,
+    "ast_hash": "a29ae186fad2f8ffc60cfa96bb2e7cfc",
     "semantic_hash": ""
   },
   "Source/GUI/KnobMetrics.h": {
@@ -1029,21 +1029,21 @@
     "semantic_hash": ""
   },
   "Source/PluginEditor.cpp": {
-    "mtime": 1795622560.8244605,
-    "seen": 1795623258.166445,
-    "ast_hash": "9fca1c0e0fd592b41e6f69a48e6e6e72",
+    "mtime": 1795629249.541283,
+    "seen": 1795632585.671836,
+    "ast_hash": "6b653bc7a969f85ae31f4276f5f8712a",
     "semantic_hash": ""
   },
   "Source/PluginEditor.h": {
-    "mtime": 1795622263.309447,
-    "seen": 1795623258.1673117,
-    "ast_hash": "896c9060c752302307a2608a6aa45966",
+    "mtime": 1795629171.2910466,
+    "seen": 1795632585.6718426,
+    "ast_hash": "3e3c919228c806cb894f4a56456295e1",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
   "Source/PluginProcessor.cpp": {
-    "mtime": 1795622999.6607316,
-    "seen": 1795623258.1676939,
+    "mtime": 1795625932.9540281,
+    "seen": 1795632585.6718493,
     "ast_hash": "2ad0169014ca621a23f585febf46545d",
     "semantic_hash": ""
   },
@@ -3154,9 +3154,9 @@
     "semantic_hash": ""
   },
   "tests/header_render.cpp": {
-    "mtime": 1795624333.432876,
-    "seen": 1795624633.315525,
-    "ast_hash": "bcbe2528c4af9d01bfe98aa841c24428",
+    "mtime": 1795634742.021274,
+    "seen": 1795634870.7373707,
+    "ast_hash": "d5fe28287f38d2876c6c59a2a2d53b89",
     "semantic_hash": ""
   },
   "tests/layout/render.sh": {

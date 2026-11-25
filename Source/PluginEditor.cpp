@@ -3531,8 +3531,17 @@ void FirstAudioProcessorEditor::placeMeters (const EditorLayout& layout)
     // grid is therefore split 62/38 rather than in half: the equal split left the dial a
     // few pixels tall once the rows were reserved, which is what made the meters look
     // tiny. The ladders still have plenty for their bar and caption.
+    //
+    //  The 62 % share is a floor, not a ceiling. On the tall LEVELS panel (1060 x 916
+    //  and up) it handed the two loudness meters a 380 px cell for a 60 px dial and
+    //  five rows, so half the card stood empty above the scale - a framed hole the
+    //  user reads as a missing control. A meter knows the height it draws at a given
+    //  width, so the row takes that height and the compressor ladders - vertical bars
+    //  that benefit from every pixel - absorb the rest.
     const auto usableHeight = meterArea.getHeight() - rowGap;
-    const auto topRowHeight = juce::roundToInt (static_cast<float> (usableHeight) * 0.62f);
+    const auto sharedHeight = juce::roundToInt (static_cast<float> (usableHeight) * 0.62f);
+    const auto wantedHeight = LevelMeter::preferredHeightForWidth (columnWidth);
+    const auto topRowHeight = juce::jlimit (1, usableHeight, juce::jmin (sharedHeight, wantedHeight));
     const auto bottomRowHeight = usableHeight - topRowHeight;
 
     const auto leftColumn = meterArea.getX();

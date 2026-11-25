@@ -119,6 +119,9 @@ struct J37HeaderRenderProbe
     juce::Rectangle<int> brandStrip() const { return editor.brandLabel.getBounds(); }
     juce::Rectangle<int> rendererCaption() const { return editor.rendererLabel.getBounds(); }
     bool rendererCaptionVisible() const { return editor.rendererLabel.isVisible(); }
+    /**  The LEVELS grid's two rows: the loudness meters and the compressor ladders. */
+    juce::Rectangle<int> loudnessCell() const { return editor.inputMeter.getBounds(); }
+    juce::Rectangle<int> ladderCell() const { return editor.compressorMeterIn.getBounds(); }
     const j37panel::UiPalette& palette() const { return j37panel::paletteFor (editor.darkTheme); }
     bool badgeShown() const { return editor.statusLabel.isVisible(); }
     juce::String caption() const { return editor.statusLabel.getText(); }
@@ -575,6 +578,40 @@ juce::String themeName (j37panel::ThemeChoice choice)
     return "unknown";
 }
 
+/**  The LEVELS grid's rows. The loudness meters draw a fixed dial and five rows, so
+     their row must be sized from that content rather than from a share of a tall
+     panel - the empty framed card that used to sit above the dial was exactly
+     that surplus. The compressor ladders take everything left over. */
+void checkMeterRow (J37HeaderRenderProbe& probe, FirstAudioProcessorEditor& editor)
+{
+    const auto before = editor.getBounds();
+    int tallCellHeight = 0;
+
+    for (const auto height : { 664, 916, 1000 })
+    {
+        editor.setSize (1060, height);
+        pumpMessages (90);
+
+        const auto cell = probe.loudnessCell();
+        const auto ladder = probe.ladderCell();
+
+        std::printf ("\nmeters at 1060x%d: loudness cell %dx%d, ladder cell %dx%d\n", height,
+                     cell.getWidth(), cell.getHeight(), ladder.getWidth(), ladder.getHeight());
+
+        expect (cell.getHeight() <= 230,
+                "meters: the loudness cell is no taller than its dial and rows draw");
+
+        if (height == 916)
+            tallCellHeight = cell.getHeight();
+        else if (height == 1000)
+            expect (cell.getHeight() == tallCellHeight,
+                    "meters: a taller panel does not stretch the loudness cells, it grows the ladders");
+    }
+
+    editor.setSize (before.getWidth(), before.getHeight());
+    pumpMessages (90);
+}
+
 /**  The header's own hardware against what shares its corners: the last switch key
      against the countersunk screw, and the brand row's renderer caption against the
      brand strip at the three widths the harness already renders. */
@@ -906,6 +943,9 @@ int main()
 
     //  The header's own hardware and the brand row, measured on the live editor.
     checkHeaderClearances (probe, *editor);
+
+    //  The LEVELS grid against the content it holds.
+    checkMeterRow (probe, *editor);
 
     //==========================================================================
     //  The negative controls. Each one damages a real render the way the panel

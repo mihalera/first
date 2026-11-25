@@ -1066,9 +1066,12 @@ void J37LookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& lab
 
     const auto swatchInset = box.getComponentID() == "mibox.tape_stock" ? 23 : 0;
     const auto glyphInset = modelGlyphTileFor(box) >= 0 ? 22 : 0;
-    label.setBounds(inset + swatchInset + glyphInset, 1,
-                    juce::jmax(0, box.getWidth() - 30 - swatchInset - glyphInset),
-                    box.getHeight() - 2);
+    const auto textWidth = juce::jmax(0, box.getWidth() - 30 - swatchInset - glyphInset);
+    label.setBounds(inset + swatchInset + glyphInset, 1, textWidth, box.getHeight() - 2);
+
+    //  The face is fitted to the entry in drawLabel(), not here: a ComboBox writes its
+    //  label text with dontSendNotification and never re-runs this layout, so a font
+    //  fitted at layout time is fitted to whatever the last layout saw.
     label.setFont (getComboBoxFont (box));
 }
 
@@ -1113,7 +1116,11 @@ void J37LookAndFeel::drawComboBox(juce::Graphics &g,
     const auto glyphSize = juce::jmin(18, juce::jmax(12, height / 2));
     const auto left = juce::jlimit(2, 8, height / 6);
     const auto top = juce::jmax(2, (height - glyphSize) / 2);
-    g.setColour(juce::Colours::white);
+
+    //  The glyph is an alpha mask, so its colour is the brush: white made it
+    //  invisible on every light theme (a valve icon on cream). It is an icon of the
+    //  selected model, so it takes the panel's ink like the label beside it.
+    g.setColour (paletteForTheme (theme).text.withAlpha (0.85f));
     g.drawImage(modelAtlas, left, top, glyphSize, glyphSize,
                 (modelTile % 8) * 64, (modelTile / 8) * 64, 64, 64, true);
 }
@@ -1142,12 +1149,25 @@ void J37LookAndFeel::drawLabel (juce::Graphics& g, juce::Label& label)
     // the fit to luck. Only a Label that IS a Slider's value box gets this:
     // captions, combo fields and the deck's own readouts are untouched.
     const auto isSliderValue = dynamic_cast<juce::Slider*> (label.getParentComponent()) != nullptr;
+
+    //  A model selector carries names as wide as its own field ("Jensen JT-11P",
+    //  "Standard LP") and a Label clips rather than fit. The face is fitted HERE,
+    //  against the text that is about to be drawn, because the field's text is set by
+    //  the ComboBox itself: setSelectedId() assigns it with dontSendNotification and
+    //  does not re-lay the field out, so a font fitted when "Off" was selected stayed
+    //  fitted to "Off" after the user picked a longer model.
+    auto face = label.getFont();
+    if (auto* box = dynamic_cast<juce::ComboBox*> (label.getParentComponent()))
+        face = j37panel::shrinkingFont (label.getText(), getComboBoxFont (*box).getHeight(),
+                                        juce::Font::plain,
+                                        static_cast<float> (label.getWidth()));
+
     g.setFont (isSliderValue
                    ? juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
                                                     juce::jlimit (11.0f, 13.5f,
                                                                   static_cast<float> (label.getHeight()) * 0.85f),
                                                     juce::Font::plain))
-                   : label.getFont());
+                   : face);
 
     auto area = label.getLocalBounds().toFloat();
 

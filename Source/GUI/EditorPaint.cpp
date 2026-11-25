@@ -344,9 +344,16 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     if (inClip(layout.deck)) {
         const auto &plate = j37panel::assets::cachedImage("deck_plate_png");
         if (plate.isValid()) {
+            //  The plate is an ALPHA mask, so drawImage fills it with whatever brush
+            //  is current - which here was the panel background left over from the
+            //  fillAll above. The deck's calibration marks were therefore painted in
+            //  the background colour and survived only as a faint ghost. Name the ink
+            //  instead: the plate is silkscreen, and silkscreen is the theme's border
+            //  tone, held back so it never competes with a control.
             g.saveState();
+            g.setColour(palette.border);
+            g.setOpacity(0.55f);
             g.reduceClipRegion(layout.deck);
-            g.setOpacity(0.78f);
             g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
             g.drawImage(plate, layout.deck.getX(), layout.deck.getY(), layout.deck.getWidth(),
                         layout.deck.getHeight(), 0, 0, 2048, 512, true);
@@ -372,7 +379,13 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     if (rackPageIndex >= 0 && inClip(layout.controls)) {
         const auto &pedals = j37panel::assets::cachedImage("rack_pedals_png");
         if (pedals.isValid() && pedals.getWidth() >= 2048 && pedals.getHeight() >= 512) {
+            //  Same leftover-brush bug as the deck plate, with a bigger result: on a
+            //  dark theme the pedal board's panel fill was painted in the light theme
+            //  tone and read as a pale slab behind the knobs. Tint it with the border
+            //  and hold it right back - the board is a background treatment, not a card.
             g.saveState();
+            g.setColour(palette.border);
+            g.setOpacity(0.35f);
             g.reduceClipRegion(layout.controls);
             g.setImageResamplingQuality(juce::Graphics::highResamplingQuality);
             g.drawImage(pedals, layout.controls.getX(), layout.controls.getY(),
