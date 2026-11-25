@@ -531,6 +531,16 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
             jump through a stale history. */
         void setActive(bool shouldBeActive);
 
+        /** The height this meter actually uses at a given cell width: the title
+            block, the dial and the five readout rows. The editor sizes its row from
+            this rather than from a fixed share of the panel, so a tall LEVELS panel
+            stops leaving an empty framed card above a 60 px dial. */
+        static int preferredHeightForWidth (int width);
+
+        /** The type scale the paint routine uses, exposed so the preferred height is
+            measured with the same numbers the paint will draw. */
+        static float textScaleForWidth (int width);
+
         void paint(juce::Graphics &) override;
 
       private:

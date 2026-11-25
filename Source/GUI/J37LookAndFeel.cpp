@@ -1066,10 +1066,17 @@ void J37LookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& lab
 
     const auto swatchInset = box.getComponentID() == "mibox.tape_stock" ? 23 : 0;
     const auto glyphInset = modelGlyphTileFor(box) >= 0 ? 22 : 0;
-    label.setBounds(inset + swatchInset + glyphInset, 1,
-                    juce::jmax(0, box.getWidth() - 30 - swatchInset - glyphInset),
-                    box.getHeight() - 2);
-    label.setFont (getComboBoxFont (box));
+    const auto textWidth = juce::jmax(0, box.getWidth() - 30 - swatchInset - glyphInset);
+    label.setBounds(inset + swatchInset + glyphInset, 1, textWidth, box.getHeight() - 2);
+
+    //  The model selectors carry names as wide as their field ("Jensen JT-11P",
+    //  "Standard LP"), and a Label clips rather than fit: the last glyphs ran under
+    //  the field's own check mark. Fit the face to the entry - the width is already
+    //  the field's text area, so nothing else can give.
+    const auto baseFont = getComboBoxFont (box);
+    label.setFont (j37panel::shrinkingFont (label.getText(), baseFont.getHeight(),
+                                            juce::Font::plain,
+                                            static_cast<float> (textWidth)));
 }
 
 void J37LookAndFeel::drawComboBox(juce::Graphics &g,
@@ -1113,7 +1120,11 @@ void J37LookAndFeel::drawComboBox(juce::Graphics &g,
     const auto glyphSize = juce::jmin(18, juce::jmax(12, height / 2));
     const auto left = juce::jlimit(2, 8, height / 6);
     const auto top = juce::jmax(2, (height - glyphSize) / 2);
-    g.setColour(juce::Colours::white);
+
+    //  The glyph is an alpha mask, so its colour is the brush: white made it
+    //  invisible on every light theme (a valve icon on cream). It is an icon of the
+    //  selected model, so it takes the panel's ink like the label beside it.
+    g.setColour (paletteForTheme (theme).text.withAlpha (0.85f));
     g.drawImage(modelAtlas, left, top, glyphSize, glyphSize,
                 (modelTile % 8) * 64, (modelTile / 8) * 64, 64, 64, true);
 }
