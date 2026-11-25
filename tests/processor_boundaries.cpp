@@ -59,6 +59,69 @@ bool processEmptyBlock(FirstAudioProcessor &processor, juce::MidiBuffer &midi) {
     processor.processBlock(empty, midi);
     return empty.getNumChannels() == 2 && empty.getNumSamples() == 0;
 }
+
+bool setParameter(FirstAudioProcessor &processor, const char *id, float value) {
+    auto *parameter = processor.parameters.getParameter(id);
+    if (parameter == nullptr)
+        return false;
+
+    parameter->setValueNotifyingHost(parameter->convertTo0to1(value));
+    return true;
+}
+
+bool parameterEquals(FirstAudioProcessor &processor, const char *id, float expected) {
+    const auto *value = processor.parameters.getRawParameterValue(id);
+    return value != nullptr && std::abs(value->load() - expected) < 1.0e-4f;
+}
+
+bool processRestoredBypass(FirstAudioProcessor &processor) {
+    constexpr std::size_t sampleCount = 16;
+    std::array<float, sampleCount> expectedLeft{};
+    std::array<float, sampleCount> expectedRight{};
+    juce::AudioBuffer<float> buffer(2, static_cast<int>(sampleCount));
+
+    for (std::size_t sample = 0; sample < sampleCount; ++sample) {
+        const auto value = static_cast<float>(sample) * 0.03125f - 0.25f;
+        expectedLeft[sample] = value;
+        expectedRight[sample] = -value;
+        buffer.setSample(0, static_cast<int>(sample), expectedLeft[sample]);
+        buffer.setSample(1, static_cast<int>(sample), expectedRight[sample]);
+    }
+
+    juce::MidiBuffer midi;
+    processor.processBlock(buffer, midi);
+    return std::memcmp(buffer.getReadPointer(0), expectedLeft.data(), sizeof(expectedLeft)) == 0 &&
+           std::memcmp(buffer.getReadPointer(1), expectedRight.data(), sizeof(expectedRight)) == 0;
+}
+
+bool checkStateAcrossLifecycle() {
+    auto saved = std::make_unique<FirstAudioProcessor>();
+    if (!setParameter(*saved, "mix", 37.0f) || !setParameter(*saved, "bypass", 1.0f))
+        return false;
+
+    juce::MemoryBlock state;
+    saved->getStateInformation(state);
+    if (state.getSize() == 0)
+        return false;
+
+    auto restored = std::make_unique<FirstAudioProcessor>();
+    restored->setStateInformation(state.getData(), static_cast<int>(state.getSize()));
+    if (!parameterEquals(*restored, "mix", 37.0f) || !parameterEquals(*restored, "bypass", 1.0f))
+        return false;
+
+    // A restored host state must remain effective when the processor prepares,
+    // releases, and prepares again at a new sample rate.
+    restored->prepareToPlay(48000.0, 127);
+    const auto firstRunPassed = processRestoredBypass(*restored);
+    restored->releaseResources();
+
+    restored->prepareToPlay(96000.0, 263);
+    const auto secondRunPassed = processRestoredBypass(*restored);
+    restored->releaseResources();
+
+    return firstRunPassed && secondRunPassed && parameterEquals(*restored, "mix", 37.0f) &&
+           parameterEquals(*restored, "bypass", 1.0f);
+}
 } // namespace
 
 int main() {
@@ -99,7 +162,12 @@ int main() {
     neverPlayed.prepareToPlay(44100.0, 127);
     neverPlayed.releaseResources();
 
-    std::cout << "processor boundaries: empty, 1/257/509-frame blocks, 48->96 kHz, and "
-                 "prepare/release without playback passed\n";
+    if (!checkStateAcrossLifecycle()) {
+        std::cerr << "restored parameter state was lost or ineffective across prepare/release\n";
+        return 1;
+    }
+
+    std::cout << "processor boundaries: empty, 1/257/509-frame blocks, 48->96 kHz, "
+                 "prepare/release without playback, and restored state across lifecycle passed\n";
     return 0;
 }

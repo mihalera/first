@@ -1895,6 +1895,9 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     /** Attaches the click/detent sounds to every control that should have them.
         Called once from the constructor, after the controls exist. */
     void attachInterfaceSounds();
+    void attachButtonSounds();
+    void attachSliderSounds();
+    void attachComboBoxSounds();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FirstAudioProcessorEditor)
 };

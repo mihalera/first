@@ -1124,6 +1124,12 @@ private:
     /** Rebuilds every time-domain constant from the current sample rate. */
     void resetSampleRateDependentState();
 
+    /** Prepares every engine-rate stage for each supported oversampling slot. */
+    void prepareOversamplingStages (double sampleRateToUse, int preparedBlockSize);
+
+    /** Prepares rate-dependent buffers and clears their per-session state. */
+    void prepareRateDependentBuffers (double sampleRateToUse, int samplesPerBlock);
+
     /** Recomputes the cached tone filter coefficients for the current rate. */
     void updateToneCoefficients (float toneValue, float engineSampleRate);
 

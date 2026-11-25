@@ -147,6 +147,13 @@ using j37panel::computeKnobMetrics;
 //==============================================================================
 void FirstAudioProcessorEditor::attachInterfaceSounds()
 {
+    attachButtonSounds();
+    attachSliderSounds();
+    attachComboBoxSounds();
+}
+
+void FirstAudioProcessorEditor::attachButtonSounds()
+{
     // The one wrapper. It chains onto whatever the button already does rather
     // than replacing it: the click is played first, so a handler that opens a
     // dialog cannot swallow it, and the existing handler runs immediately after.
@@ -161,8 +168,6 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
                 previous();
         };
     };
-
-    const auto playClick = [this] { uiSounds.trigger (UiSoundEngine::Voice::click); };
 
     // juce::Button* named explicitly: the members mix ToggleButton and
     // TextButton, and an initializer_list cannot be deduced from a
@@ -205,7 +210,10 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
                           &phoneActionsButton } };
     for (auto* button : utilityButtons)
         attachVoice (*button, UiSoundEngine::Voice::click);
+}
 
+void FirstAudioProcessorEditor::attachSliderSounds()
+{
     // Every knob: a detent per value change, rate-limited so a fast drag ticks
     // rather than buzzes. The counter is a member rather than a lambda capture
     // because a `mutable` capture inside a loop would give every knob its own
@@ -228,6 +236,12 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
             uiSounds.trigger (UiSoundEngine::Voice::detent);
         };
     }
+
+}
+
+void FirstAudioProcessorEditor::attachComboBoxSounds()
+{
+    const auto playClick = [this] { uiSounds.trigger (UiSoundEngine::Voice::click); };
 
     // The combo boxes (the deck's type switches): a click when the selection
     // actually changes, which is what flipping a rotary switch feels like.
