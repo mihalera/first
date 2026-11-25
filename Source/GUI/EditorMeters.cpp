@@ -353,7 +353,12 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
         //  below - at this dial size they are a sub-pixel smear anyway.
         juce::Path band;
         band.setUsingNonZeroWinding (false);
-        const auto inkBand = juce::jmax (6.0f, radius - 14.0f);
+        //  The atlas prints its numbers at roughly 0.78 radii; the arc and ticks
+        //  live outside 0.88. The cut is a SHARE of the radius, not a fixed inset:
+        //  a fixed 14 px looked clear on a 62 px dial and left the labels inside the
+        //  visible band on the 37 px dial at the minimum window, where they printed a
+        //  second time under the code type.
+        const auto inkBand = juce::jmax (4.0f, radius * 0.9f);
         band.addEllipse (centreX - radius - 3.0f, centreY - radius - 3.0f,
                          (radius + 3.0f) * 2.0f, (radius + 3.0f) * 2.0f);
         band.addEllipse (centreX - inkBand, centreY - inkBand, inkBand * 2.0f, inkBand * 2.0f);

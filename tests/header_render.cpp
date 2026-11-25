@@ -114,6 +114,11 @@ struct J37HeaderRenderProbe
     /**  The last cell of the header's switch grid. The grid must END clear of the
         card's countersunk corner screw, or the key's rounded end runs under it. */
     juce::Rectangle<int> lastSwitchKey() const { return editor.glueButton.getBounds(); }
+    /**  The brand strip and the renderer caption share the header's first row; the
+        caption must never walk over the strip when the switch grid grows. */
+    juce::Rectangle<int> brandStrip() const { return editor.brandLabel.getBounds(); }
+    juce::Rectangle<int> rendererCaption() const { return editor.rendererLabel.getBounds(); }
+    bool rendererCaptionVisible() const { return editor.rendererLabel.isVisible(); }
     const j37panel::UiPalette& palette() const { return j37panel::paletteFor (editor.darkTheme); }
     bool badgeShown() const { return editor.statusLabel.isVisible(); }
     juce::String caption() const { return editor.statusLabel.getText(); }
@@ -868,6 +873,38 @@ int main()
                 "header: the last switch key ends clear of the corner screw");
         expect (! key.isEmpty() && header.contains (key),
                 "header: the last switch key is a real cell inside the header");
+    }
+
+    //  The renderer caption on the brand row against the brand strip. The grid is
+    //  anchored right and grows leftwards; a wider cell maximum is what let the
+    //  190 px "BACKEND ... PENDING" form print across MASTER MACHINE at mid widths.
+    {
+        const auto before = editor->getBounds();
+
+        for (const auto width : { 780, 850, 1060 })
+        {
+            editor->setSize (width, before.getHeight());
+            pumpMessages (90);
+
+            const auto strip = probe.brandStrip();
+            const auto caption = probe.rendererCaption();
+            const auto visible = probe.rendererCaptionVisible();
+
+            std::printf ("\nheader %d px: renderer caption %s", width,
+                         visible ? "shown" : "yielded");
+            if (visible)
+                std::printf (" at %d, brand strip ends %d, caption ends %d", caption.getX(),
+                             strip.getRight(), caption.getRight());
+            std::printf ("\n");
+
+            expect (! visible || caption.getX() >= strip.getRight() + 4,
+                    "header: a shown renderer caption starts clear of the brand strip");
+            expect (visible || width < 800,
+                    "header: the renderer caption is only yielded where it cannot fit");
+        }
+
+        editor->setSize (before.getWidth(), before.getHeight());
+        pumpMessages (90);
     }
 
     //==========================================================================
