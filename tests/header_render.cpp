@@ -575,6 +575,52 @@ juce::String themeName (j37panel::ThemeChoice choice)
     return "unknown";
 }
 
+/**  The header's own hardware against what shares its corners: the last switch key
+     against the countersunk screw, and the brand row's renderer caption against the
+     brand strip at the three widths the harness already renders. */
+void checkHeaderClearances (J37HeaderRenderProbe& probe, FirstAudioProcessorEditor& editor)
+{
+    const auto key = probe.lastSwitchKey();
+    const auto header = probe.header();
+
+    std::printf ("\nheader key row: last key ends %d px before the card edge\n",
+                 header.getRight() - key.getRight());
+
+    expect (key.getRight() <= header.getRight() - 13,
+            "header: the last switch key ends clear of the corner screw");
+    expect (! key.isEmpty() && header.contains (key),
+            "header: the last switch key is a real cell inside the header");
+
+    const auto before = editor.getBounds();
+
+    for (const auto width : { 780, 850, 1060 })
+    {
+        editor.setSize (width, before.getHeight());
+        pumpMessages (90);
+
+        const auto strip = probe.brandStrip();
+        const auto caption = probe.rendererCaption();
+        const auto visible = probe.rendererCaptionVisible();
+
+        std::printf ("\nheader %d px: renderer caption %s", width,
+                     visible ? "shown" : "yielded");
+
+        if (visible)
+            std::printf (" at %d, brand strip ends %d, caption ends %d", caption.getX(),
+                         strip.getRight(), caption.getRight());
+
+        std::printf ("\n");
+
+        expect (! visible || caption.getX() >= strip.getRight() + 4,
+                "header: a shown renderer caption starts clear of the brand strip");
+        expect (visible || width < 800,
+                "header: the renderer caption is only yielded where it cannot fit");
+    }
+
+    editor.setSize (before.getWidth(), before.getHeight());
+    pumpMessages (90);
+}
+
 } // namespace
 
 //==============================================================================
@@ -858,54 +904,8 @@ int main()
 
     expect (matrixCases == 12, "the matrix covered every palette in both translations");
 
-    //  The header's switch grid against the card's own hardware: the corner screw
-    //  sits 9 px inside each corner and its head spans 8 px, so the last key has to
-    //  end before right-13. It ran to right-6, which put the key's rounded end and
-    //  its state pill under the screw on every desktop width.
-    {
-        const auto key = probe.lastSwitchKey();
-        const auto header = probe.header();
-
-        std::printf ("\nheader key row: last key ends %d px before the card edge\n",
-                     header.getRight() - key.getRight());
-
-        expect (key.getRight() <= header.getRight() - 13,
-                "header: the last switch key ends clear of the corner screw");
-        expect (! key.isEmpty() && header.contains (key),
-                "header: the last switch key is a real cell inside the header");
-    }
-
-    //  The renderer caption on the brand row against the brand strip. The grid is
-    //  anchored right and grows leftwards; a wider cell maximum is what let the
-    //  190 px "BACKEND ... PENDING" form print across MASTER MACHINE at mid widths.
-    {
-        const auto before = editor->getBounds();
-
-        for (const auto width : { 780, 850, 1060 })
-        {
-            editor->setSize (width, before.getHeight());
-            pumpMessages (90);
-
-            const auto strip = probe.brandStrip();
-            const auto caption = probe.rendererCaption();
-            const auto visible = probe.rendererCaptionVisible();
-
-            std::printf ("\nheader %d px: renderer caption %s", width,
-                         visible ? "shown" : "yielded");
-            if (visible)
-                std::printf (" at %d, brand strip ends %d, caption ends %d", caption.getX(),
-                             strip.getRight(), caption.getRight());
-            std::printf ("\n");
-
-            expect (! visible || caption.getX() >= strip.getRight() + 4,
-                    "header: a shown renderer caption starts clear of the brand strip");
-            expect (visible || width < 800,
-                    "header: the renderer caption is only yielded where it cannot fit");
-        }
-
-        editor->setSize (before.getWidth(), before.getHeight());
-        pumpMessages (90);
-    }
+    //  The header's own hardware and the brand row, measured on the live editor.
+    checkHeaderClearances (probe, *editor);
 
     //==========================================================================
     //  The negative controls. Each one damages a real render the way the panel

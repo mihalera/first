@@ -3154,9 +3154,9 @@
     "semantic_hash": ""
   },
   "tests/header_render.cpp": {
-    "mtime": 1795623132.994025,
-    "seen": 1795623258.1713705,
-    "ast_hash": "91f7842bad3f904ced8631be87f7c26f",
+    "mtime": 1795624333.432876,
+    "seen": 1795624633.315525,
+    "ast_hash": "bcbe2528c4af9d01bfe98aa841c24428",
     "semantic_hash": ""
   },
   "tests/layout/render.sh": {
