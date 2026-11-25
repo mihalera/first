@@ -204,9 +204,12 @@ int FirstAudioProcessorEditor::LevelMeter::preferredHeightForWidth (int width)
     const auto cellWidth = static_cast<float> (juce::jmax (1, width - 4));
     const auto radius = juce::jmax (8.0f, cellWidth * 0.5f - 10.0f);
 
-    // The dial card is (radius + 16) tall; the rows start 4 px below it and the face
-    // ends 3 px above the meter's own bottom edge (see paint()).
-    return topBlock + juce::roundToInt (radius) + 16 + 4 + rowHeight * 5 + 3;
+    //  The dial card is (radius + 16) tall, and paint() gives the face 2 px of air
+    //  above it; the rows start 4 px below the card and the meter ends 3 px below them.
+    //  The radius here is the WIDTH-derived one on purpose: that is what paint() draws
+    //  once the face has this height, because its vertical guard only bites on a face
+    //  shorter than the card (see the radius note in paint()).
+    return topBlock + juce::roundToInt (radius) + 18 + 4 + rowHeight * 5 + 3;
 }
 
 void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
@@ -305,8 +308,15 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     }
 
     const auto centreX = face.getCentreX();
-    // The dial is a half circle sitting on the lower edge of the face area.
-    const auto radius = juce::jmin (face.getWidth() * 0.5f - 10.0f, face.getHeight() * 0.72f);
+    //  The dial is a half circle sitting on the lower edge of the face area, and its
+    //  WIDTH is what makes it a dial. The vertical term is only a guard, not a second
+    //  size rule: the dial card is (radius + 16) tall, so a face that a short cell made
+    //  shorter than that has to shrink the dial to stay inside it. A percentage cap
+    //  (0.72 of the face) instead capped a wide meter's dial well below the width it
+    //  had room for, and made preferredHeightForWidth() reserve a height that paint
+    //  then drew a smaller dial in - the blank strip this row was meant to remove.
+    const auto radius = juce::jmin (face.getWidth() * 0.5f - 10.0f,
+                                    juce::jmax (8.0f, face.getHeight() - 18.0f));
     const auto centreY = face.getBottom() - 6.0f;
     const auto startAngle = juce::MathConstants<float>::pi;
     const auto endAngle = juce::MathConstants<float>::twoPi;

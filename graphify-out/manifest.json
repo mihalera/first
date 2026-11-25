@@ -663,9 +663,9 @@
     "language": "language=.cpp"
   },
   "Source/GUI/EditorMeters.cpp": {
-    "mtime": 1795632437.5159192,
-    "seen": 1795632585.6714346,
-    "ast_hash": "8a77b1a5601a04fa33422ff440b9a499",
+    "mtime": 1795634448.3205273,
+    "seen": 1795634870.7357614,
+    "ast_hash": "4cebae3ee4b59138643342d5318eb092",
     "semantic_hash": ""
   },
   "Source/GUI/EditorPaint.cpp": {
@@ -700,9 +700,9 @@
     "semantic_hash": ""
   },
   "Source/GUI/J37LookAndFeel.cpp": {
-    "mtime": 1795629527.2571294,
-    "seen": 1795632585.6714842,
-    "ast_hash": "5cf2eddf295540a8a64ae54627acb5a3",
+    "mtime": 1795634466.635963,
+    "seen": 1795634870.7358203,
+    "ast_hash": "a29ae186fad2f8ffc60cfa96bb2e7cfc",
     "semantic_hash": ""
   },
   "Source/GUI/KnobMetrics.h": {
@@ -3154,8 +3154,8 @@
     "semantic_hash": ""
   },
   "tests/header_render.cpp": {
-    "mtime": 1795632354.6812756,
-    "seen": 1795632585.6724825,
+    "mtime": 1795634742.021274,
+    "seen": 1795634870.7373707,
     "ast_hash": "d5fe28287f38d2876c6c59a2a2d53b89",
     "semantic_hash": ""
   },

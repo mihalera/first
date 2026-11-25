@@ -1069,14 +1069,10 @@ void J37LookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& lab
     const auto textWidth = juce::jmax(0, box.getWidth() - 30 - swatchInset - glyphInset);
     label.setBounds(inset + swatchInset + glyphInset, 1, textWidth, box.getHeight() - 2);
 
-    //  The model selectors carry names as wide as their field ("Jensen JT-11P",
-    //  "Standard LP"), and a Label clips rather than fit: the last glyphs ran under
-    //  the field's own check mark. Fit the face to the entry - the width is already
-    //  the field's text area, so nothing else can give.
-    const auto baseFont = getComboBoxFont (box);
-    label.setFont (j37panel::shrinkingFont (label.getText(), baseFont.getHeight(),
-                                            juce::Font::plain,
-                                            static_cast<float> (textWidth)));
+    //  The face is fitted to the entry in drawLabel(), not here: a ComboBox writes its
+    //  label text with dontSendNotification and never re-runs this layout, so a font
+    //  fitted at layout time is fitted to whatever the last layout saw.
+    label.setFont (getComboBoxFont (box));
 }
 
 void J37LookAndFeel::drawComboBox(juce::Graphics &g,
@@ -1153,12 +1149,25 @@ void J37LookAndFeel::drawLabel (juce::Graphics& g, juce::Label& label)
     // the fit to luck. Only a Label that IS a Slider's value box gets this:
     // captions, combo fields and the deck's own readouts are untouched.
     const auto isSliderValue = dynamic_cast<juce::Slider*> (label.getParentComponent()) != nullptr;
+
+    //  A model selector carries names as wide as its own field ("Jensen JT-11P",
+    //  "Standard LP") and a Label clips rather than fit. The face is fitted HERE,
+    //  against the text that is about to be drawn, because the field's text is set by
+    //  the ComboBox itself: setSelectedId() assigns it with dontSendNotification and
+    //  does not re-lay the field out, so a font fitted when "Off" was selected stayed
+    //  fitted to "Off" after the user picked a longer model.
+    auto face = label.getFont();
+    if (auto* box = dynamic_cast<juce::ComboBox*> (label.getParentComponent()))
+        face = j37panel::shrinkingFont (label.getText(), getComboBoxFont (*box).getHeight(),
+                                        juce::Font::plain,
+                                        static_cast<float> (label.getWidth()));
+
     g.setFont (isSliderValue
                    ? juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
                                                     juce::jlimit (11.0f, 13.5f,
                                                                   static_cast<float> (label.getHeight()) * 0.85f),
                                                     juce::Font::plain))
-                   : label.getFont());
+                   : face);
 
     auto area = label.getLocalBounds().toFloat();
 
