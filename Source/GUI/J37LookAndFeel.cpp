@@ -876,12 +876,28 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     // and the lamp look crookedly placed. At the three real captions (BYPASS, POLARITY,
     // AUTO GAIN) the centred text clears the lamp by at least 15 px, so centring the
     // caption cannot make them collide.
-    const auto captionBand = labelBand;
+    //
+    //  OSCRING and GLUE COMP broke that guarantee: they are the two captions long
+    //  enough for their last glyph to reach the lamp's own left edge, and the LED
+    //  printed inside it. The band is therefore narrowed ONLY when the measured
+    //  caption would cross that edge, and only by the overlap - short captions keep
+    //  the full band exactly as before, so nothing that used to clear moved.
+    const auto captionText = button.getButtonText().toUpperCase();
+    auto captionBand = labelBand;
+    {
+        const auto probeFont =
+            shrinkingFont (captionText, 8.0f, juce::Font::bold, labelBand.getWidth());
+        const auto measured = juce::GlyphArrangement::getStringWidth (probeFont, captionText);
+        const auto centredRight = labelBand.getCentreX() + measured * 0.5f;
+        const auto lampLeft = ledBounds.getX() - 2.0f;
+
+        if (centredRight > lampLeft)
+            captionBand = labelBand.withTrimmedRight (labelBand.getRight() - lampLeft);
+    }
+
     g.setColour (palette.text.withAlpha (0.92f));
-    g.setFont (shrinkingFont (button.getButtonText().toUpperCase(), 8.0f,
-                               juce::Font::bold, captionBand.getWidth()));
-    g.drawText (button.getButtonText().toUpperCase(), captionBand,
-                juce::Justification::centred, true);
+    g.setFont (shrinkingFont (captionText, 8.0f, juce::Font::bold, captionBand.getWidth()));
+    g.drawText (captionText, captionBand, juce::Justification::centred, true);
 
     // Track bed: a recessed groove with the thumb sliding between its two ends. The
     // OFF/ON stop captions were removed - the thumb's own caption is the single

@@ -696,7 +696,12 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     //  the free third cell on the second row alongside THEME, RND and language.
     static constexpr int headerColumnCount = 6;
     static constexpr int headerColumnWidthMinimum = 62;
-    static constexpr int headerColumnWidthMaximum = 74;
+    //  GLUE COMP's caption and its state lamp share one label band. At 74 the
+    //  caption ran under the lamp - the green dot landed in the last letter of
+    //  OSCRING and GLUE COMP. 88 leaves the longest caption its own words and a
+    //  clear gap before the lamp; the grid still ends well short of the GUIDE key
+    //  at every supported width.
+    static constexpr int headerColumnWidthMaximum = 88;
     static constexpr int headerColumnGap = 6;
     static int headerColumnWidthFor (int headerWidth) noexcept;
 
@@ -1890,6 +1895,9 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     /** Attaches the click/detent sounds to every control that should have them.
         Called once from the constructor, after the controls exist. */
     void attachInterfaceSounds();
+    void attachButtonSounds();
+    void attachSliderSounds();
+    void attachComboBoxSounds();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FirstAudioProcessorEditor)
 };

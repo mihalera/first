@@ -56,6 +56,7 @@ What it checks now, against the JSON rather than a C++ table:
     the J37 at full saturation with the mix at zero, so its own name was a lie.
 """
 import json
+import math
 import os
 import re
 import sys
@@ -159,14 +160,25 @@ for name in listed:
     else:
         names.append(label)
 
+    parameter_keys = set(preset) - {"name"}
+    if not parameter_keys:
+        problems.append("%s.json has no parameter values" % name)
+
     for key, value in preset.items():
         if key == "name":
             continue
-        if key not in ids:
+        if key not in registered:
             problems.append("%s.json: \"%s\" is not a registered parameter" % (name, key))
             continue
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             problems.append("%s.json: \"%s\" is %s, not a number" % (name, key, type(value).__name__))
+            continue
+        try:
+            finite = math.isfinite(float(value))
+        except (OverflowError, ValueError):
+            finite = False
+        if not finite:
+            problems.append("%s.json: \"%s\" is not a finite number" % (name, key))
             continue
         covered.add(key)
 

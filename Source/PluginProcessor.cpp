@@ -880,35 +880,9 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
         : currentOversampling;
     const auto preparedBlockSize = juce::jmax (1, samplesPerBlock);
 
-    // Prepare every oversampler AND every rate-dependent stage once, here, for
-    // every factor. This is the allocation point for the whole oversampling
-    // switch: processBlock later only selects a slot, so pressing OVERSAMPLING
-    // no longer calls CorrectorStage::prepare, IrStage::prepare or
-    // RepitchStage::prepare on the audio thread.
-    for (int slot = 0; slot < static_cast<int> (oversamplingFactorCount); ++slot)
-    {
-        const auto factor = 1 << slot; // 1, 2, 4, 8 - the order of `oversamplers`
-        const auto engineRate = sampleRateToUse * static_cast<double> (factor);
-        const auto engineBlock = preparedBlockSize * factor;
-
-        if (auto* oversampler = oversamplers[slot])
-        {
-            oversampler->initProcessing (static_cast<size_t> (preparedBlockSize));
-            oversampler->reset();
-        }
-
-        auto& corrector = correctors[static_cast<std::size_t> (slot)];
-        corrector.prepare (engineRate, 2);
-
-        irStages[static_cast<std::size_t> (slot)].prepare (
-            { engineRate, static_cast<juce::uint32> (engineBlock), 2 });
-
-        repitchStages[static_cast<std::size_t> (slot)].prepare (engineRate);
-
-        for (auto& tracker : autoTuneTrackers[static_cast<std::size_t> (slot)])
-            tracker.prepare (engineRate);
-    }
-
+    // Every slot is ready before the host-visible factor is selected: switching
+    // factors in processBlock only routes to an already prepared engine.
+    prepareOversamplingStages (sampleRateToUse, preparedBlockSize);
     setOversamplingFactor (requestedOversampling, preparedBlockSize);
     // Stated as a double on purpose: SmoothedValue::reset takes the ramp length in seconds
     // as a double, and `auto` here would have deduced the same type silently. Naming it
@@ -1033,14 +1007,7 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     for (auto& stage : irStages)
         stage.reset();
 
-    noiseLoader.prepare (sampleRate);
-    postFxScratch.setSize (2, juce::jmax (1, samplesPerBlock * 8), false, true, true);
-    postFxScratch.clear();
-
-    // Per-channel DC-blocker state: AC coupling restarts from zero after a rate
-    // change, exactly like the analogue coupling capacitors do on power-up.
-    dcBlockXState.fill (0.0f);
-    dcBlockYState.fill (0.0f);
+    prepareRateDependentBuffers (sampleRateToUse, samplesPerBlock);
 
     // -----------------------------------------------------------------------
     //  Playback head delay line.
@@ -1054,24 +1021,7 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     //  Two channels at 4 bytes each is about 3 MB, which is the cost of having a
     //  head spacing that can be swept to a quarter of a second.
     // -----------------------------------------------------------------------
-    const double maxEngineRate = juce::jmax (44100.0, sampleRateToUse) * 8.0;
-    const int maxDelaySamples = static_cast<int> (std::ceil (0.25 * maxEngineRate)) + 4;
-    delayBufferLength = juce::jmax (4, maxDelaySamples);
-    delayBuffer.setSize (juce::jmax (1, juce::jmin (2, getTotalNumOutputChannels())),
-                         delayBufferLength, false, true, true);
-    delayBuffer.clear();
-    delayWritePosition = 0;
-    delayToneLpState.fill (0.0f);
-    delayHpXState.fill (0.0f);
-    delayHpYState.fill (0.0f);
-    delayFeedbackDampState.fill (0.0f);
-    delayToneCurrent = 0.5f;
-    delayFeedbackHpRCurrent = 0.99f;
-
-    // The offset buffer is a fixed short window - a few hundred microseconds is far
-    // more than the tens the control asks for - so it is a plain array, not an
-    // allocation.
-    stOffsetBuffer.reset();
+    prepareRateDependentBuffers (sampleRateToUse, samplesPerBlock);
 
     // The transport starts at speed and lets the first block decide what it should
     // actually be doing: the rig re-arms on its first beginBlock() (it keeps

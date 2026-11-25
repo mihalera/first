@@ -111,6 +111,9 @@ struct J37HeaderRenderProbe
                  { editor.vinylSpeedLabel, editor.vinylSpeedBox }}};
     }
     juce::Rectangle<int> header() const { return editor.getEditorLayout().header; }
+    /**  The last cell of the header's switch grid. The grid must END clear of the
+        card's countersunk corner screw, or the key's rounded end runs under it. */
+    juce::Rectangle<int> lastSwitchKey() const { return editor.glueButton.getBounds(); }
     const j37panel::UiPalette& palette() const { return j37panel::paletteFor (editor.darkTheme); }
     bool badgeShown() const { return editor.statusLabel.isVisible(); }
     juce::String caption() const { return editor.statusLabel.getText(); }
@@ -849,6 +852,23 @@ int main()
         }
 
     expect (matrixCases == 12, "the matrix covered every palette in both translations");
+
+    //  The header's switch grid against the card's own hardware: the corner screw
+    //  sits 9 px inside each corner and its head spans 8 px, so the last key has to
+    //  end before right-13. It ran to right-6, which put the key's rounded end and
+    //  its state pill under the screw on every desktop width.
+    {
+        const auto key = probe.lastSwitchKey();
+        const auto header = probe.header();
+
+        std::printf ("\nheader key row: last key ends %d px before the card edge\n",
+                     header.getRight() - key.getRight());
+
+        expect (key.getRight() <= header.getRight() - 13,
+                "header: the last switch key ends clear of the corner screw");
+        expect (! key.isEmpty() && header.contains (key),
+                "header: the last switch key is a real cell inside the header");
+    }
 
     //==========================================================================
     //  The negative controls. Each one damages a real render the way the panel

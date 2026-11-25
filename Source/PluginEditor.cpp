@@ -147,6 +147,13 @@ using j37panel::computeKnobMetrics;
 //==============================================================================
 void FirstAudioProcessorEditor::attachInterfaceSounds()
 {
+    attachButtonSounds();
+    attachSliderSounds();
+    attachComboBoxSounds();
+}
+
+void FirstAudioProcessorEditor::attachButtonSounds()
+{
     // The one wrapper. It chains onto whatever the button already does rather
     // than replacing it: the click is played first, so a handler that opens a
     // dialog cannot swallow it, and the existing handler runs immediately after.
@@ -161,8 +168,6 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
                 previous();
         };
     };
-
-    const auto playClick = [this] { uiSounds.trigger (UiSoundEngine::Voice::click); };
 
     // juce::Button* named explicitly: the members mix ToggleButton and
     // TextButton, and an initializer_list cannot be deduced from a
@@ -205,7 +210,10 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
                           &phoneActionsButton } };
     for (auto* button : utilityButtons)
         attachVoice (*button, UiSoundEngine::Voice::click);
+}
 
+void FirstAudioProcessorEditor::attachSliderSounds()
+{
     // Every knob: a detent per value change, rate-limited so a fast drag ticks
     // rather than buzzes. The counter is a member rather than a lambda capture
     // because a `mutable` capture inside a loop would give every knob its own
@@ -228,6 +236,12 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
             uiSounds.trigger (UiSoundEngine::Voice::detent);
         };
     }
+
+}
+
+void FirstAudioProcessorEditor::attachComboBoxSounds()
+{
+    const auto playClick = [this] { uiSounds.trigger (UiSoundEngine::Voice::click); };
 
     // The combo boxes (the deck's type switches): a click when the selection
     // actually changes, which is what flipping a rotary switch feels like.
@@ -1569,12 +1583,15 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     //  third cell of row two, preserving switch widths while leaving room for
     //  the language label and selector.
     //
-    //  Cells reach 74 px at the supported desktop minimum; narrower host layouts
-    //  compress smoothly to 62 px without changing their right anchor.
+    //  Cells grow to 88 px and compress smoothly to the 62 px floor without
+    //  changing their right anchor.
     // ------------------------------------------------------------------------------
-    //  Six pixels short of the panel's own edge, so the last cell of the row - GLUE
-    //  COMP since it joined - is not flush with the frame it sits in.
-    const auto headerRight = header.getRight() - 6;
+    //  The grid ends clear of the card's own corner hardware. Six pixels kept the
+    //  last cell - GLUE COMP since it joined - off the frame, but the countersunk
+    //  corner screw sits at right-9 and its head is 8 px wide, so that cell's
+    //  rounded end still ran under it and its state pill was clipped by the corner.
+    //  Twelve more pixels clear the screw's whole footprint.
+    const auto headerRight = header.getRight() - 18;
     // The grid dimensions are declared on the class so these cells stay aligned.
     constexpr int headerColumns = headerColumnCount;
     constexpr int headerGap = headerColumnGap;
