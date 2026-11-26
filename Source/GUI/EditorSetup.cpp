@@ -1816,7 +1816,13 @@ void FirstAudioProcessorEditor::toggleParameterSheet() {
 void FirstAudioProcessorEditor::toggleHelpSheet() {
     if (helpSheet == nullptr) {
         helpSheet = std::make_unique<j37panel::HelpSheet>(paletteForTheme(themeChoice));
-        addAndMakeVisible(*helpSheet);
+        //  addChildComponent, NOT addAndMakeVisible: the sheet's own open() is what
+        //  makes it visible, and it is the only thing that also gives it the editor's
+        //  bounds. Adding it visible made the isOpen() test below fire immediately -
+        //  the first press of GUIDE built the sheet and closed it again, so the sheet
+        //  only ever appeared on a second press (or not at all after a theme change,
+        //  which rebuilds it).
+        addChildComponent(*helpSheet);
     }
 
     if (helpSheet->isOpen()) {

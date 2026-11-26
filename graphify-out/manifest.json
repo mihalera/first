@@ -248,9 +248,9 @@
     "language": "language=.cpp"
   },
   "Source/DSP/Fx/FxPitch.h": {
-    "mtime": 1795037546.3764112,
-    "seen": 1795044408.73239,
-    "ast_hash": "b7fb554b49abf7b7a709510cae8ba54c",
+    "mtime": 1795638957.0210507,
+    "seen": 1795688946.6429908,
+    "ast_hash": "ebe6082bf105317a658e69da2474ffe6",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
@@ -436,10 +436,10 @@
     "language": "language=.cpp"
   },
   "Source/DSP/SampleSmoother.h": {
-    "mtime": 1792874382.0186124,
-    "seen": 1794648118.5733654,
-    "ast_hash": "1235f950f1787acdfa21ab8a5b890fac",
-    "semantic_hash": "1235f950f1787acdfa21ab8a5b890fac",
+    "mtime": 1795685391.4199886,
+    "seen": 1795688946.6432147,
+    "ast_hash": "c27792ab5ec0c2f2cef13dcb3ba30067",
+    "semantic_hash": "",
     "language": "language=.cpp"
   },
   "Source/DSP/SaturationCore.h": {
@@ -492,10 +492,10 @@
     "language": "language=.cpp"
   },
   "Source/DSP/TapeCondition.h": {
-    "mtime": 1792874382.0955906,
-    "seen": 1794648118.5743983,
-    "ast_hash": "57cb0df5dbffa627d5b22f193e67b83c",
-    "semantic_hash": "57cb0df5dbffa627d5b22f193e67b83c",
+    "mtime": 1795638958.267054,
+    "seen": 1795688946.6432698,
+    "ast_hash": "b804cefaa2582359163ab03465856c6f",
+    "semantic_hash": "",
     "language": "language=.cpp"
   },
   "Source/DSP/TapeCouplings.h": {
@@ -576,10 +576,10 @@
     "language": "language=.cpp"
   },
   "Source/DSP/VinylStage.h": {
-    "mtime": 1793784979.1086693,
-    "seen": 1794648118.5762126,
-    "ast_hash": "1b52492bc351d5cb778607947c6f2733",
-    "semantic_hash": "1b52492bc351d5cb778607947c6f2733",
+    "mtime": 1795638968.2767472,
+    "seen": 1795688946.6433496,
+    "ast_hash": "07f2d6ae362227b8ca3faf4943ffb1e5",
+    "semantic_hash": "",
     "language": "language=.cpp"
   },
   "Source/Diagnostics/AndroidBridge.cpp": {
@@ -663,14 +663,14 @@
     "language": "language=.cpp"
   },
   "Source/GUI/EditorMeters.cpp": {
-    "mtime": 1795634448.3205273,
-    "seen": 1795634870.7357614,
+    "mtime": 1795635881.936114,
+    "seen": 1795688946.6434464,
     "ast_hash": "4cebae3ee4b59138643342d5318eb092",
     "semantic_hash": ""
   },
   "Source/GUI/EditorPaint.cpp": {
-    "mtime": 1795629324.4551375,
-    "seen": 1795632585.6714437,
+    "mtime": 1795635881.937122,
+    "seen": 1795688946.6434536,
     "ast_hash": "4b391978796daa6817ac4ea9de2a79c2",
     "semantic_hash": ""
   },
@@ -682,9 +682,9 @@
     "language": "language=.cpp"
   },
   "Source/GUI/EditorSetup.cpp": {
-    "mtime": 1795529455.5707345,
-    "seen": 1795532409.764323,
-    "ast_hash": "8cb5c3bcd8b0cf90815aa97bc792db6d",
+    "mtime": 1795688756.6080537,
+    "seen": 1795688946.6434674,
+    "ast_hash": "9450d8587f9d78ed788ffea44bb946fc",
     "semantic_hash": ""
   },
   "Source/GUI/EditorTheme.cpp": {
@@ -700,8 +700,8 @@
     "semantic_hash": ""
   },
   "Source/GUI/J37LookAndFeel.cpp": {
-    "mtime": 1795634466.635963,
-    "seen": 1795634870.7358203,
+    "mtime": 1795635881.9391847,
+    "seen": 1795688946.6434944,
     "ast_hash": "a29ae186fad2f8ffc60cfa96bb2e7cfc",
     "semantic_hash": ""
   },
@@ -1029,28 +1029,28 @@
     "semantic_hash": ""
   },
   "Source/PluginEditor.cpp": {
-    "mtime": 1795629249.541283,
-    "seen": 1795632585.671836,
+    "mtime": 1795635881.9416957,
+    "seen": 1795688946.6438339,
     "ast_hash": "6b653bc7a969f85ae31f4276f5f8712a",
     "semantic_hash": ""
   },
   "Source/PluginEditor.h": {
-    "mtime": 1795629171.2910466,
-    "seen": 1795632585.6718426,
+    "mtime": 1795635881.943701,
+    "seen": 1795688946.64384,
     "ast_hash": "3e3c919228c806cb894f4a56456295e1",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
   "Source/PluginProcessor.cpp": {
-    "mtime": 1795625932.9540281,
-    "seen": 1795632585.6718493,
-    "ast_hash": "2ad0169014ca621a23f585febf46545d",
+    "mtime": 1795685383.6055741,
+    "seen": 1795688946.6438465,
+    "ast_hash": "3b3702673acacffb9fef6964f9bef4b4",
     "semantic_hash": ""
   },
   "Source/PluginProcessor.h": {
-    "mtime": 1795622263.3119519,
-    "seen": 1795623258.168053,
-    "ast_hash": "275f97326b1b6b8374be1f202ea6bc0d",
+    "mtime": 1795684667.0184379,
+    "seen": 1795688946.6438534,
+    "ast_hash": "dd77e903002e8f75566986380d83556b",
     "semantic_hash": "",
     "language": "language=.cpp"
   },
@@ -1278,9 +1278,9 @@
     "language": "language=.cpp"
   },
   "Source/ProcessorSignalPath.cpp": {
-    "mtime": 1795462324.4614997,
-    "seen": 1795462490.2767203,
-    "ast_hash": "4432f9b3d06042f3a2e33521f4762593",
+    "mtime": 1795684398.397913,
+    "seen": 1795688946.6441228,
+    "ast_hash": "294af9a6f3df4635bfe9cf3f2dd6b441",
     "semantic_hash": ""
   },
   "Source/ProcessorStateFormat.h": {
@@ -1316,9 +1316,9 @@
     "semantic_hash": "9374a3e9368608b6bbace0231f7bff67"
   },
   "android/build.gradle": {
-    "mtime": 1795254504.0298975,
-    "seen": 1795254524.4348626,
-    "ast_hash": "20855c6eb56f105c2f592d0320527b2f",
+    "mtime": 1795635881.944702,
+    "seen": 1795688946.6441686,
+    "ast_hash": "ef2bf719dc27cc01f0ff404eeb5eadd8",
     "semantic_hash": ""
   },
   "android/settings.gradle": {
@@ -3049,9 +3049,9 @@
     "semantic_hash": ""
   },
   "tests/parameter_audio.cpp": {
-    "mtime": 1795091994.738566,
-    "seen": 1795119419.5935116,
-    "ast_hash": "1900a9b60485d33c04e45f263e30c0dd",
+    "mtime": 1795685101.0757966,
+    "seen": 1795688946.6447155,
+    "ast_hash": "eafb7a29749087042543ec20a868716e",
     "semantic_hash": ""
   },
   "tests/parameters/check_mix_wiring.py": {
@@ -3154,9 +3154,9 @@
     "semantic_hash": ""
   },
   "tests/header_render.cpp": {
-    "mtime": 1795634742.021274,
-    "seen": 1795634870.7373707,
-    "ast_hash": "d5fe28287f38d2876c6c59a2a2d53b89",
+    "mtime": 1795688828.6750782,
+    "seen": 1795688946.6445322,
+    "ast_hash": "fd14a8e3746138b86a12bd050602f2a9",
     "semantic_hash": ""
   },
   "tests/layout/render.sh": {
@@ -3844,9 +3844,9 @@
     "semantic_hash": ""
   },
   "Source/GUI/HelpSheet.h": {
-    "mtime": 1795506030.7883902,
-    "seen": 1795520892.3329647,
-    "ast_hash": "d5192903248f6a3b3241c32497ec12d6",
+    "mtime": 1795688578.459925,
+    "seen": 1795688946.6434872,
+    "ast_hash": "6749d450e7f2a52f923437a74fbc32f2",
     "semantic_hash": "",
     "language": "language=.cpp"
   }
