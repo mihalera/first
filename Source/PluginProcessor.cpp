@@ -245,6 +245,9 @@ FirstAudioProcessor::FirstAudioProcessor()
     oversamplers.add (new juce::dsp::Oversampling<float> (2, 3,
                         juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true));
 
+    for (auto& rack : fxRacks)
+        rack = std::make_unique<j37dsp::FxRack>();
+
     // The A/B slots start as copies of the default state so that toggling compare
     // before anything is stored recalls the same settings rather than an empty tree.
     compareSlots[0] = parameters.copyState().createCopy();
@@ -1138,7 +1141,8 @@ void FirstAudioProcessor::prepareOversamplingStages (double sampleRateToUse, int
             { engineRate, static_cast<juce::uint32> (engineBlock), 2 });
 
         reverbs[static_cast<std::size_t> (slot)].prepare (engineRate);
-        fxRacks[static_cast<std::size_t> (slot)].prepare (engineRate);
+        if (fxRacks[static_cast<std::size_t> (slot)] != nullptr)
+            fxRacks[static_cast<std::size_t> (slot)]->prepare (engineRate);
 
         repitchStages[static_cast<std::size_t> (slot)].prepare (engineRate);
 
@@ -1487,12 +1491,11 @@ void FirstAudioProcessor::setOversamplingFactor (OversamplingFactor factor, int 
 
         // A factor change lands in a different engine, so the slot it left behind
         // must not hand its old tail to the new rate. These resets only clear
-        // state - every buffer was sized in prepareToPlay - and resetting the
-        // selected slot also makes a return to a factor start clean rather than
-        // resume a stale ring.
+        // state without allocating - every buffer was sized in prepareToPlay,
+        // and DattorroRoom::reset() allocates a new tank so reverbs are only
+        // reset at prepare time in prepareOversamplingStages().
         activeCorrector().reset();
         activeIrStage().reset();
-        activeReverb().reset();
         activeFxRack().reset();
         activeRepitchStage().reset();
 

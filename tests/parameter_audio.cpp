@@ -156,7 +156,8 @@ public:
         return out;
     }
 
-    FirstAudioProcessor processor;
+    std::unique_ptr<FirstAudioProcessor> processorPtr { std::make_unique<FirstAudioProcessor>() };
+    FirstAudioProcessor& processor { *processorPtr };
 };
 
 using Overrides = std::vector<std::pair<const char*, float>>;
@@ -1077,11 +1078,16 @@ static const Row table[] = {
         for (std::size_t i = 0; i < 10; ++i) L[240 + i] = 0.5f;
         const auto off = renderWith ({{ "delay_pingpong", 0.0f }, { "delay_feedback", 60.0f }, { "delay_time", 100.0f }, { "mix", 100.0f }}, L, R);
         const auto on = renderWith ({{ "delay_pingpong", 100.0f }, { "delay_feedback", 60.0f }, { "delay_time", 100.0f }, { "mix", 100.0f }}, L, R);
+        const auto offRtl = renderWith ({{ "delay_pingpong", 0.0f }, { "delay_feedback", 60.0f }, { "delay_time", 100.0f }, { "mix", 100.0f }}, R, L);
+        const auto onRtl = renderWith ({{ "delay_pingpong", 100.0f }, { "delay_feedback", 60.0f }, { "delay_time", 100.0f }, { "mix", 100.0f }}, R, L);
         const auto sa = 4800, sb = 38400;
         const double ro = rmsDb (off.right, sa, sb), rn = rmsDb (on.right, sa, sb);
-        note = "pp0right=" + std::to_string (ro) + " pp1right=" + std::to_string (rn);
+        const double loRtl = rmsDb (offRtl.left, sa, sb), lnRtl = rmsDb (onRtl.left, sa, sb);
+        note = "pp0right=" + std::to_string (ro) + " pp1right=" + std::to_string (rn)
+             + " pp0left=" + std::to_string (loRtl) + " pp1left=" + std::to_string (lnRtl);
         const auto fail0 = failures;
-        check (rn > ro + 3.0, "pingpong to far side");
+        check (rn > ro + 3.0, "pingpong L->R to far side");
+        check (lnRtl > loRtl + 3.0, "pingpong R->L to far side");
         return failures == fail0;
     } },
 { "delay_tone", "delay tone changes echo brightness", [] (std::string& note) {
@@ -2445,7 +2451,8 @@ int main ()
     //  invalid-parameter fastfail on Windows.
     std::setvbuf (stdout, nullptr, _IONBF, 0);
 
-    FirstAudioProcessor processor;
+    auto processorPtr = std::make_unique<FirstAudioProcessor>();
+    auto& processor = *processorPtr;
     std::vector<std::string> registered;
     for (auto* p : processor.getParameters())
         if (auto* rp = dynamic_cast<juce::RangedAudioParameter*> (p))
@@ -2503,6 +2510,43 @@ int main ()
             std::printf ("META FAIL: parameter '%s' has no test\\n", id.c_str());
             metaOk = false;
         }
+    }
+
+    // Engine-level regression checks for output metering and oversampled stages.
+    {
+        const auto t = sine (1000.0, framesPerSecond);
+        Engine e0, e6;
+        e0.set ("output", 0.0f);
+        e0.run (t, t);
+        const float lufs0 = e0.processor.getOutputLufs();
+
+        e6.set ("output", 6.0f);
+        e6.run (t, t);
+        const float lufs6 = e6.processor.getOutputLufs();
+
+        const auto fail0 = failures;
+        check (lufs6 > lufs0 + 4.0f && lufs6 < lufs0 + 8.0f,
+               "output LUFS tracks output trim (" + std::to_string (lufs0)
+                   + " -> " + std::to_string (lufs6) + ")");
+        std::printf ("[%s] %-20s : output LUFS tracks output trim | %.2f -> %.2f LUFS\n",
+                     failures == fail0 ? "PASS" : "FAIL", "regression_lufs",
+                     lufs0, lufs6);
+    }
+    {
+        const int F = 3 * framesPerSecond;
+        const auto t = toneThenSilence (440.0, 14400, F);
+        const auto os1 = renderMono ({{ "oversampling", 0.0f }, { "reverb", 1.0f }, { "reverb_size", 0.5f }, { "mix", 100.0f }}, t);
+        const auto os8 = renderMono ({{ "oversampling", 3.0f }, { "reverb", 1.0f }, { "reverb_size", 0.5f }, { "mix", 100.0f }}, t);
+        const double tail1 = rmsDb (os1.left, 24000, 48000);
+        const double tail8 = rmsDb (os8.left, 24000, 48000);
+
+        const auto fail0 = failures;
+        check (tail1 > -45.0 && std::abs (tail8 - tail1) < 2.5,
+               "reverb tail matches across 1x/8x oversampling ("
+                   + std::to_string (tail1) + " vs " + std::to_string (tail8) + ")");
+        std::printf ("[%s] %-20s : reverb tail consistent across 1x/8x | 1x=%.2f dB 8x=%.2f dB\n",
+                     failures == fail0 ? "PASS" : "FAIL", "regression_reverb_os",
+                     tail1, tail8);
     }
 
     std::printf ("=== %d/%d passed, %d checks, %d failures, meta=%s ===\\n",

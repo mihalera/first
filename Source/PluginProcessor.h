@@ -1609,6 +1609,7 @@ private:
     float flutterPhaseR = 0.0f;
 
     float previousTone = -1.0f;
+    float previousToneSampleRate = -1.0f;
     float toneLpAc = 0.0f;
 
     // TONE macro machine state, cached by updateToneCoefficients(). These were used by
@@ -2330,7 +2331,12 @@ private:
     //  used to sit at the same point, and the signal path calls it directly with
     //  the settings the six existing COMP controls produce.
     // -----------------------------------------------------------------------
-    j37dsp::FxRack fxRack;
+    std::array<std::unique_ptr<j37dsp::FxRack>, oversamplingFactorCount> fxRacks;
+
+    j37dsp::FxRack& activeFxRack() noexcept
+    {
+        return *fxRacks[oversamplingSlot (currentOversampling)];
+    }
     j37dsp::fx::MultibandCompressor multibandCompressor;
     j37dsp::FxTargets fxTargets;
 

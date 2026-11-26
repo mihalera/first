@@ -13,6 +13,7 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 
 //==============================================================================
 /**
@@ -91,10 +92,13 @@ public:
 
     float getCurrentValue() noexcept
     {
-        if (lastSample != clock.sample)
+        if (lastSample < clock.sample)
         {
+            const auto elapsed = clock.sample - lastSample;
             lastSample = clock.sample;
-            const auto value = smoother.getNextValue();
+            constexpr auto maxSteps = static_cast<std::uint64_t> (std::numeric_limits<int>::max());
+            const auto steps = static_cast<int> (elapsed < maxSteps ? elapsed : maxSteps);
+            const auto value = steps <= 1 ? smoother.getNextValue() : smoother.skip (steps);
             return invertOutput ? 1.0f - value : value;
         }
 

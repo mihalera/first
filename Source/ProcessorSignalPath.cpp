@@ -613,17 +613,17 @@ void FirstAudioProcessor::processReverbAndVinylStages (juce::dsp::AudioBlock<flo
     vinylL.noisePrint = noisePrint;
     vinylR.noisePrint = noisePrint;
 
-        if (noisePrint != nullptr && ! noisePrint->empty())
-        {
-            const double printStep = 1.0 / static_cast<double> (juce::jmax (1.0f, oversamplingRateFactor));
-            vinylL.noisePrintStep = printStep;
-            vinylR.noisePrintStep = printStep;
-        }
-        else
-        {
-            vinylL.noisePrintStep = 1.0;
-            vinylR.noisePrintStep = 1.0;
-        }
+    if (noisePrint != nullptr && ! noisePrint->empty())
+    {
+        const double printStep = 1.0 / static_cast<double> (juce::jmax (1.0f, oversamplingRateFactor));
+        vinylL.noisePrintStep = printStep;
+        vinylR.noisePrintStep = printStep;
+    }
+    else
+    {
+        vinylL.noisePrintStep = 1.0;
+        vinylR.noisePrintStep = 1.0;
+    }
 
     for (int i = 0; i < samples; ++i)
     {
@@ -1379,7 +1379,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // STUTTER is an amount like the rest, and a missing parameter means out of
     // the path - the machine every session written before it existed was.
     fxTargets.stutter = fxStutterParam != nullptr ? fxStutterParam->load() : 0.0f;
-    fxRack.setTargets (fxTargets);
+    activeFxRack().setTargets (fxTargets);
     const auto autoTuneAmount = autoTuneAmountParam != nullptr ? autoTuneAmountParam->load() : 0.0f;
     state.autoTuneStrength = juce::jlimit (0.0f, 1.0f, autoTuneAmount);
 
@@ -2298,9 +2298,10 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // updateToneCoefficients, which also derives the TONE-macro machine-state scalars
     // (head gap, pre-bias, flutter scale). They are rebuilt whenever either control
     // moves, and also whenever the sample rate changes (see
-    // resetSampleRateDependentState).
+    // resetSampleRateDependentState and setOversamplingFactor).
     if (std::abs (tone - previousTone) > 1.0e-5f
-        || std::abs (character - previousCharacter) > 1.0e-5f)
+        || std::abs (character - previousCharacter) > 1.0e-5f
+        || std::abs (state.engineSampleRate - previousToneSampleRate) > 0.5f)
         updateToneCoefficients (tone, state.engineSampleRate);
 
     // Feed the ramps from the cached coefficients once per block; the per-sample loop
@@ -2401,10 +2402,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const int blockSamples = juce::jmax (1, numSamples);
     tapeConditionL.updateSlowSources (mechanicsSmoothed.getCurrentValue(),
                                       wearSmoothed.getCurrentValue(),
-                                      blockSamples, noiseState);
+                                      blockSamples, noiseState,
+                                      state.engineSampleRate);
     tapeConditionR.updateSlowSources (mechanicsSmoothed.getCurrentValue(),
                                       wearSmoothed.getCurrentValue(),
-                                      blockSamples, noiseState);
+                                      blockSamples, noiseState,
+                                      state.engineSampleRate);
 
     // The NOISE control trims the floor on top of the formula's own figure: 0.5 is
     // unity, so the knob starts neutral and the stock's own character is unchanged
@@ -3943,21 +3946,21 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
     //
     //  An untouched rack - every amount at zero - is bit-for-bit the signal it was
     //  handed: Source/DSP/FxRack.h does not call a stage whose smoothed amount is
-    //  zero. A rate change prepares the rack again in resetDspState, so a switch
-    //  between oversampling factors cannot leave a grain of the old one playing.
+    //  zero. A rate change prepares the rack slots in prepareOversamplingStages
+    //  and resets the active slot on a switch so no stale tail plays across rates.
     // -------------------------------------------------------------------
-    if (fxRack.isActive())
+    if (auto& rack = activeFxRack(); rack.isActive())
     {
         if (state.activeChannels >= 2)
         {
-            fxRack.processSample (outputSignal[0], outputSignal[1]);
+            rack.processSample (outputSignal[0], outputSignal[1]);
         }
         else
         {
             // Mono: the two-sample interface still needs a right leg, and there
             // is nothing else to hand it than the same sample.
             auto monoRight = outputSignal[0];
-            fxRack.processSample (outputSignal[0], monoRight);
+            rack.processSample (outputSignal[0], monoRight);
         }
     }
 
