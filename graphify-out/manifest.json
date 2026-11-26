@@ -663,9 +663,9 @@
     "language": "language=.cpp"
   },
   "Source/GUI/EditorMeters.cpp": {
-    "mtime": 1795635881.936114,
-    "seen": 1795688946.6434464,
-    "ast_hash": "4cebae3ee4b59138643342d5318eb092",
+    "mtime": 1795701031.8176074,
+    "seen": 1795701091.5200746,
+    "ast_hash": "b40e7bd05ff2098a1668ea3f7f271572",
     "semantic_hash": ""
   },
   "Source/GUI/EditorPaint.cpp": {
@@ -1029,8 +1029,8 @@
     "semantic_hash": ""
   },
   "Source/PluginEditor.cpp": {
-    "mtime": 1795698579.1894653,
-    "seen": 1795698701.2610857,
+    "mtime": 1795699846.111408,
+    "seen": 1795701019.9293203,
     "ast_hash": "d576e5f4edb7d9a678c45610113080d8",
     "semantic_hash": ""
   },
@@ -3154,8 +3154,8 @@
     "semantic_hash": ""
   },
   "tests/header_render.cpp": {
-    "mtime": 1795698376.8900044,
-    "seen": 1795698701.2617586,
+    "mtime": 1795700907.6617632,
+    "seen": 1795701019.9301145,
     "ast_hash": "11b83644d75f5438fc8ca678d1148b3e",
     "semantic_hash": ""
   },
