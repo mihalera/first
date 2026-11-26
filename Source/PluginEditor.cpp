@@ -1415,7 +1415,13 @@ void FirstAudioProcessorEditor::resized()
     const auto phoneLayout = j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight());
     const auto phoneLayoutChanged = phoneLayout != phoneLayoutActive;
     phoneLayoutActive = phoneLayout;
+    //  Both overlay flags are read BEFORE the sweep below: the sweep makes every
+    //  child visible, and a flag read after it would always say "was open". That is
+    //  how a closed guide sheet came back the moment any tab was picked - each tab
+    //  switch re-runs this layout, which resurrected the sheet and then faithfully
+    //  restored its (now true) open state.
     const auto parameterSheetWasOpen = parameterSheet != nullptr && parameterSheet->isOpen();
+    const auto helpSheetWasOpen = helpSheet != nullptr && helpSheet->isOpen();
     for (int child = 0; child < getNumChildComponents(); ++child)
         getChildComponent (child)->setVisible (! phoneLayout);
 
@@ -1444,7 +1450,6 @@ void FirstAudioProcessorEditor::resized()
         parameterSheet->setVisible (parameterSheetWasOpen);
     }
 
-    const auto helpSheetWasOpen = helpSheet != nullptr && helpSheet->isOpen();
     if (helpSheet != nullptr)
     {
         helpSheet->setBounds (getLocalBounds());

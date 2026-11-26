@@ -682,8 +682,8 @@
     "language": "language=.cpp"
   },
   "Source/GUI/EditorSetup.cpp": {
-    "mtime": 1795688756.6080537,
-    "seen": 1795688946.6434674,
+    "mtime": 1795691863.7997813,
+    "seen": 1795698701.260742,
     "ast_hash": "9450d8587f9d78ed788ffea44bb946fc",
     "semantic_hash": ""
   },
@@ -1029,9 +1029,9 @@
     "semantic_hash": ""
   },
   "Source/PluginEditor.cpp": {
-    "mtime": 1795635881.9416957,
-    "seen": 1795688946.6438339,
-    "ast_hash": "6b653bc7a969f85ae31f4276f5f8712a",
+    "mtime": 1795698579.1894653,
+    "seen": 1795698701.2610857,
+    "ast_hash": "d576e5f4edb7d9a678c45610113080d8",
     "semantic_hash": ""
   },
   "Source/PluginEditor.h": {
@@ -3154,9 +3154,9 @@
     "semantic_hash": ""
   },
   "tests/header_render.cpp": {
-    "mtime": 1795688828.6750782,
-    "seen": 1795688946.6445322,
-    "ast_hash": "fd14a8e3746138b86a12bd050602f2a9",
+    "mtime": 1795698376.8900044,
+    "seen": 1795698701.2617586,
+    "ast_hash": "11b83644d75f5438fc8ca678d1148b3e",
     "semantic_hash": ""
   },
   "tests/layout/render.sh": {
@@ -3844,9 +3844,9 @@
     "semantic_hash": ""
   },
   "Source/GUI/HelpSheet.h": {
-    "mtime": 1795690126.7892594,
-    "seen": 1795690505.1031563,
-    "ast_hash": "82a0fafa038d556bb7e6b77006615927",
+    "mtime": 1795691863.8002858,
+    "seen": 1795698701.260761,
+    "ast_hash": "eb6915f1b9e7ae047b1f1445d176c518",
     "semantic_hash": "",
     "language": "language=.cpp"
   }

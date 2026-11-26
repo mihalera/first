@@ -684,6 +684,17 @@ void checkGuideSheet (J37HeaderRenderProbe& probe, FirstAudioProcessorEditor& ed
     pumpMessages (60);
     expect (! probe.guideOpen(), "guide: a second press closes it");
 
+    //  Closing the sheet and then picking any tab must not bring it back. A tab
+    //  switch re-runs the editor's layout, and that layout sweeps every child
+    //  visible before restoring the overlays - so the open/closed state has to be
+    //  read before the sweep, not after it.
+    probe.openPage (1);
+    pumpMessages (90);
+    expect (! probe.guideOpen(), "guide: picking a tab does not reopen a closed sheet");
+
+    probe.openPage (0);
+    pumpMessages (90);
+
     editor.setSize (before.getWidth(), before.getHeight());
     pumpMessages (90);
 }
