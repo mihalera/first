@@ -81,6 +81,46 @@ struct J37HeaderRenderProbe
 {
     explicit J37HeaderRenderProbe (FirstAudioProcessorEditor& e) : editor (e) {}
 
+    /**  One press on GUIDE, as the button does it. */
+    void pressGuide() { editor.toggleHelpSheet(); }
+
+    bool guideOpen() const { return editor.helpSheet != nullptr && editor.helpSheet->isOpen(); }
+
+    bool guideCoversEditor() const
+    {
+        return editor.helpSheet != nullptr
+               && editor.helpSheet->getBounds() == editor.getLocalBounds();
+    }
+
+    /**  The sheet painted on its own, so the overlay can be checked without the
+        panel it covers. */
+    juce::Image guideShot() const
+    {
+        if (editor.helpSheet == nullptr || editor.helpSheet->getWidth() < 2)
+            return {};
+
+        auto& sheet = *editor.helpSheet;
+        juce::Image image (juce::Image::ARGB, sheet.getWidth(), sheet.getHeight(), true);
+        juce::Graphics g (image);
+        sheet.paintEntireComponent (g, true);
+        return image;
+    }
+
+    /**  How many distinct colours a sampled grid of the sheet holds. A painted
+        illustration has hundreds; a rectangle filled with one brush has one. */
+    static int colourCount (const juce::Image& image)
+    {
+        if (! image.isValid())
+            return 0;
+
+        juce::SortedSet<juce::uint32> seen;
+        for (int y = 0; y < image.getHeight(); y += 7)
+            for (int x = 0; x < image.getWidth(); x += 7)
+                seen.add (image.getPixelAt (x, y).getARGB());
+
+        return seen.size();
+    }
+
     juce::Rectangle<int> badge() const { return editor.statusBadgeBounds(); }
     juce::Rectangle<int> levels() const { return editor.levelsButton.getBounds(); }
     /** Where the SETTINGS page put its LANGUAGE selector, so a claim can say the
@@ -612,6 +652,42 @@ void checkMeterRow (J37HeaderRenderProbe& probe, FirstAudioProcessorEditor& edit
     pumpMessages (90);
 }
 
+/**  The guide sheet. Two things went wrong on the same screen: the first press on
+     GUIDE built the overlay and then closed it again (addAndMakeVisible made it
+     visible before toggleHelpSheet() asked whether it was open), and the overlay
+     painted both illustrations through a white brush, which replaced every pixel of
+     two opaque artworks with white - five blank rectangles where the diagram and
+     the four scenes should be. */
+void checkGuideSheet (J37HeaderRenderProbe& probe, FirstAudioProcessorEditor& editor)
+{
+    const auto before = editor.getBounds();
+    editor.setSize (1060, 916);
+    pumpMessages (90);
+
+    probe.pressGuide();
+    pumpMessages (90);
+
+    expect (probe.guideOpen(), "guide: one press on GUIDE opens the sheet");
+    expect (probe.guideCoversEditor(), "guide: the sheet covers the editor it belongs to");
+
+    const auto shot = probe.guideShot();
+    const auto colours = J37HeaderRenderProbe::colourCount (shot);
+
+    std::printf ("\nguide sheet at 1060x916: %d x %d, %d distinct colours in a 7 px grid\n",
+                 shot.getWidth(), shot.getHeight(), colours);
+
+    expect (shot.getWidth() == editor.getWidth() && shot.getHeight() == editor.getHeight(),
+            "guide: the sheet paints at the editor's size");
+    expect (colours > 24, "guide: the sheet paints its artwork, not a brush over an opaque mask");
+
+    probe.pressGuide();
+    pumpMessages (60);
+    expect (! probe.guideOpen(), "guide: a second press closes it");
+
+    editor.setSize (before.getWidth(), before.getHeight());
+    pumpMessages (90);
+}
+
 /**  The header's own hardware against what shares its corners: the last switch key
      against the countersunk screw, and the brand row's renderer caption against the
      brand strip at the three widths the harness already renders. */
@@ -946,6 +1022,9 @@ int main()
 
     //  The LEVELS grid against the content it holds.
     checkMeterRow (probe, *editor);
+
+    //  The guide sheet: one press opens it, and it paints its artwork.
+    checkGuideSheet (probe, *editor);
 
     //==========================================================================
     //  The negative controls. Each one damages a real render the way the panel
