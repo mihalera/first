@@ -204,12 +204,12 @@ int FirstAudioProcessorEditor::LevelMeter::preferredHeightForWidth (int width)
     const auto cellWidth = static_cast<float> (juce::jmax (1, width - 4));
     const auto radius = juce::jmax (8.0f, cellWidth * 0.5f - 10.0f);
 
-    //  The dial card is (radius + 16) tall, and paint() gives the face 2 px of air
+    //  The dial card is (radius + 24) tall, and paint() gives the face 2 px of air
     //  above it; the rows start 4 px below the card and the meter ends 3 px below them.
     //  The radius here is the WIDTH-derived one on purpose: that is what paint() draws
     //  once the face has this height, because its vertical guard only bites on a face
     //  shorter than the card (see the radius note in paint()).
-    return topBlock + juce::roundToInt (radius) + 18 + 4 + rowHeight * 5 + 3;
+    return topBlock + juce::roundToInt (radius) + 26 + 4 + rowHeight * 5 + 3;
 }
 
 void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
@@ -316,15 +316,21 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     //  had room for, and made preferredHeightForWidth() reserve a height that paint
     //  then drew a smaller dial in - the blank strip this row was meant to remove.
     const auto radius = juce::jmin (face.getWidth() * 0.5f - 10.0f,
-                                    juce::jmax (8.0f, face.getHeight() - 18.0f));
-    const auto centreY = face.getBottom() - 6.0f;
+                                    juce::jmax (8.0f, face.getHeight() - 26.0f));
+
+    //  The pivot sits 14 px ABOVE the dial card's bottom edge, not 6: the card used to
+    //  end on the face's own bottom line, so the arc's two ends, the scale's end
+    //  labels and the needle's hub all landed on its border and were shaved by the
+    //  clip - the flats and stubs that made the instrument look crooked. The card is
+    //  (radius + 24) tall and ends 2 px inside the face.
+    const auto centreY = face.getBottom() - 16.0f;
     const auto startAngle = juce::MathConstants<float>::pi;
     const auto endAngle = juce::MathConstants<float>::twoPi;
 
     const auto dial = juce::Rectangle<float> (centreX - radius - 8.0f,
                                               centreY - radius - 10.0f,
                                               (radius + 8.0f) * 2.0f,
-                                              radius + 16.0f);
+                                              radius + 24.0f);
 
     // The whole dial is clipped to the face it belongs to. This is the guarantee that
     // nothing drawn here can ever continue past the dial box and into the readout rows
@@ -383,7 +389,10 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
         g.setColour(palette.gaugeInk.withAlpha(0.8f));
         g.strokePath(scaleArc, juce::PathStrokeType(1.1f));
 
-        for (int tick = 0; tick <= tickCount; ++tick) {
+        //  The two END ticks are skipped: at 180 and 360 degrees they are drawn
+        //  horizontally, so they read as little feet hanging off the card's bottom
+        //  corners rather than as scale marks. The arc's own ends mark the range.
+        for (int tick = 1; tick < tickCount; ++tick) {
             const auto fraction = static_cast<float>(tick) / static_cast<float>(tickCount);
             const auto angle = juce::jmap(fraction, startAngle, endAngle);
             const auto major = tick % 2 == 0;
@@ -444,32 +453,40 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     //  The numbers are ALWAYS code. A raster number that has to survive a 0.3x
     //  downscale is unreadable at every dial size this panel has, and the code
     //  type follows the palette and the UI scale like the rest of the readouts.
-    for (int tick = 0; tick <= tickCount; ++tick) {
-        if (tick % 2 != 0)
-            continue;
+    //
+    //  They are placed at FIXED dB values rather than derived from the tick index.
+    //  Six ticks over a -20..+3 arc divide it into 4.6 dB steps, which printed the
+    //  scale as -20, -15, -11, -6, -2, +3: numbers no one reads a meter by. Four
+    //  dB steps land on -20, -16, -12, -8, -4, 0, and each is placed at its own
+    //  point on the arc, so the type sits on the instrument's true scale.
+    //  -20 is where the needle rests, so it is the one mark never labelled: the
+    //  pointer covers it at silence and printed over it reads as a smudge.
+    //
+    //  A small dial prints every other mark. Five labels in a 78 px wide arc ran
+    //  into each other ("-12 -8 -4" merged into one smudge at the minimum window);
+    //  -16, -8 and 0 name the same scale with room to read it.
+    constexpr int labelDbs[] = { -16, -12, -8, -4, 0 };
+    const auto labelStride = radius < 36.0f ? 2 : 1;
+    const auto labelBoxWidth = juce::jmax(14, juce::roundToInt(20.0f * textScale));
 
-        const auto fraction = static_cast<float>(tick) / static_cast<float>(tickCount);
+    for (int i = 0; i < static_cast<int> (std::size(labelDbs)); i += labelStride)
+    {
+        const auto db = labelDbs[i];
+        const auto fraction = static_cast<float>(db + 20) / 23.0f;
         const auto angle = juce::jmap(fraction, startAngle, endAngle);
-        const auto db = -20 + juce::roundToInt(fraction * 23.0f);
-        const auto labelRadius = juce::jmax(4.0f, radius - 18.0f);
+        //  0.70 of the radius keeps every label inside the arc and clear of the
+        //  needle; the old fixed 18 px inset pushed the end labels onto the sides.
+        const auto labelRadius = juce::jmax(10.0f, radius * 0.70f);
         const auto labelPoint = juce::Point<float>(centreX + std::cos(angle) * labelRadius,
                                                    centreY + std::sin(angle) * labelRadius);
-
-        //  The two END labels sit on the pivot line, which is also the dial card's
-        //  bottom border: at 180 and 360 degrees they printed half outside the face
-        //  and were cut by its own frame. They lift into the arc's opening instead -
-        //  they still name the ends of the scale, just inside the instrument.
-        const auto isEndLabel = tick == 0 || tick == tickCount;
-        const auto labelY = isEndLabel ? centreY - 11.0f * textScale : labelPoint.y;
-        const auto labelX = isEndLabel
-                                ? labelPoint.x + (tick == 0 ? 6.0f : -6.0f)
-                                : labelPoint.x;
 
         g.setColour(palette.gaugeInk.withAlpha(0.85f));
         g.setFont(j37panel::panelFont(8.0f * textScale));
         g.drawText(juce::String(db > 0 ? "+" : "") + juce::String(db),
-                   juce::Rectangle<int>(juce::roundToInt(labelX - 10.0f),
-                                        juce::roundToInt(labelY - 5.0f), 20, 11),
+                   juce::Rectangle<int>(juce::roundToInt(labelPoint.x
+                                                         - static_cast<float> (labelBoxWidth) * 0.5f),
+                                        juce::roundToInt(labelPoint.y - 5.0f),
+                                        labelBoxWidth, 11),
                    juce::Justification::centred, false);
     }
 
@@ -481,9 +498,16 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     const auto needleDb = juce::jlimit (-20.0f, 3.0f, displayedCombined);
     const auto needleFraction = (needleDb + 20.0f) / 23.0f;
     const auto needleAngle = juce::jmap (needleFraction, startAngle, endAngle);
-    const auto needleLength = juce::jmax (4.0f, radius - 13.0f);
+    const auto needleLength = juce::jmax (4.0f, radius - 8.0f);
     const auto &needleImage = j37panel::assets::cachedImage("vu_needle_profile_png");
-    if (needleImage.isValid() && needleImage.getWidth() >= 256 && needleImage.getHeight() >= 64) {
+
+    //  The raster needle is an instrument PART: it carries its own hub as a wide
+    //  block of its source, and at the 45-60 px dial of the meter grid that block
+    //  scaled down into the big brown ball that sat on the scale. Like the printed
+    //  scale, it is used only where it is actually printed at size; below a 96 px
+    //  radius the needle is a tapered vector pointer with a small hub.
+    if (radius >= 96.0f && needleImage.isValid() && needleImage.getWidth() >= 256
+        && needleImage.getHeight() >= 64) {
         constexpr float pivotX = 15.0f;
         constexpr float pivotY = 32.0f;
         constexpr float sourceLength = 235.0f;
@@ -495,15 +519,37 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
             scale * sine, scale * cosine, centreY - scale * (sine * pivotX + cosine * pivotY));
         g.drawImageTransformed(needleImage, needleTransform, true);
     } else {
-        const auto needleEnd = juce::Point<float>(centreX + std::cos(needleAngle) * needleLength,
-                                                  centreY + std::sin(needleAngle) * needleLength);
-        g.setColour(palette.needle.withAlpha(0.9f));
-        g.drawLine(centreX + 0.8f, centreY + 0.8f, needleEnd.x + 0.8f, needleEnd.y + 0.8f, 2.0f);
-        g.setColour(palette.needle);
-        g.drawLine(centreX, centreY, needleEnd.x, needleEnd.y, 1.5f);
+        const auto dirX = std::cos(needleAngle);
+        const auto dirY = std::sin(needleAngle);
+        const auto tip = juce::Point<float>(centreX + dirX * needleLength,
+                                            centreY + dirY * needleLength);
+
+        //  A needle, not a wedge: a hairline from a short counterweight behind the
+        //  pivot to the tip, tapering from 1.6 px to 0.5 px. A solid triangle from
+        //  the pivot reads as a spearhead at 45 px and as a blob at 140.
+        const auto tailLength = juce::jmax (2.0f, radius * 0.14f);
+        const auto tail = juce::Point<float>(centreX - dirX * tailLength,
+                                            centreY - dirY * tailLength);
+        constexpr float halfTail = 1.6f;
+        constexpr float halfTip = 0.5f;
+
+        juce::Path pointer;
+        pointer.startNewSubPath (tail.x - dirY * halfTail, tail.y + dirX * halfTail);
+        pointer.lineTo (tip.x - dirY * halfTip, tip.y + dirX * halfTip);
+        pointer.lineTo (tip.x + dirY * halfTip, tip.y - dirX * halfTip);
+        pointer.lineTo (tail.x + dirY * halfTail, tail.y - dirX * halfTail);
+        pointer.closeSubPath();
+        g.setColour (palette.needle);
+        g.fillPath (pointer);
     }
-    g.setColour (palette.accent);
-    g.fillEllipse (centreX - 4.0f, centreY - 4.0f, 8.0f, 8.0f);
+
+    //  The hub belongs to whichever needle was drawn; the raster one already has its
+    //  own, so only the vector pointer gets one painted under it.
+    if (radius < 96.0f)
+    {
+        g.setColour (palette.needle);
+        g.fillEllipse (centreX - 3.2f, centreY - 3.2f, 6.4f, 6.4f);
+    }
     g.restoreState();   // end of the dial clip - the readout rows below draw unclipped
 
     // -------------------------------------------------------------------
