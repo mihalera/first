@@ -114,11 +114,15 @@ inline void HelpSheet::paint(juce::Graphics &g)
     }
 
     // Four help scenes in a 2 x 2 grid. Each quadrant of the atlas is already a
-    // titled card (SIGNAL PATH, A/B COMPARISON, ...), so there is no caption under
-    // it: the sheet used to print the same title a second time in nine-pixel type.
+    // titled card (SIGNAL PATH, A/B COMPARISON, ...), so no caption is printed under
+    // a scene that drew: the sheet used to print the same title a second time in
+    // nine-pixel type. The names are kept for the asset-less build, where the card
+    // is an empty plate and the caption is all that says which scene it is.
     // The quadrants are 512 x 288 and are fitted whole - the old draw stretched
     // them to whatever rectangle the sheet had, which flattened the lettering and
     // the arrows on the 1060 px sheet.
+    const char* captions[] = { "SIGNAL PATH", "A/B COMPARE", "PRESET WORKFLOW",
+                               "LOAD A MODEL OR IR" };
     constexpr int cols = 2;
     constexpr int rows = 2;
     constexpr float sceneAspect = 512.0f / 288.0f;
@@ -154,6 +158,13 @@ inline void HelpSheet::paint(juce::Graphics &g)
         }
         g.setColour(palette.border.withAlpha(0.6f));
         g.drawRoundedRectangle(fitted.reduced(0.5f), 3.0f, 1.0f);
+
+        if (! sceneValid)
+        {
+            g.setColour(palette.secondary);
+            g.setFont(panelFont(9.0f, juce::Font::bold));
+            g.drawText(xlat(captions[i]), cell, juce::Justification::centred, false);
+        }
     }
 }
 
