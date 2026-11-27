@@ -1,7 +1,7 @@
 # Graph Report - first  (2026-11-27)
 
 ## Corpus Check
-- 401 files · ~1,091,340 words
+- 401 files · ~1,091,541 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 54 file(s) not represented in the graph (top: .toml 22, (none) 9, .cmake 8)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `cf3b0edd`
+- Built from commit: `645de769`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -1363,7 +1363,7 @@ Nodes (4): ControlPlacement, isKey, x, ControlTable
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `FirstAudioProcessor` connect `FirstAudioProcessor` to `ProcessorSignalPath.cpp`, `phase_test.cpp`, `VinylStage`, `State`, `cmath`, `.getBypassParameter`, `.getUndoManager`, `ValueTree`, `SafetyLimiter`, `SampleSmoother`, `ProcessorPresets.cpp`, `SaturationCore`, `AudioProcessor`, `DattorroRoom`, `CorrectorStage`, `GlueCompressor`, `MultibandCompressor`, `NoiseLoader`, `TapeBlockState`, `header_render.cpp`, `PluginProcessor.cpp`, `TelemetryFrame`, `RangedAudioParameter`, `PitchTracker`, `FxRack`, `ThreeBandEq`, `parameter_audio.cpp`, `TransportRig`, `gain_test.cpp`, `SubharmonicGenerator`, `HarmonicAnalyser`, `FirstAudioProcessor`, `ParameterTable.cpp`, `AmpVoicing`, `FxTargets`, `NoisePrint`, `Surface`, `.active`, `LofiHold`, `.clear`, `RepitchStage`, `SpectrumAnalyser`, `.prepareToPlay`, `ModalVoice`, `PluginEditor.cpp`, `.prepareToPlay`, `NeuralStage`, `Biquad`, `StereoOffsetBuffer`, `IrStage`, `fixture_test.cpp`?**
-  _High betweenness centrality (0.206) - this node is a cross-community bridge._
+  _High betweenness centrality (0.218) - this node is a cross-community bridge._
 - **Are the 8 inferred relationships involving `FirstAudioProcessor` (e.g. with `.perform()` and `.undo()`) actually correct?**
   _`FirstAudioProcessor` has 8 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `activeSlot`, `activeTapeType`, `ampBiasParam` to the rest of the system?**
@@ -1371,8 +1371,8 @@ _Questions this graph is uniquely positioned to answer:_
 - **Should `FirstAudioProcessor` be split into smaller, more focused modules?**
   _Cohesion score 0.0037243947858473 - nodes in this community are weakly interconnected._
 - **Why does `FxRack` connect `FxRack` to `FirstAudioProcessor`, `MultibandCompressor`, `character_test.cpp`, `EnvelopeFollower`, `ProcessorSignalPath.cpp`, `SpectralGate`, `PitchShifter`, `FxTargets`, `.processSample`, `Phaser`, `FxStutter`, `cmath`, `Amounts`, `fx_test.cpp`, `Fuzz`, `Granular`, `.prepare`, `Phaser`?**
-  _High betweenness centrality (0.031) - this node is a cross-community bridge._
+  _High betweenness centrality (0.053) - this node is a cross-community bridge._
 - **Should `live-browser.js` be split into smaller, more focused modules?**
   _Cohesion score 0.028943278943278944 - nodes in this community are weakly interconnected._
 - **Why does `SaturationCore` connect `SaturationCore` to `FirstAudioProcessor`, `ParameterTable.cpp`, `.process`, `ChainReplica`, `simd_tanh_test.cpp`?**
-  _High betweenness centrality (0.025) - this node is a cross-community bridge._
+  _High betweenness centrality (0.033) - this node is a cross-community bridge._
