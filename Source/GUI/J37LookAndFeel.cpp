@@ -1198,19 +1198,40 @@ void J37LookAndFeel::drawLabel (juce::Graphics& g, juce::Label& label)
                                       : 0;
         if (controlIndex < tileCount)
         {
-            const auto glyphSide = juce::jlimit(9.0f, 13.0f, area.getHeight() - 3.0f);
+            const auto glyphSide = juce::jlimit(11.0f, 14.0f, area.getHeight() - 2.0f);
             if (area.getWidth() >= glyphSide + 14.0f)
             {
+                //  The glyph belongs BESIDE its caption, not at the label's left
+                //  edge. A knob caption is centred in a cell that is often three
+                //  times the width of its word, so a glyph pinned to the cell's
+                //  left margin sat a hundred pixels from the name it belonged to
+                //  and read as a speck of dirt on the plate. The glyph and the
+                //  word are centred together as one block.
+                const auto& font = g.getCurrentFont();
+                const auto textWidth = juce::GlyphArrangement::getStringWidth (font, label.getText());
+                const auto blockWidth = glyphSide + 3.0f + textWidth;
+                const auto centred = label.getJustificationType()
+                                         .testFlags (juce::Justification::horizontallyCentred);
+                const auto blockLeft = centred
+                                           ? juce::jmax (static_cast<float> (area.getX()),
+                                                         area.getCentreX() - blockWidth * 0.5f)
+                                           : static_cast<float> (area.getX()) + 1.0f;
+
                 g.setColour(ink.withAlpha(ink.getAlpha()
-                                           * (label.isEnabled() ? 0.75f : 0.35f)));
+                                           * (label.isEnabled() ? 0.8f : 0.35f)));
                 g.drawImage(glyphs,
-                            juce::roundToInt(area.getX() + 1.0f),
-                            juce::roundToInt(area.getY() + (area.getHeight() - glyphSide) * 0.5f),
+                            juce::roundToInt(blockLeft),
+                            juce::roundToInt(static_cast<float> (area.getY())
+                                             + (static_cast<float> (area.getHeight()) - glyphSide) * 0.5f),
                             juce::roundToInt(glyphSide), juce::roundToInt(glyphSide),
                             (controlIndex % atlasColumns) * tileSize,
                             (controlIndex / atlasColumns) * tileSize,
                             tileSize, tileSize, true);
-                area.removeFromLeft(glyphSide + 3.0f);
+                //  `area` is a float rectangle, so the shifted edges stay float too.
+                area.setLeft (static_cast<float> (juce::roundToInt (blockLeft))
+                              + glyphSide + 3.0f);
+                if (centred)
+                    area.setWidth (textWidth + 1.0f);
             }
         }
     }
