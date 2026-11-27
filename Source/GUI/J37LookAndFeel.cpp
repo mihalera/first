@@ -1228,10 +1228,15 @@ void J37LookAndFeel::drawLabel (juce::Graphics& g, juce::Label& label)
                             (controlIndex / atlasColumns) * tileSize,
                             tileSize, tileSize, true);
                 //  `area` is a float rectangle, so the shifted edges stay float too.
+                //  The trimmed box never grows past the label's own right edge: a
+                //  long caption in a compressed layout ("TRANSFORMER") has to be
+                //  fitted and ellipsised by the draw that follows, not handed a
+                //  box wider than the component it lives in.
+                const auto labelRight = area.getRight();
                 area.setLeft (static_cast<float> (juce::roundToInt (blockLeft))
                               + glyphSide + 3.0f);
                 if (centred)
-                    area.setWidth (textWidth + 1.0f);
+                    area.setWidth (juce::jmin (textWidth + 1.0f, labelRight - area.getX()));
             }
         }
     }
