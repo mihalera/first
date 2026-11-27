@@ -64,8 +64,12 @@ void FirstAudioProcessorEditor::applyTheme() {
     oscRing.setDarkTheme(darkTheme);
     oscRing.repaint();
 
-    // The 3D transport reads the same active palette as the panel.
-    tapeScene.setPalette(palette.panel, palette.raised, palette.accent,
+    //  The 3D transport reads the same active palette as the panel - and its
+    //  window's ground is the TOP of the panel's face gradient rather than the
+    //  flat `panel` colour: the scene sits high on the deck, where the face is
+    //  `panel.brighter(0.10f)`, so a flat panel fill made the window a dark slab
+    //  in the two dark themes (54,46,35 against a 73,66,57 plate in CHARCOAL).
+    tapeScene.setPalette(j37panel::panelFaceTop(palette), palette.raised, palette.accent,
                          palette.knobFace.brighter(0.28f).withSaturation(0.55f));
     {
         //  The motes' positions and radii belong to j37panel::dust::World; the colour

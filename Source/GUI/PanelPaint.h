@@ -813,6 +813,20 @@ inline void drawScrew(juce::Graphics &g, float x, float y, const UiPalette &pale
     g.drawLine(x - reach, y - reach - 0.9f, x + reach, y + reach - 0.9f, 0.7f);
 }
 
+/** The colour at the TOP of every panel's face gradient.
+
+    A panel is not a flat `palette.panel`: its face runs from
+    `panel.brighter(0.10f)` under the lamp down to `panel.darker(0.10f)` at the
+    foot, and anything that has to match a panel without being painted by
+    drawPanel() - the deck's 3D transport window is the one such surface - has to
+    start from that same colour. It used to take the flat `palette.panel` and sat
+    about twenty levels darker than the plate it was set into, which read as a
+    black inset in the dark themes.
+*/
+inline juce::Colour panelFaceTop (const UiPalette &palette) noexcept {
+    return palette.panel.brighter (0.10f);
+}
+
 inline void drawPanel(juce::Graphics &g,
                       juce::Rectangle<int> area,
                       const UiPalette &palette,
@@ -873,7 +887,7 @@ inline void drawPanel(juce::Graphics &g,
 
     // The face: a subtle vertical gradient, brighter at the top because that
     // is where the light lands.
-    juce::ColourGradient fill(palette.panel.brighter(0.10f), rect.getX(), rect.getY(),
+    juce::ColourGradient fill(panelFaceTop (palette), rect.getX(), rect.getY(),
                               palette.panel.darker(0.10f), rect.getX(), rect.getBottom(), false);
     g.setGradientFill(fill);
     g.fillRoundedRectangle(rect, cornerSize);
