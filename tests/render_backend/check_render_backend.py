@@ -256,8 +256,13 @@ require("sg_destroy_pipeline (mainPipeline);" in sokol
         and "sg_destroy_pipeline (glowPipeline);" in sokol,
         "partial pipeline creation failure must release successful pipeline allocations")
 theme = (root / "Source/GUI/EditorTheme.cpp").read_text()
-require("tapeScene.setPalette(palette.panel," in theme,
-        "the Sokol scene background must blend with the deck panel rather than look like a black inset")
+panels = (root / "Source/GUI/PanelPaint.h").read_text()
+require("tapeScene.setPalette(j37panel::panelFaceTop(palette)," in theme,
+        "the Sokol scene background must be the top of the deck's face gradient - the colour the "
+        "plate is actually painted in where the window sits - rather than a flat fill that reads "
+        "as a black inset")
+require("panelFaceTop (palette), rect.getX(), rect.getY()," in panels,
+        "drawPanel must paint its face from the same helper the scene is given")
 
 # bgfx renders into a native window bgfx is handed. A plugin host owns the
 # editor's window, so the adapter must present into a CHILD surface, never the
