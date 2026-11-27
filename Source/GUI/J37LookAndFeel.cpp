@@ -1317,12 +1317,22 @@ void J37LookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button
     // ellipsis stays ON either way: a caption that cannot fit is shortened
     // visibly, never clipped at the button's edge - which is what the clamped
     // shrink used to do to the nine-page bar's longer names.
-    const auto asked = button.getComponentID() == j37panel::chipCaptionComponentId
+    const auto isChip = button.getComponentID() == j37panel::chipCaptionComponentId;
+    const auto asked = isChip
                            ? j37panel::fittedChipCaptionHeight (text.toRawUTF8(), 12.0f,
                                                                 j37panel::chipCaptionMinHeight,
                                                                 bounds.getWidth())
                            : 12.0f;
-    g.setFont (shrinkingFont (text, asked, juce::Font::bold, bounds.getWidth()));
+
+    //  A chip's height is ALREADY the largest that fits its width, and it is never
+    //  below the legibility floor. Handing that number to shrinkingFont let the fit
+    //  override the floor: a 44 px chip at the minimum window printed its name at
+    //  5 px, and `drawText` then clipped it into a band of letter middles ("MACHINE"
+    //  read as a row of dashes). The chip draws at the fitted size and lets the
+    //  ellipsis - the policy ChipCaption.h documents - handle a name that still does
+    //  not fit at the floor.
+    g.setFont (isChip ? j37panel::panelFont (asked, juce::Font::bold)
+                      : shrinkingFont (text, asked, juce::Font::bold, bounds.getWidth()));
     g.drawText (text, bounds, juce::Justification::centred, true);
 
     if (button.hasKeyboardFocus (false))
