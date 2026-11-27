@@ -91,17 +91,37 @@ namespace j37panel
         m.minorLength = 2.5f;
         m.minorClearance = 2.0f;
 
-        // The room a major mark needs, taken off the groove's ceiling BEFORE the
-        // groove is solved from it - otherwise the groove grows into the only
-        // space the scale has and the marks come out as stubs against it.
-        const auto scaleBand = juce::jlimit (3.5f, 6.0f, shortSide * 0.12f);
-
         // The side wall comes out of the SAME budget as the face: a knob nearer
         // the viewer shows more of its own side and a SMALLER top face, so the cap
         // is what gives way and no knob row marches out of its cells.
         const auto wallFraction = 0.12f + 0.40f * wall;
         const auto collarAllowance = juce::jmax (2.2f, m.faceCeiling * 0.10f);
-        const auto ringCeiling = juce::jmin (m.faceCeiling + 8.0f, halfWidth, halfHeight - scaleBand);
+
+        //  The groove's ceiling is the cell's FREE WIDTH as well as its height, not
+        //  the face's own size plus a collar's worth of air.
+        //
+        //  Measured against the face alone, a cell that is wider than it is tall
+        //  capped its knob by the height and threw the width away: the MODELS page's
+        //  two knobs sat in 345 x 320 cells and drew a 190 px knob, with as much
+        //  empty metal round the disc as there was disc - which reads as a knob
+        //  floating in a hole, and is the vertical gap between the caption, the knob
+        //  and its readout the page was reported for. The groove may now reach into
+        //  that free width, so a wide cell draws a knob that fills it and the strip
+        //  has nothing left to leave empty.
+        //
+        //  The marks are the one thing the groove may not take: the gap to the first
+        //  mark, the mark itself and its clearance all have to stay inside the cell,
+        //  and that reserve is taken off the groove's ceiling BEFORE the groove is
+        //  solved from it - otherwise the groove grows into the only space the scale
+        //  has and the marks come out as stubs against it. It is a fixed 12 px at
+        //  every size because it is a 2.5 px gap, a 5 px mark and 4 px of clearance,
+        //  none of which scales with the knob. A square cell is unaffected - its own height ceiling is already
+        //  below the face's, so the `jmax` keeps the old groove - which is why the
+        //  dense pages (BASIC, RECORD, COMP) draw exactly what they drew before.
+        const auto markReserve = 12.0f;
+        const auto freeCeiling = juce::jmin (halfWidth, halfHeight - markReserve);
+        const auto ringCeiling =
+            juce::jmin (juce::jmax (freeCeiling, m.faceCeiling + 8.0f), halfHeight);
 
         m.radius = juce::jmin (m.faceCeiling,
             juce::jmax (2.0f, (ringCeiling - 1.5f - collarAllowance) / (1.0f + 1.15f * wallFraction)));

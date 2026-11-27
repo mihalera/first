@@ -585,12 +585,21 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
 
             //  The axis legend rides the caption line's right end: three numbers
             //  are all a fixed -72 .. 0 dBFS axis needs to be read against, and
-            //  they cost the curve no height at all.
-            g.setColour(palette.secondary.withAlpha(0.8f));
-            g.setFont(shrinkingFont("0 / -24 / -48 / -72 dBFS", captionHeight - 3.5f,
-                                    juce::Font::plain, captionArea.getWidth() * 0.62f));
-            g.drawText("0 / -24 / -48 / -72 dBFS", captionArea, juce::Justification::centredRight,
-                       false);
+            //  they cost the curve no height at all. It is set in the caption's
+            //  OWN size and face - the same `captionHeight - 2` the SPECTRUM word
+            //  beside it uses - rather than in a second, smaller voice of its own.
+            //  It was set at `captionHeight - 3.5`, i.e. 7.5 px, where the panel's
+            //  captions are 9: a legend two sizes below the word that explains it
+            //  is a legend that has to be guessed at, and at 780 px the axis was
+            //  unreadable while 62% of the cell stood empty beside it.
+            //  Two pixels of its own between the legend's last glyph and the
+            //  card's border: at the caption's size the `S` of `dBFS` ends closer
+            //  to the frame than the word it explains, and on the 780 px panel it
+            //  was drawn into the border itself.
+            g.setColour(palette.secondary.withAlpha(0.85f));
+            g.setFont(j37panel::panelFont(captionHeight - 2.0f));
+            g.drawText("0 / -24 / -48 / -72 dBFS", captionArea.withTrimmedRight(2.0f),
+                       juce::Justification::centredRight, false);
 
             // What is left of the cell below the caption is the curve's box, so the
             // caption can never be drawn over the curve and the curve can never run
